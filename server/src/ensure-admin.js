@@ -1,6 +1,6 @@
 // Boot-time admin ensure: creates the admin account if it doesn't exist.
 // This is CREATE-ONLY — it never overwrites password/role on existing accounts.
-// Used on Railway so a login is always available after a fresh deploy.
+// Used on hosted deploys so a login is always available after a fresh deploy.
 
 import bcrypt from 'bcryptjs'
 import db from './db.js'

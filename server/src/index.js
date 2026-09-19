@@ -36,7 +36,7 @@ const app = express()
 const PORT = process.env.PORT || 5174
 const isProd = process.env.NODE_ENV === 'production'
 
-// Trust proxy (required for correct req.ip behind Railway's reverse proxy)
+// Trust proxy (required for correct req.ip behind Render's reverse proxy)
 app.set('trust proxy', 1)
 
 // Build allowed origins list dynamically
@@ -45,7 +45,12 @@ const allowedOrigins = [
   'http://localhost:5175',
   'http://127.0.0.1:5173',
 ]
-if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL)
+// FRONTEND_URL accepts a comma-separated list so www + apex can both be allowed, e.g.
+// FRONTEND_URL=https://www.mmacademy.com,https://mmacademy.com
+for (const o of (process.env.FRONTEND_URL || '').split(',')) {
+  const origin = o.trim()
+  if (origin && !allowedOrigins.includes(origin)) allowedOrigins.push(origin)
+}
 
 // Security headers — CSP enabled, HSTS in production
 app.use(helmet({
@@ -122,7 +127,7 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' })
 })
 
-// Ensure admin account exists (non-destructive, safe for Railway deploys)
+// Ensure admin account exists (non-destructive, safe for hosted deploys)
 await ensureAdmin()
 
 // Migration: add account_status column if missing (safe idempotent)

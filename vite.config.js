@@ -4,7 +4,9 @@ import { defineConfig } from 'vite'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
-  base: mode === 'production' ? '/MMAcademy/' : '/',
+  // Project-pages path (/MMAcademy/) by default; root (/) once CUSTOM_DOMAIN is set
+  // (repo variable CUSTOM_DOMAIN=www.mmacademy.com in .github/workflows/deploy.yml).
+  base: process.env.CUSTOM_DOMAIN ? '/' : mode === 'production' ? '/MMAcademy/' : '/',
   server: {
     port: 5173,
   },

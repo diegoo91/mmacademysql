@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/**'
       - 'index.html'
+      - 'public/**'
       - 'vite.config.js'
       - 'package.json'
       - 'package-lock.json'
@@ -41,6 +42,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
 
       - name: Copy index.html to 404.html for SPA deep links
         run: cp dist/index.html dist/404.html
