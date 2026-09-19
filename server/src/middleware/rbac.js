@@ -1,11 +1,32 @@
-const ROLE_HIERARCHY = { superadmin: 4, admin: 3, coach: 2, player: 1 }
+import db from '../db.js'
+import { ROLE_HIERARCHY, ALL_MODULES, DEFAULT_ROLE_PERMISSIONS } from '../utils/modules.js'
 
-const DEFAULT_PERMISSIONS = {
-  superadmin: ['dashboard', 'bookings', 'schedule', 'players', 'results', 'users', 'imports', 'comments', 'conversions'],
-  admin: ['dashboard', 'bookings', 'schedule', 'players', 'results', 'imports', 'comments', 'conversions'],
-  coach: ['schedule', 'players', 'results'],
-  player: [],
+// In-memory role cache (60s TTL). Avoids DB hit on every request.
+let roleCache = new Map()
+let cacheExpiry = 0
+const CACHE_TTL = 60_000
+
+export async function getRole(name) {
+  const now = Date.now()
+  if (now < cacheExpiry && roleCache.has(name)) return roleCache.get(name)
+  // Refresh entire cache on first miss
+  if (now >= cacheExpiry) {
+    try {
+      const rows = await db.findAll('roles')
+      roleCache.clear()
+      for (const r of rows) roleCache.set(r.name, r)
+      cacheExpiry = now + CACHE_TTL
+    } catch { /* fallback to defaults below */ }
+  }
+  if (roleCache.has(name)) return roleCache.get(name)
+  // Fallback: hardcoded default if DB row missing (boot safety)
+  if (DEFAULT_ROLE_PERMISSIONS[name]) {
+    return { name, permissions: DEFAULT_ROLE_PERMISSIONS[name], level: ROLE_HIERARCHY[name] || 0, is_system: true }
+  }
+  return null
 }
+
+export function invalidateRoleCache() { roleCache.clear(); cacheExpiry = 0 }
 
 export function requireRole(...allowed) {
   return (req, res, next) => {
@@ -28,18 +49,23 @@ export function requireMinRole(minRole) {
 }
 
 export function requirePermission(module) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Authentication required' })
-    const userPerms = req.user.permissions || DEFAULT_PERMISSIONS[req.user.role] || []
-    if (!userPerms.includes(module)) {
+    const perms = await getUserPermissions(req.user)
+    if (!perms.includes(module)) {
       return res.status(403).json({ error: `Access denied: ${module}` })
     }
     next()
   }
 }
 
-export function getUserPermissions(user) {
-  if (user.role === 'superadmin') return DEFAULT_PERMISSIONS.superadmin
-  if (user.permissions && user.permissions.length > 0) return user.permissions
-  return DEFAULT_PERMISSIONS[user.role] || []
+// Async: returns the union of role.permissions + user.permissions (per-user overrides).
+// superadmin short-circuits to ALL_MODULES.
+export async function getUserPermissions(user) {
+  if (user.role === 'superadmin') return ALL_MODULES
+  const role = await getRole(user.role)
+  const rolePerms = role?.permissions || DEFAULT_ROLE_PERMISSIONS[user.role] || []
+  const userPerms = user.permissions || []
+  // Union (deduplicated)
+  return [...new Set([...rolePerms, ...userPerms])]
 }

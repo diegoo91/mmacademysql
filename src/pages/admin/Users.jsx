@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertCircle, CheckCircle2, Download, Edit, Key, Plus, Search, Shield, Trash2, X, ArrowRightLeft } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Download, Edit, Key, Lock, Unlock, Plus, Search, Shield, Trash2, X, ArrowRightLeft } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 
 function ConvertModal({ user, onClose, onDone }) {
@@ -86,6 +86,7 @@ function ConvertModal({ user, onClose, onDone }) {
 const ALL_MODULES = ['dashboard', 'bookings', 'schedule', 'players', 'results', 'users', 'imports', 'comments', 'conversions']
 
 function UserModal({ user, onClose, onSave }) {
+  const [roles, setRoles] = useState([])
   const [form, setForm] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -100,6 +101,10 @@ function UserModal({ user, onClose, onSave }) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    api.get('/roles').then(setRoles).catch(() => {})
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -161,16 +166,16 @@ function UserModal({ user, onClose, onSave }) {
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Role *</label>
               <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400">
-                <option value="player">Player</option>
-                <option value="coach">Coach</option>
-                <option value="admin">Admin</option>
-                <option value="superadmin">Super Admin</option>
+                {(roles.length > 0 ? roles : [{ name: 'player', display_name: 'Player' }, { name: 'coach', display_name: 'Coach' }, { name: 'admin', display_name: 'Admin' }, { name: 'superadmin', display_name: 'Super Admin' }]).map(r => (
+                  <option key={r.name} value={r.name}>{r.display_name}</option>
+                ))}
               </select>
             </div>
           </div>
-          {(form.role === 'admin' || form.role === 'coach') && (
+            {(form.role === 'admin' || form.role === 'coach') && (
             <div>
-              <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Module Access</label>
+              <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Module Access (per-user overrides)</label>
+              <p className="text-[11px] text-muted mb-2">Modules granted by the <strong>{form.role}</strong> role are shown in green. Extra checks below are per-user overrides on top of the role baseline.</p>
               <div className="grid grid-cols-3 gap-2">
                 {ALL_MODULES.map(mod => (
                   <button key={mod} type="button" onClick={() => togglePermission(mod)} className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
@@ -245,6 +250,7 @@ export default function Users() {
   const [resetResult, setResetResult] = useState(null)
   const [convertUser, setConvertUser] = useState(null)
   const [search, setSearch] = useState('')
+  const [lockConfirm, setLockConfirm] = useState(null)
 
   const fetchUsers = () => {
     setLoading(true)
@@ -268,6 +274,15 @@ export default function Users() {
       const data = await api.post(`/users/${id}/reset-password`)
       setResetConfirm(null)
       setResetResult(data)
+    } catch {}
+  }
+
+  const handleToggleStatus = async (user) => {
+    const newStatus = (user.account_status || 'active') === 'active' ? 'locked' : 'active'
+    try {
+      await api.patch(`/users/${user.id}/account-status`, { status: newStatus })
+      setLockConfirm(null)
+      fetchUsers()
     } catch {}
   }
 
@@ -316,6 +331,7 @@ export default function Users() {
                   <th className="text-left px-6 py-4 font-semibold">User</th>
                   <th className="text-left px-6 py-4 font-semibold">Email</th>
                   <th className="text-left px-6 py-4 font-semibold">Role</th>
+                  <th className="text-left px-6 py-4 font-semibold">Status</th>
                   <th className="text-left px-6 py-4 font-semibold">Joined</th>
                   <th className="text-center px-6 py-4 font-semibold">Used</th>
                   <th className="text-center px-6 py-4 font-semibold">Rem. Private</th>
@@ -348,6 +364,12 @@ export default function Users() {
                         {u.role}
                       </span>
                     </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${(u.account_status || 'active') === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                        {(u.account_status || 'active') === 'active' ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                        {(u.account_status || 'active') === 'active' ? 'Active' : 'Locked'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-muted text-xs">{new Date(u.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -375,6 +397,9 @@ export default function Users() {
                         {u.role === 'player' && <button onClick={() => setConvertUser(u)} className="p-2 text-muted hover:text-amber-400 hover:bg-amber-500/10 rounded-lg" title="Convert Balances"><ArrowRightLeft className="w-4 h-4" /></button>}
                         <button onClick={() => setEditUser(u)} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
                         <button onClick={() => setResetConfirm(u)} className="p-2 text-muted hover:text-amber-400 hover:bg-amber-500/10 rounded-lg" title="Reset Password"><Key className="w-4 h-4" /></button>
+                        <button onClick={() => setLockConfirm(u)} className={`p-2 text-muted ${(u.account_status || 'active') === 'active' ? 'hover:text-rose-400 hover:bg-rose-500/10' : 'hover:text-emerald-400 hover:bg-emerald-500/10'} rounded-lg`} title={(u.account_status || 'active') === 'active' ? 'Lock Account' : 'Unlock Account'}>
+                          {(u.account_status || 'active') === 'active' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                        </button>
                         <button onClick={() => setDeleteConfirm(u)} className="p-2 text-muted hover:text-rose-400 hover:bg-rose-500/10 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -409,7 +434,7 @@ export default function Users() {
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <Key className="w-12 h-12 text-amber-400 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-theme mb-2">Reset Password?</h3>
-            <p className="text-muted text-sm mb-6">A temporary password will be generated for {resetConfirm.name}.</p>
+            <p className="text-muted text-sm mb-6">A temporary password will be generated for {resetConfirm.name}. They will be required to change it on next login.</p>
             <div className="flex gap-3">
               <button onClick={() => setResetConfirm(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
               <button onClick={() => handleResetPassword(resetConfirm.id)} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-bold">Reset</button>
@@ -427,6 +452,26 @@ export default function Users() {
             <code className="block p-3 rounded-xl bg-surface border border-theme text-lime-400 font-mono text-lg font-bold mb-4">{resetResult.tempPassword}</code>
             <p className="text-muted text-xs mb-4">Share this password securely. The user will be forced to change it on next login.</p>
             <button onClick={() => setResetResult(null)} className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm">Done</button>
+          </div>
+        </div>
+      )}
+
+      {lockConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
+            {(lockConfirm.account_status || 'active') === 'active' ? <Lock className="w-12 h-12 text-rose-400 mx-auto mb-4" /> : <Unlock className="w-12 h-12 text-emerald-400 mx-auto mb-4" />}
+            <h3 className="text-lg font-bold text-theme mb-2">{(lockConfirm.account_status || 'active') === 'active' ? 'Lock Account?' : 'Unlock Account?'}</h3>
+            <p className="text-muted text-sm mb-6">
+              {(lockConfirm.account_status || 'active') === 'active'
+                ? `${lockConfirm.name} will not be able to log in until you unlock their account.`
+                : `Restore ${lockConfirm.name}'s access to the platform.`}
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setLockConfirm(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
+              <button onClick={() => handleToggleStatus(lockConfirm)} className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold ${(lockConfirm.account_status || 'active') === 'active' ? 'bg-rose-500 hover:bg-rose-400' : 'bg-emerald-500 hover:bg-emerald-400'}`}>
+                {(lockConfirm.account_status || 'active') === 'active' ? 'Lock' : 'Unlock'}
+              </button>
+            </div>
           </div>
         </div>
       )}

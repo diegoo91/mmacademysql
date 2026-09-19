@@ -3,6 +3,37 @@ import { AlertCircle, CheckCircle2, Download, Edit, FileUp, Plus, Search, Trash2
 import { api, downloadFile } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 
+function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
+  const [players, setPlayers] = useState([])
+
+  useEffect(() => {
+    api.get('/players?limit=500').then(data => setPlayers(data.players || [])).catch(() => {})
+  }, [])
+
+  return (
+    <select
+      value={value || ''}
+      onChange={e => {
+        const id = parseInt(e.target.value) || null
+        const name = e.target.options[e.target.selectedIndex]?.text || ''
+        onChange(name)
+        if (onSelect && id) {
+          const p = players.find(pl => pl.id === id)
+          onSelect(p || null)
+        } else {
+          onSelect(null)
+        }
+      }}
+      className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs"
+    >
+      <option value="">{placeholder || 'Select player'}</option>
+      {players.map(p => (
+        <option key={p.id} value={p.id}>{p.full_name || p.name}</option>
+      ))}
+    </select>
+  )
+}
+
 function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
   const { isAdmin } = useAuth()
   const admin = adminOverride !== undefined ? adminOverride : isAdmin
@@ -11,6 +42,8 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
     format: result?.format || 'short',
     sideA: result?.sideA || [''],
     sideB: result?.sideB || [''],
+    sideA_ids: result?.sideA_ids || [],
+    sideB_ids: result?.sideB_ids || [],
     score_a: result?.score_a ?? '',
     score_b: result?.score_b ?? '',
     court: result?.court || 1,
@@ -34,12 +67,21 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
     setForm({ ...form, [side]: arr })
   }
 
+  const updateSideId = (sideIds, idx, id) => {
+    const arr = [...form[sideIds]]
+    arr[idx] = id
+    setForm({ ...form, [sideIds]: arr })
+  }
+
   const addPlayer = (side) => {
-    if (form[side].length < 2) setForm({ ...form, [side]: [...form[side], ''] })
+    if (form[side].length < 2) setForm({ ...form, [side]: [...form[side], ''], [side === 'sideA' ? 'sideA_ids' : 'sideB_ids']: [...form[side === 'sideA' ? 'sideA_ids' : 'sideB_ids'], null] })
   }
 
   const removePlayer = (side, idx) => {
-    if (form[side].length > 1) setForm({ ...form, [side]: form[side].filter((_, i) => i !== idx) })
+    if (form[side].length > 1) {
+      const idsKey = side === 'sideA' ? 'sideA_ids' : 'sideB_ids'
+      setForm({ ...form, [side]: form[side].filter((_, i) => i !== idx), [idsKey]: form[idsKey].filter((_, i) => i !== idx) })
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -52,6 +94,8 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
         format: form.format,
         sideA: form.sideA.map(s => s.trim()).filter(Boolean),
         sideB: form.sideB.map(s => s.trim()).filter(Boolean),
+        sideA_ids: form.sideA_ids.filter(id => id != null),
+        sideB_ids: form.sideB_ids.filter(id => id != null),
         score_a: scoreA,
         score_b: scoreB,
         court: form.court,
@@ -113,8 +157,9 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
               <label className="block text-xs font-semibold text-lime-400 uppercase tracking-wider">Side A *</label>
               {form.sideA.map((name, i) => (
                 <div key={i} className="flex gap-1">
-                  <input type="text" value={name} onChange={e => updateSide('sideA', i, e.target.value)} required={i === 0} placeholder={`Player ${i + 1}`}
-                    className="flex-1 px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                  <div className="flex-1">
+                    <PlayerDropdown value={form.sideA_ids[i] || ''} onChange={val => updateSide('sideA', i, val)} onSelect={p => updateSideId('sideA_ids', i, p?.id || null)} placeholder={`Player ${i + 1}`} />
+                  </div>
                   {form.sideA.length > 1 && <button type="button" onClick={() => removePlayer('sideA', i)} className="px-2 text-rose-400 hover:text-rose-300"><X className="w-4 h-4" /></button>}
                 </div>
               ))}
@@ -124,8 +169,9 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
               <label className="block text-xs font-semibold text-rose-400 uppercase tracking-wider">Side B *</label>
               {form.sideB.map((name, i) => (
                 <div key={i} className="flex gap-1">
-                  <input type="text" value={name} onChange={e => updateSide('sideB', i, e.target.value)} required={i === 0} placeholder={`Player ${i + 1}`}
-                    className="flex-1 px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                  <div className="flex-1">
+                    <PlayerDropdown value={form.sideB_ids[i] || ''} onChange={val => updateSide('sideB', i, val)} onSelect={p => updateSideId('sideB_ids', i, p?.id || null)} placeholder={`Player ${i + 1}`} />
+                  </div>
                   {form.sideB.length > 1 && <button type="button" onClick={() => removePlayer('sideB', i)} className="px-2 text-rose-400 hover:text-rose-300"><X className="w-4 h-4" /></button>}
                 </div>
               ))}

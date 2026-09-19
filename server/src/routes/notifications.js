@@ -1,13 +1,13 @@
 import { Router } from 'express'
-import db from '../database.js'
+import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = Router()
 router.use(authenticate)
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const notifications = db.findAll('notifications', n => n.user_id === req.user.id)
+    const notifications = (await db.findAll('notifications', n => n.user_id === req.user.id))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 50)
     const unread = notifications.filter(n => !n.read).length
@@ -18,11 +18,11 @@ router.get('/', (req, res) => {
   }
 })
 
-router.put('/:id/read', (req, res) => {
+router.put('/:id/read', async (req, res) => {
   try {
-    const n = db.get('notifications', parseInt(req.params.id))
+    const n = await db.get('notifications', parseInt(req.params.id))
     if (!n || n.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' })
-    const updated = db.update('notifications', parseInt(req.params.id), { read: 1 })
+    const updated = await db.update('notifications', parseInt(req.params.id), { read: 1 })
     res.json(updated)
   } catch (err) {
     console.error('Read notification error:', err)
@@ -30,11 +30,11 @@ router.put('/:id/read', (req, res) => {
   }
 })
 
-router.put('/read-all', (req, res) => {
+router.put('/read-all', async (req, res) => {
   try {
-    const all = db.findAll('notifications', n => n.user_id === req.user.id && !n.read)
+    const all = await db.findAll('notifications', n => n.user_id === req.user.id && !n.read)
     for (const n of all) {
-      db.update('notifications', n.id, { read: 1 })
+      await db.update('notifications', n.id, { read: 1 })
     }
     res.json({ ok: true })
   } catch (err) {

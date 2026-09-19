@@ -1,17 +1,18 @@
 import { Router } from 'express'
-import db from '../database.js'
+import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
+import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const CATEGORIES = ['Court Booking Fees', 'Equipment', 'Salaries', 'Utilities', 'Other']
 const router = Router()
 router.use(authenticate)
 router.use(requireRole('superadmin', 'admin'))
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { from, to, category, page = 1, limit = 50 } = req.query
-    let all = db.findAll('expenses')
+    let all = await db.findAll('expenses')
     if (from) all = all.filter(e => e.date >= from)
     if (to) all = all.filter(e => e.date <= to)
     if (category) all = all.filter(e => e.category === category)
@@ -27,7 +28,7 @@ router.get('/', (req, res) => {
   }
 })
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { date, category, description, amount } = req.body
     if (!date || !category || !description || amount === undefined) {
@@ -36,9 +37,10 @@ router.post('/', (req, res) => {
     if (!CATEGORIES.includes(category)) return res.status(400).json({ error: `Invalid category. Must be: ${CATEGORIES.join(', ')}` })
     const amt = Number(amount)
     if (isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Amount must be a non-negative number' })
-    const expense = db.insert('expenses', {
+    const expense = await db.insert('expenses', {
       date, category, description, amount: amt, created_by: req.user.id,
     })
+    await auditCreate(req, 'expense', expense.id, { date, category, description, amount: amt })
     res.status(201).json(expense)
   } catch (err) {
     console.error('Create expense error:', err)
@@ -46,10 +48,10 @@ router.post('/', (req, res) => {
   }
 })
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id)
-    const existing = db.get('expenses', id)
+    const existing = await db.get('expenses', id)
     if (!existing) return res.status(404).json({ error: 'Expense not found' })
     const { date, category, description, amount } = req.body
     if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `Invalid category. Must be: ${CATEGORIES.join(', ')}` })
@@ -57,12 +59,13 @@ router.put('/:id', (req, res) => {
       const amt = Number(amount)
       if (isNaN(amt) || amt < 0) return res.status(400).json({ error: 'Amount must be a non-negative number' })
     }
-    const updated = db.update('expenses', id, {
+    const updated = await db.update('expenses', id, {
       date: date || existing.date,
       category: category || existing.category,
       description: description ?? existing.description,
       amount: amount !== undefined ? Number(amount) : existing.amount,
     })
+    await auditUpdate(req, 'expense', existing.id, { date: existing.date, category: existing.category, amount: existing.amount }, { date: updated.date, category: updated.category, amount: updated.amount })
     res.json(updated)
   } catch (err) {
     console.error('Update expense error:', err)
@@ -70,10 +73,12 @@ router.put('/:id', (req, res) => {
   }
 })
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    if (!db.get('expenses', parseInt(req.params.id))) return res.status(404).json({ error: 'Expense not found' })
-    db.remove('expenses', parseInt(req.params.id))
+    const expense = await db.get('expenses', parseInt(req.params.id))
+    if (!expense) return res.status(404).json({ error: 'Expense not found' })
+    await db.remove('expenses', parseInt(req.params.id))
+    await auditDelete(req, 'expense', expense.id, { date: expense.date, category: expense.category, description: expense.description, amount: expense.amount })
     res.json({ ok: true })
   } catch (err) {
     console.error('Delete expense error:', err)

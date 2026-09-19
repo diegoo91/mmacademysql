@@ -1,9 +1,9 @@
-// Boot-time admin ensure: creates or updates the admin account from env vars.
-// This is NON-DESTRUCTIVE — it only touches the admin user, never wipes slots/data.
+// Boot-time admin ensure: creates the admin account if it doesn't exist.
+// This is CREATE-ONLY — it never overwrites password/role on existing accounts.
 // Used on Railway so a login is always available after a fresh deploy.
 
 import bcrypt from 'bcryptjs'
-import db from './db/index.js'
+import db from './db.js'
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@mmpadel.com'
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
@@ -15,23 +15,20 @@ export async function ensureAdmin() {
     return
   }
 
-  const maybe = db.find('users', u => u.email === ADMIN_EMAIL)
-  const existing = maybe && typeof maybe.then === 'function' ? await maybe : maybe
+  const existing = await db.find('users', u => u.email === ADMIN_EMAIL)
   if (existing) {
-    const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12)
-    const eid = existing.user_id ?? existing.id
-    await db.update('users', eid, { password_hash: hash, role: 'superadmin', name: ADMIN_NAME })
-    console.log(`ensure-admin: updated ${ADMIN_EMAIL} (user_id=${eid})`)
-  } else {
-    const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12)
-    const created = await db.insert('users', {
-      name: ADMIN_NAME, email: ADMIN_EMAIL, phone: '', dob: '',
-      password_hash: hash, role: 'superadmin', skill_level: 'Intermediate',
-      member_since: new Date().getFullYear().toString(),
-      force_password_change: 0,
-      notes: '', private_balance: 0, group_balance: 0, is_claimed: true,
-      member_code: '001',
-    })
-    console.log(`ensure-admin: created ${ADMIN_EMAIL} (user_id=${created?.user_id ?? created?.id})`)
+    console.log(`ensure-admin: ${ADMIN_EMAIL} already exists (id=${existing.id}) — no changes`)
+    return
   }
+
+  const hash = await bcrypt.hash(ADMIN_PASSWORD, 12)
+  const user = await db.insert('users', {
+    name: ADMIN_NAME, email: ADMIN_EMAIL, phone: '', dob: '',
+    password_hash: hash, role: 'superadmin', skill_level: 'Intermediate',
+    member_since: new Date().getFullYear().toString(),
+    force_password_change: 0,
+    notes: '', private_balance: 0, group_balance: 0, is_claimed: true,
+    member_code: '001',
+  })
+  console.log(`ensure-admin: created ${ADMIN_EMAIL} (id=${user.id}) [${db.backend}]`)
 }

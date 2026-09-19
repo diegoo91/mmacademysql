@@ -1,13 +1,24 @@
 import jwt from 'jsonwebtoken'
-import { generateJti, isRefreshTokenRevoked } from './token-revocation.js'
+import { randomBytes } from 'crypto'
 
 const ACCESS_SECRET = process.env.JWT_SECRET
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET
-const ACCESS_EXPIRES = process.env.ACCESS_TOKEN_EXPIRES || '15m'
-const REFRESH_EXPIRES = process.env.REFRESH_TOKEN_EXPIRES || '7d'
+const ACCESS_EXPIRES = process.env.ACCESS_TOKEN_EXPIRES || '1d'
+const REFRESH_EXPIRES = process.env.REFRESH_TOKEN_EXPIRES || '30d'
 
 if (!ACCESS_SECRET || !REFRESH_SECRET) {
   throw new Error('JWT_SECRET and JWT_REFRESH_SECRET env vars are required')
+}
+
+// Parse duration string like "1d", "30d", "15m", "7d2h" to milliseconds
+export function parseDuration(str) {
+  if (typeof str === 'number') return str
+  const match = String(str).match(/^(\d+)\s*(s|m|h|d|w)$/i)
+  if (!match) return 30 * 24 * 60 * 60 * 1000 // fallback 30 days
+  const n = parseInt(match[1])
+  const unit = match[2].toLowerCase()
+  const mult = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 }
+  return n * (mult[unit] || mult.d)
 }
 
 export function signAccessToken(user) {
@@ -19,8 +30,12 @@ export function signAccessToken(user) {
 }
 
 export function signRefreshToken(user) {
-  const jti = generateJti()
-  return { token: jwt.sign({ id: user.id, jti }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES }), jti }
+  const expiresMs = parseDuration(REFRESH_EXPIRES)
+  const expiresAt = Date.now() + expiresMs
+  return {
+    token: jwt.sign({ id: user.id, jti: randomBytes(16).toString('hex') }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES }),
+    expiresAt,
+  }
 }
 
 export function verifyAccessToken(token) {
@@ -28,11 +43,7 @@ export function verifyAccessToken(token) {
 }
 
 export function verifyRefreshToken(token) {
-  const payload = jwt.verify(token, REFRESH_SECRET)
-  if (payload.jti && isRefreshTokenRevoked(payload.jti)) {
-    throw new Error('Refresh token revoked')
-  }
-  return payload
+  return jwt.verify(token, REFRESH_SECRET)
 }
 
 export function cookieOptions(maxAge) {
@@ -45,3 +56,5 @@ export function cookieOptions(maxAge) {
     maxAge,
   }
 }
+
+export { REFRESH_EXPIRES }

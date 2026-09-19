@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, ChevronLeft, ClipboardList, DollarSign, FileUp, LayoutDashboard, LogOut, Menu, MessageSquare, PieChart, Shield, Users, UserX, X, CalendarClock } from 'lucide-react'
+import { BarChart3, ChevronLeft, ClipboardList, DollarSign, FileUp, LayoutDashboard, LogOut, Menu, MessageSquare, PieChart, Shield, Users, UserX, X, CalendarClock, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const ALL_SIDEBAR_LINKS = [
@@ -10,6 +10,7 @@ const ALL_SIDEBAR_LINKS = [
   { name: 'Players', path: '/admin/players', icon: Users, roles: ['superadmin', 'admin', 'coach'] },
   { name: 'Results', path: '/admin/results', icon: BarChart3, roles: ['superadmin', 'admin'] },
   { name: 'Users', path: '/admin/users', icon: UserX, roles: ['superadmin'] },
+  { name: 'Roles', path: '/admin/roles', icon: ShieldCheck, roles: ['superadmin'] },
   { name: 'Imports', path: '/admin/imports', icon: FileUp, roles: ['superadmin', 'admin'] },
   { name: 'Comments', path: '/admin/comments', icon: MessageSquare, roles: ['superadmin', 'admin'] },
   { name: 'Expenses', path: '/admin/expenses', icon: DollarSign, roles: ['superadmin', 'admin'] },

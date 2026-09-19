@@ -1,9 +1,39 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, Clock, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key } from 'lucide-react'
+import { Camera, Clock, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key, BarChart3 } from 'lucide-react'
 import { api, fileUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
-import PlayerSearchInput from '../components/PlayerSearchInput'
+
+function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
+  const [players, setPlayers] = useState([])
+
+  useEffect(() => {
+    api.get('/players?limit=500').then(data => setPlayers(data.players || [])).catch(() => {})
+  }, [])
+
+  return (
+    <select
+      value={value || ''}
+      onChange={e => {
+        const id = parseInt(e.target.value) || null
+        const name = e.target.options[e.target.selectedIndex]?.text || ''
+        onChange(name)
+        if (onSelect && id) {
+          const p = players.find(pl => pl.id === id)
+          onSelect(p || null)
+        } else {
+          onSelect(null)
+        }
+      }}
+      className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs"
+    >
+      <option value="">{placeholder || 'Select player'}</option>
+      {players.map(p => (
+        <option key={p.id} value={p.id}>{p.full_name || p.name}</option>
+      ))}
+    </select>
+  )
+}
 
 export default function Profile() {
   const { user, setUser } = useAuth()
@@ -22,14 +52,16 @@ export default function Profile() {
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [pwSaving, setPwSaving] = useState(false)
   const [pwMsg, setPwMsg] = useState('')
+  const [coachHours, setCoachHours] = useState(null)
+  const [coachBalance, setCoachBalance] = useState(null)
+  const [coachHoursLoading, setCoachHoursLoading] = useState(false)
 
   const fetchMySlots = () => {
     if (!user) return
     setSlotsLoading(true)
-    // Fetch all slots and filter to this player's slots that need action
     const today = new Date()
     const from = new Date(today)
-    from.setDate(today.getDate() - 30)
+    from.setDate(today.getDate() - 365)
     const to = new Date(today)
     to.setDate(today.getDate() + 30)
     api.get(`/slots?from=${from.toISOString().slice(0, 10)}&to=${to.toISOString().slice(0, 10)}`)
@@ -38,8 +70,7 @@ export default function Profile() {
         const mine = (Array.isArray(data) ? data : []).filter(s => {
           const matchesUser = s.user_id === user.id
           const matchesName = name && s.player_text && s.player_text.split(/\s*\/\s*/)[0].trim().toLowerCase() === name
-          if (!matchesUser && !matchesName) return false
-          return ['schedule_approved', 'payment_pending', 'payment_approved', 'player_confirmed'].includes(s.status)
+          return matchesUser || matchesName
         })
         setMySlots(mine)
       })
@@ -61,6 +92,16 @@ export default function Profile() {
       })
       .catch(() => {})
     fetchMySlots()
+    if (user.role === 'coach') {
+      setCoachHoursLoading(true)
+      Promise.all([
+        api.get('/reports/coach-hours/my').catch(() => null),
+        api.get('/reports/coach-balance/my').catch(() => null),
+      ]).then(([hours, balance]) => {
+        if (hours) setCoachHours(hours)
+        if (balance) setCoachBalance(balance)
+      }).finally(() => setCoachHoursLoading(false))
+    }
   }, [user])
 
   const handleConfirmSlot = async (slotId) => {
@@ -115,8 +156,8 @@ export default function Profile() {
         setPwSaving(false)
         return
       }
-      if (pwForm.newPassword.length < 8) {
-        setPwMsg('New password must be at least 8 characters')
+      if (pwForm.newPassword.length < 10) {
+        setPwMsg('New password must be at least 10 characters')
         setPwSaving(false)
         return
       }
@@ -285,6 +326,52 @@ export default function Profile() {
           ))}
         </div>
 
+        {/* Coach My Hours & Balance Panel */}
+        {user?.role === 'coach' && (
+          <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
+            <h2 className="font-heading text-xl font-extrabold text-theme mb-4 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-lime-400" /> My Hours
+            </h2>
+            {coachHoursLoading ? (
+              <div className="flex justify-center py-6"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+            ) : (
+              <>
+                {coachBalance && (
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="p-4 rounded-2xl bg-lime-400/10 border border-lime-400/30 text-center">
+                      <div className="font-heading text-2xl font-black text-lime-400">{coachBalance.total_earned}</div>
+                      <div className="text-[10px] font-semibold text-muted uppercase tracking-wider">Earned (h)</div>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-emerald-400/10 border border-emerald-400/30 text-center">
+                      <div className="font-heading text-2xl font-black text-emerald-400">{coachBalance.total_paid}</div>
+                      <div className="text-[10px] font-semibold text-muted uppercase tracking-wider">Paid (h)</div>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-center">
+                      <div className="font-heading text-2xl font-black text-amber-400">{coachBalance.balance}</div>
+                      <div className="text-[10px] font-semibold text-muted uppercase tracking-wider">Balance (h)</div>
+                    </div>
+                  </div>
+                )}
+                {coachHours && coachHours.hours && coachHours.hours.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {coachHours.hours.map((h, i) => (
+                      <div key={i} className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-theme/50 text-xs">
+                        <span className="font-mono text-muted">{h.date}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-theme">{h.hours}h</span>
+                          {h.notes && <span className="text-muted">· {h.notes}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted text-center py-6">No hours recorded yet.</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* My Slots Awaiting Action */}
         {user?.role === 'player' && (
           <MySlotsPanel
@@ -292,6 +379,14 @@ export default function Profile() {
             loading={slotsLoading}
             onConfirm={handleConfirmSlot}
             onDecline={handleDeclineSlot}
+          />
+        )}
+
+        {/* Session History */}
+        {user?.role === 'player' && (
+          <SessionHistoryPanel
+            slots={mySlots}
+            loading={slotsLoading}
           />
         )}
 
@@ -337,7 +432,7 @@ export default function Profile() {
                           {statusLabels[b.status] || b.status}
                         </span>
                       </div>
-                      <p className="text-xs text-muted capitalize">{b.session_type} — {sessionCount} session{sessionCount === 1 ? '' : 's'} — {Number(b.total).toLocaleString()} EGP</p>
+                      <p className="text-xs text-muted capitalize">{b.session_type || 'Session'} — {sessionCount} session{sessionCount === 1 ? '' : 's'} — {Number(b.total).toLocaleString()} EGP</p>
                       <p className="text-[11px] text-muted mt-0.5">{b.created_at?.slice(0, 10)}</p>
                     </div>
                   </div>
@@ -443,6 +538,8 @@ function PlayerResultModal({ user, onClose, onSaved }) {
     format: 'short',
     sideA: [user?.name || ''],
     sideB: [''],
+    sideA_ids: [user?.id || null],
+    sideB_ids: [],
     score_a: '',
     score_b: '',
     court: 1,
@@ -463,12 +560,21 @@ function PlayerResultModal({ user, onClose, onSaved }) {
     setForm({ ...form, [side]: arr })
   }
 
+  const updateSideId = (sideIds, idx, id) => {
+    const arr = [...form[sideIds]]
+    arr[idx] = id
+    setForm({ ...form, [sideIds]: arr })
+  }
+
   const addPlayer = (side) => {
-    if (form[side].length < 2) setForm({ ...form, [side]: [...form[side], ''] })
+    if (form[side].length < 2) setForm({ ...form, [side]: [...form[side], ''], [side === 'sideA' ? 'sideA_ids' : 'sideB_ids']: [...form[side === 'sideA' ? 'sideA_ids' : 'sideB_ids'], null] })
   }
 
   const removePlayer = (side, idx) => {
-    if (form[side].length > 1) setForm({ ...form, [side]: form[side].filter((_, i) => i !== idx) })
+    if (form[side].length > 1) {
+      const idsKey = side === 'sideA' ? 'sideA_ids' : 'sideB_ids'
+      setForm({ ...form, [side]: form[side].filter((_, i) => i !== idx), [idsKey]: form[idsKey].filter((_, i) => i !== idx) })
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -481,6 +587,8 @@ function PlayerResultModal({ user, onClose, onSaved }) {
         format: form.format,
         sideA: form.sideA.map(s => s.trim()).filter(Boolean),
         sideB: form.sideB.map(s => s.trim()).filter(Boolean),
+        sideA_ids: form.sideA_ids.filter(id => id != null),
+        sideB_ids: form.sideB_ids.filter(id => id != null),
         score_a: scoreA,
         score_b: scoreB,
         court: form.court,
@@ -536,7 +644,7 @@ function PlayerResultModal({ user, onClose, onSaved }) {
               {form.sideA.map((name, i) => (
                 <div key={i} className="flex gap-1">
                   <div className="flex-1">
-                    <PlayerSearchInput value={name} onChange={val => updateSide('sideA', i, val)} placeholder="Player name" />
+                    <PlayerDropdown value={form.sideA_ids[i] || ''} onChange={val => updateSide('sideA', i, val)} onSelect={p => updateSideId('sideA_ids', i, p?.id || null)} placeholder="Player name" />
                   </div>
                   {form.sideA.length > 1 && <button type="button" onClick={() => removePlayer('sideA', i)} className="px-2 text-rose-400 hover:text-rose-300">&times;</button>}
                 </div>
@@ -548,7 +656,7 @@ function PlayerResultModal({ user, onClose, onSaved }) {
               {form.sideB.map((name, i) => (
                 <div key={i} className="flex gap-1">
                   <div className="flex-1">
-                    <PlayerSearchInput value={name} onChange={val => updateSide('sideB', i, val)} placeholder="Opponent name" />
+                    <PlayerDropdown value={form.sideB_ids[i] || ''} onChange={val => updateSide('sideB', i, val)} onSelect={p => updateSideId('sideB_ids', i, p?.id || null)} placeholder="Opponent name" />
                   </div>
                   {form.sideB.length > 1 && <button type="button" onClick={() => removePlayer('sideB', i)} className="px-2 text-rose-400 hover:text-rose-300">&times;</button>}
                 </div>
@@ -596,12 +704,13 @@ function PlayerResultModal({ user, onClose, onSaved }) {
 
 function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
   if (loading) return null
-  if (slots.length === 0) return null
+  const activeSlots = slots.filter(s => ['schedule_approved', 'payment_pending', 'payment_approved', 'player_confirmed'].includes(s.status))
+  if (activeSlots.length === 0) return null
 
-  const scheduleApproved = slots.filter(s => s.status === 'schedule_approved')
-  const paymentPending = slots.filter(s => s.status === 'payment_pending')
-  const paymentApproved = slots.filter(s => s.status === 'payment_approved')
-  const playerConfirmed = slots.filter(s => s.status === 'player_confirmed')
+  const scheduleApproved = activeSlots.filter(s => s.status === 'schedule_approved')
+  const paymentPending = activeSlots.filter(s => s.status === 'payment_pending')
+  const paymentApproved = activeSlots.filter(s => s.status === 'payment_approved')
+  const playerConfirmed = activeSlots.filter(s => s.status === 'player_confirmed')
 
   return (
     <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
@@ -614,8 +723,8 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-purple-400 uppercase">Awaiting Your Confirmation ({scheduleApproved.length})</p>
           {scheduleApproved.map(slot => (
             <div key={slot.id} className="p-4 rounded-2xl bg-purple-400/5 border border-purple-400/20">
-              <p className="text-sm font-bold text-theme mb-1">
-                {slot.session_type === 'group' ? 'Group' : 'Private'} Session
+              <p className="text-sm font-bold text-theme mb-1 capitalize">
+                {slot.session_type || 'Private'} Session
               </p>
               <p className="text-xs text-muted mb-3">
                 {slot.date} at {slot.time} — Court {slot.court}
@@ -644,7 +753,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-blue-400 uppercase">Payment Approved — Awaiting Schedule Approval ({paymentApproved.length})</p>
           {paymentApproved.map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-blue-400/5 border border-blue-400/20 text-xs text-muted">
-              {slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'session'}
+              {slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'Private'}
             </div>
           ))}
         </div>
@@ -655,7 +764,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-amber-400 uppercase">Payment Pending Review ({paymentPending.length})</p>
           {paymentPending.map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-amber-400/5 border border-amber-400/20 text-xs text-muted">
-              {slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'session'}
+              {slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'Private'}
             </div>
           ))}
         </div>
@@ -666,12 +775,54 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-emerald-400 uppercase">Confirmed Sessions ({playerConfirmed.length})</p>
           {playerConfirmed.sort((a, b) => b.date.localeCompare(a.date)).map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-emerald-400/5 border border-emerald-400/20 text-xs text-muted flex justify-between items-center">
-              <span>{slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'session'}</span>
+              <span>{slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'Private'}</span>
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             </div>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+const SESSION_HISTORY_STATUS = {
+  player_confirmed: { label: 'Confirmed', color: 'bg-emerald-400/20 text-emerald-400' },
+  schedule_approved: { label: 'Awaiting Confirmation', color: 'bg-purple-400/20 text-purple-400' },
+  payment_approved: { label: 'Payment Approved', color: 'bg-blue-400/20 text-blue-400' },
+  payment_pending: { label: 'Payment Pending', color: 'bg-amber-400/20 text-amber-400' },
+  available: { label: 'Available', color: 'bg-lime-400/20 text-lime-400' },
+  cancelled: { label: 'Cancelled', color: 'bg-rose-400/20 text-rose-400' },
+  denied: { label: 'Denied', color: 'bg-rose-400/20 text-rose-400' },
+}
+
+function SessionHistoryPanel({ slots, loading }) {
+  if (loading) return null
+  const pastSlots = slots
+    .filter(s => s.date <= new Date().toISOString().slice(0, 10) || ['player_confirmed', 'cancelled', 'denied'].includes(s.status))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
+  if (pastSlots.length === 0) return null
+
+  return (
+    <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
+      <h2 className="font-heading text-xl font-extrabold text-theme mb-4 flex items-center gap-2">
+        <Clock className="w-5 h-5 text-lime-400" /> Session History
+      </h2>
+      <div className="space-y-2">
+        {pastSlots.map(slot => {
+          const st = SESSION_HISTORY_STATUS[slot.status] || { label: slot.status, color: 'bg-surface text-muted' }
+          return (
+            <div key={slot.id} className="p-3 rounded-xl bg-surface/80 border border-theme flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-3">
+                <span className="font-bold text-theme">{slot.date}</span>
+                <span className="text-muted">{slot.time}</span>
+                <span className="text-muted">Court {slot.court}</span>
+                <span className="text-lime-400 font-bold capitalize">{slot.session_type || 'Session'}</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${st.color}`}>{st.label}</span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

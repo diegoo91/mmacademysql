@@ -54,13 +54,14 @@ function DateRangeSelector({ preset, setPreset, from, setFrom, to, setTo }) {
 }
 
 export default function Reports() {
-  const { isSuperAdmin } = useAuth()
+  const { isAdmin } = useAuth()
   const [preset, setPreset] = useState('month')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [coachHours, setCoachHours] = useState(null)
+  const [coachBalance, setCoachBalance] = useState(null)
 
   const fetchReport = () => {
     setLoading(true)
@@ -73,7 +74,7 @@ export default function Reports() {
     api.get(`/reports/summary?${params}`).then(setData).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchReport(); if (isSuperAdmin) fetchCoachHours() }, [preset, from, to])
+  useEffect(() => { fetchReport(); if (isAdmin) { fetchCoachHours(); fetchCoachBalance() } }, [preset, from, to])
 
   const fetchCoachHours = () => {
     const params = new URLSearchParams()
@@ -83,6 +84,10 @@ export default function Reports() {
       if (to) params.set('to', to)
     }
     api.get(`/reports/coach-hours?${params}`).then(setCoachHours).catch(() => {})
+  }
+
+  const fetchCoachBalance = () => {
+    api.get('/reports/coach-balance').then(setCoachBalance).catch(() => {})
   }
 
   return (
@@ -290,30 +295,80 @@ export default function Reports() {
             )}
           </div>
 
-          {isSuperAdmin && coachHours && (
+          {isAdmin && coachHours && (
             <div className="glass-panel rounded-2xl p-6 border border-theme">
               <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5 text-lime-400" /> Coach Hours
                 <button onClick={() => {
+                  const rows = []
+                  for (const c of (coachHours.coachHours || [])) {
+                    for (const d of (c.days || [])) {
+                      rows.push([c.name, d.date, d.hours, d.notes || ''])
+                    }
+                  }
                   const range = preset === 'custom' ? `${from || 'start'}_to_${to || 'end'}` : preset
-                  downloadCSV(`coach_hours_${range}.csv`, ['Coach', 'Hours (Slots)'],
-                    (coachHours.coachHours || []).map(c => [c.name, c.hours])
-                  )
+                  downloadCSV(`coach_hours_${range}.csv`, ['Coach', 'Date', 'Hours', 'Notes'], rows)
                 }} className="ml-auto px-2 py-1 rounded-lg text-[10px] font-bold text-muted hover:text-lime-400 hover:bg-lime-400/10 flex items-center gap-1">
                   <Download className="w-3 h-3" /> CSV
                 </button>
               </h3>
               {(!coachHours.coachHours || coachHours.coachHours.length === 0) ? (
-                <p className="text-sm text-muted text-center py-4">No coach assignments in this period.</p>
+                <p className="text-sm text-muted text-center py-4">No coach hours in this period.</p>
               ) : (
-                <div className="max-h-80 overflow-y-auto space-y-2">
+                <div className="space-y-4">
                   {coachHours.coachHours.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-theme/50">
+                    <div key={i} className="rounded-xl bg-white/50 dark:bg-slate-900/50 border border-theme/50 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-lime-400/20 text-lime-400 flex items-center justify-center font-bold text-xs">{c.name.charAt(0)}</div>
+                          <span className="font-semibold text-theme text-sm">{c.name}</span>
+                        </div>
+                        <span className="px-3 py-1 rounded-full bg-lime-400/10 text-lime-400 text-xs font-bold">{c.hours} total hours</span>
+                      </div>
+                      {c.days && c.days.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                          {c.days.map((d, j) => (
+                            <div key={j} className="px-3 py-2 rounded-lg bg-surface border border-theme text-xs">
+                              <div className="font-mono text-muted">{d.date}</div>
+                              <div className="font-bold text-theme mt-0.5">{d.hours}h {d.notes && <span className="text-muted font-normal">· {d.notes}</span>}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {isAdmin && coachBalance && (
+            <div className="glass-panel rounded-2xl p-6 border border-theme">
+              <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-lime-400" /> Coach Balances (Payroll)
+                <button onClick={() => {
+                  const rows = (coachBalance.balances || []).map(c => [c.name, c.total_earned, c.total_paid, c.balance])
+                  downloadCSV(`coach_balances.csv`, ['Coach', 'Total Earned (h)', 'Total Paid (h)', 'Balance (h)'], rows)
+                }} className="ml-auto px-2 py-1 rounded-lg text-[10px] font-bold text-muted hover:text-lime-400 hover:bg-lime-400/10 flex items-center gap-1">
+                  <Download className="w-3 h-3" /> CSV
+                </button>
+              </h3>
+              {(!coachBalance.balances || coachBalance.balances.length === 0) ? (
+                <p className="text-sm text-muted text-center py-4">No coaches found.</p>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-2">
+                  {coachBalance.balances.map((c, i) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-theme/50">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-lime-400/20 text-lime-400 flex items-center justify-center font-bold text-xs">{c.name.charAt(0)}</div>
-                        <span className="font-semibold text-theme text-sm">{c.name}</span>
+                        <div>
+                          <span className="font-semibold text-theme text-sm">{c.name}</span>
+                          <div className="text-[10px] text-muted">Earned: {c.total_earned}h · Paid: {c.total_paid}h</div>
+                        </div>
                       </div>
-                      <span className="px-3 py-1 rounded-full bg-lime-400/10 text-lime-400 text-xs font-bold">{c.hours} hours</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${c.balance > 0 ? 'bg-amber-400/10 text-amber-400' : 'bg-emerald-400/10 text-emerald-400'}`}>
+                        {c.balance}h owed
+                      </span>
                     </div>
                   ))}
                 </div>

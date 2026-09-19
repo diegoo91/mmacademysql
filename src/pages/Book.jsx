@@ -152,7 +152,8 @@ export default function Book() {
         })
         navigate('/profile')
       } catch (err) {
-        if (err.message?.includes('Insufficient balance')) {
+        // Hard block: insufficient balance → route to payment, no override for players
+        if (err.message?.includes('Insufficient balance') || err.message?.includes('INSUFFICIENT_BALANCE')) {
           navigate('/payment', { state: { sessionType, mode, sessions: activeSessions, totalPrice, sessionCount } })
         } else {
           alert(err.message || 'Failed to book from balance')
@@ -161,6 +162,7 @@ export default function Book() {
       setBookingFromBalance(false)
       return
     }
+    // Hard block: no balance available → route to payment
     navigate('/payment', {
       state: { sessionType, mode, sessions: activeSessions, totalPrice, sessionCount },
     })

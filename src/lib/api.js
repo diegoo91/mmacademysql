@@ -77,6 +77,7 @@ export const api = {
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body),
   put: (path, body) => request('PUT', path, body),
+  patch: (path, body) => request('PATCH', path, body),
   del: (path) => request('DELETE', path),
   upload: (path, formData) => request('POST', path, formData),
 }
@@ -104,14 +105,25 @@ export async function getMe() {
 
 export async function initAuth() {
   const token = getToken()
-  if (!token) return null
-  try {
-    const data = await getMe()
-    return data.user
-  } catch {
-    clearToken()
-    return null
+  // If we have an access token, try /me first
+  if (token) {
+    try {
+      const data = await getMe()
+      return data.user
+    } catch {
+      clearToken()
+    }
   }
+  // Either no access token or /me failed — try cookie-based refresh
+  try {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      const data = await getMe()
+      return data.user
+    }
+  } catch { /* ignore */ }
+  clearToken()
+  return null
 }
 
 export async function downloadFile(path) {

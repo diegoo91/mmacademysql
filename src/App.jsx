@@ -23,6 +23,7 @@ import ScheduleManager from './pages/admin/ScheduleManager'
 import Expenses from './pages/admin/Expenses'
 import Reports from './pages/admin/Reports'
 import Payments from './pages/admin/Payments'
+import Roles from './pages/admin/Roles'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -42,7 +43,7 @@ function ForcePasswordChange() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (newPassword.length < 10) { setError('Password must be at least 10 characters'); return }
     if (newPassword !== confirm) { setError('Passwords do not match'); return }
     setSaving(true)
     try {
@@ -134,6 +135,11 @@ function AppRoutes() {
           <Route path="users" element={
             <ProtectedRoute roles={['superadmin']}>
               <Users />
+            </ProtectedRoute>
+          } />
+          <Route path="roles" element={
+            <ProtectedRoute roles={['superadmin']}>
+              <Roles />
             </ProtectedRoute>
           } />
           <Route path="imports" element={

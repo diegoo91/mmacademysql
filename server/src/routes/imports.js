@@ -5,9 +5,11 @@ import ExcelJS from 'exceljs'
 import { fileURLToPath } from 'url'
 import { dirname, join, extname } from 'path'
 import { randomBytes } from 'crypto'
-import db from '../database.js'
+import { unlinkSync } from 'fs'
+import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
+import { auditCreate } from '../middleware/audit.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -88,7 +90,7 @@ const TEMPLATES = {
       else if (isNaN(parseInt(row.score_b))) errors.push('score_b must be a number')
       return errors
     },
-    commit(rows, batchId) {
+    async commit(rows, batchId) {
       let count = 0
       for (const r of rows) {
         const sideA = r.side_a.split('/').map(n => n.trim()).filter(Boolean)
@@ -97,9 +99,22 @@ const TEMPLATES = {
         const sb = parseInt(r.score_b) || 0
         const winnerSide = sa > sb ? 'A' : sb > sa ? 'B' : null
 
-        db.insert('results', {
+        const resolveIds = async (names) => {
+          const ids = []
+          for (const name of names) {
+            const user = await db.find('users', u => (u.name || '').toLowerCase() === name.toLowerCase())
+            ids.push(user ? user.id : null)
+          }
+          return ids
+        }
+        const sideA_ids = await resolveIds(sideA)
+        const sideB_ids = await resolveIds(sideB)
+
+        await db.insert('results', {
           date: r.date.trim(),
           format: r.format.trim(),
+          sideA, sideB,
+          sideA_ids, sideB_ids,
           side_a: sideA.join(' / '),
           side_b: sideB.join(' / '),
           score_a: sa,
@@ -142,10 +157,10 @@ const TEMPLATES = {
       if (row.session_type && !['private', 'group'].includes(row.session_type)) errors.push('session_type must be private or group')
       return errors
     },
-    commit(rows) {
+    async commit(rows) {
       let count = 0
       for (const r of rows) {
-        db.upsert('slots', ['date', 'time', 'court'], {
+        await db.upsert('slots', ['date', 'time', 'court'], {
           date: r.date.trim(),
           time: r.time.trim(),
           court: parseInt(r.court),
@@ -178,12 +193,12 @@ const TEMPLATES = {
       if (row.payment_method && !['cash', 'card', 'transfer', 'other'].includes(row.payment_method)) errors.push('payment_method must be cash, card, transfer, or other')
       return errors
     },
-    commit(rows) {
+    async commit(rows) {
       let count = 0
       for (const r of rows) {
-        const booking = db.find('users', b => b.ref === r.ref.trim()) || db.find('bookings', b => b.ref === r.ref.trim())
+        const booking = await db.find('users', b => b.ref === r.ref.trim()) || await db.find('bookings', b => b.ref === r.ref.trim())
         if (booking) {
-          db.update('bookings', booking.id, {
+          await db.update('bookings', booking.id, {
             amount_paid: parseFloat(r.amount_paid) || 0,
             payment_method: r.payment_method || 'other',
             payment_date: r.payment_date || new Date().toISOString().slice(0, 10),
@@ -223,10 +238,10 @@ const TEMPLATES = {
       if (row.paid && !['0', '1'].includes(row.paid)) errors.push('paid must be 0 or 1')
       return errors
     },
-    commit(rows, batchId) {
+    async commit(rows, batchId) {
       let count = 0
       for (const r of rows) {
-        db.insert('bookings', {
+        await db.insert('bookings', {
           player_name: r.player_name.trim(),
           session_type: r.session_type.trim(),
           sessions: r.sessions || '',
@@ -261,13 +276,13 @@ const TEMPLATES = {
       if (row.dob && !/^\d{4}-\d{2}-\d{2}$/.test(row.dob)) errors.push('dob must be YYYY-MM-DD')
       return errors
     },
-    commit(rows) {
+    async commit(rows) {
       let count = 0
       for (const r of rows) {
         if (!r.email?.trim()) continue
-        const existing = db.find('users', u => u.email.toLowerCase().trim() === r.email.toLowerCase().trim())
+        const existing = await db.find('users', u => u.email.toLowerCase().trim() === r.email.toLowerCase().trim())
         if (existing) continue
-        db.insert('users', {
+        await db.insert('users', {
           name: r.full_name.trim(),
           email: r.email.trim().toLowerCase(),
           phone: r.phone || '',
@@ -410,13 +425,15 @@ router.get('/template/:key', async (req, res) => {
   }
 })
 
-router.post('/:kind/preview', upload.single('file'), (req, res) => {
+router.post('/:kind/preview', upload.single('file'), async (req, res) => {
   try {
     const { kind } = req.params
     const tmpl = TEMPLATES[kind]
     if (!tmpl) return res.status(400).json({ error: 'Unknown import kind' })
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
     const wb = XLSX.readFile(req.file.path)
+    // Delete uploaded file immediately after parsing (no reason to keep it on disk)
+    try { unlinkSync(req.file.path) } catch { /* ignore */ }
     const ws = wb.Sheets[wb.SheetNames[0]]
     const data = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
     if (data.length === 0) return res.status(400).json({ error: 'File is empty' })
@@ -493,7 +510,7 @@ router.post('/:kind/preview', upload.single('file'), (req, res) => {
   }
 })
 
-router.post('/:kind/commit', (req, res) => {
+router.post('/:kind/commit', async (req, res) => {
   try {
     const { kind } = req.params
     const { rows, filename } = req.body
@@ -520,8 +537,9 @@ router.post('/:kind/commit', (req, res) => {
 
     let errorCount = 0
     for (const row of processedRows) { if (tmpl.validate(row).length) errorCount++ }
-    const batch = db.insert('import_batches', { kind, filename: filename || 'unknown.xlsx', row_count: processedRows.length, error_count: errorCount, by_user: req.user.id, status: 'committed' })
-    const inserted = tmpl.commit(processedRows, batch.id)
+    const batch = await db.insert('import_batches', { kind, filename: filename || 'unknown.xlsx', row_count: processedRows.length, error_count: errorCount, by_user: req.user.id, status: 'committed' })
+    const inserted = await tmpl.commit(processedRows, batch.id)
+    await auditCreate(req, 'import_batch', batch.id, { kind, filename, row_count: processedRows.length, inserted, error_count: errorCount })
     res.json({ batchId: batch.id, kind, inserted, totalRows: processedRows.length, errorRows: errorCount })
   } catch (err) {
     console.error('Commit error:', err)
@@ -529,14 +547,14 @@ router.post('/:kind/commit', (req, res) => {
   }
 })
 
-router.get('/batches', (req, res) => {
+router.get('/batches', async (req, res) => {
   try {
-    const batches = db.query('import_batches', { orderBy: (a, b) => new Date(b.created_at) - new Date(a.created_at) })
+    const batches = await Promise.all((await db.query('import_batches', { orderBy: (a, b) => new Date(b.created_at) - new Date(a.created_at) }))
       .slice(0, 50)
-      .map(b => {
-        const u = b.by_user ? db.get('users', b.by_user) : null
+      .map(async b => {
+        const u = b.by_user ? await db.get('users', b.by_user) : null
         return { ...b, user_name: u ? u.name : null }
-      })
+      }))
     res.json(batches)
   } catch (err) {
     console.error('List batches error:', err)

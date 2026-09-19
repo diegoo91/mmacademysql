@@ -1,7 +1,10 @@
 import { Router } from 'express'
-import db from '../database.js'
+import crypto from 'crypto'
+import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
+import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
+import { hasEnoughBalance, reverseBalance, effectiveGroup } from '../utils/balance.js'
 
 const router = Router()
 router.use(authenticate)
@@ -16,25 +19,26 @@ const STATUS = {
   DENIED: 'denied',
 }
 
-function genRef() { return 'MM-PDL-' + Math.floor(10000 + Math.random() * 90000) }
-function genPayRef() {
-  const count = db.count('payments')
+function genRef() { return 'MM-PDL-' + crypto.randomInt(10000, 99999) }
+async function genPayRef() {
+  const count = await db.count('payments')
   return `PAY-${String(count + 1).padStart(4, '0')}`
 }
+function parseIfString(v) { return typeof v === 'string' ? JSON.parse(v) : v }
 
-function notify(userId, kind, title, body, link) {
+async function notify(userId, kind, title, body, link) {
   if (!userId) return
-  db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
+  await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
 }
 
-function freeSlotsForBooking(booking) {
+async function freeSlotsForBooking(booking) {
   if (!booking.sessions_json) return
   try {
-    const sessions = JSON.parse(booking.sessions_json)
+    const sessions = parseIfString(booking.sessions_json)
     for (const s of sessions) {
-      const slots = db.findAll('slots', sl => sl.date === s.date && sl.time === s.time && sl.court === parseInt(s.court) && sl.booking_id === booking.id)
+      const slots = await db.findAll('slots', sl => sl.date === s.date && sl.time === s.time && sl.court === parseInt(s.court) && sl.booking_id === booking.id)
       for (const slot of slots) {
-        db.remove('slots', slot.id)
+        await db.remove('slots', slot.id)
       }
     }
   } catch (e) {
@@ -43,10 +47,10 @@ function freeSlotsForBooking(booking) {
 }
 
 // List bookings
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { status, page = 1, limit = 50, includeCancelled } = req.query
-    let all = db.findAll('bookings')
+    let all = await db.findAll('bookings')
     if (req.user.role === 'player') {
       all = all.filter(b => b.user_id === req.user.id)
       if (!includeCancelled) all = all.filter(b => b.status !== 'cancelled')
@@ -55,11 +59,11 @@ router.get('/', (req, res) => {
     all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     const total = all.length
     const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit)
-    const bookings = all.slice(offset, offset + parseInt(limit)).map(b => {
-      const u = b.user_id ? db.get('users', b.user_id) : null
-      const slots = db.findAll('slots', s => s.booking_id === b.id)
+    const bookings = await Promise.all(all.slice(offset, offset + parseInt(limit)).map(async (b) => {
+      const u = b.user_id ? await db.get('users', b.user_id) : null
+      const slots = await db.findAll('slots', s => s.booking_id === b.id)
       return { ...b, user_name: u ? u.name : null, slot_count: slots.length, slot_statuses: [...new Set(slots.map(s => s.status))] }
-    })
+    }))
     res.json({ bookings, total, page: parseInt(page), limit: parseInt(limit) })
   } catch (err) {
     console.error('List bookings error:', err)
@@ -68,24 +72,15 @@ router.get('/', (req, res) => {
 })
 
 // GET /balance-check — check if player has enough balance for a booking
-router.get('/balance-check', (req, res) => {
+router.get('/balance-check', async (req, res) => {
   try {
     const { sessionType, count } = req.query
     if (!sessionType || !count) return res.status(400).json({ error: 'sessionType and count required' })
-    const user = db.get('users', req.user.id)
+    const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
     const n = parseInt(count) || 0
-    const priv = user.private_balance || 0
-    const grp = user.group_balance || 0
-    let hasEnough = false
-    if (sessionType === 'private') {
-      hasEnough = priv >= n
-    } else if (sessionType === 'group') {
-      // Group can be covered by group balance, or private balance (1 private = 2 group)
-      const effectiveGroup = grp + priv * 2
-      hasEnough = effectiveGroup >= n
-    }
-    res.json({ hasEnough, private_balance: priv, group_balance: grp, sessionType, count: n })
+    const hasEnough = hasEnoughBalance(user, sessionType, n)
+    res.json({ hasEnough, private_balance: user.private_balance || 0, group_balance: user.group_balance || 0, effective_group: effectiveGroup(user), sessionType, count: n })
   } catch (err) {
     console.error('Balance check error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -93,33 +88,25 @@ router.get('/balance-check', (req, res) => {
 })
 
 // POST /from-balance — book directly from balance (skip payment)
-router.post('/from-balance', (req, res) => {
+router.post('/from-balance', async (req, res) => {
   try {
     const { sessionType, sessions } = req.body
     if (!sessionType || !sessions || !Array.isArray(sessions) || sessions.length === 0) {
       return res.status(400).json({ error: 'Missing booking data' })
     }
 
-    const user = db.get('users', req.user.id)
+    const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    // Verify sufficient balance
+    // Verify sufficient balance (conversion-aware)
     const n = sessions.length
-    const priv = user.private_balance || 0
-    const grp = user.group_balance || 0
-    let hasEnough = false
-    if (sessionType === 'private') {
-      hasEnough = priv >= n
-    } else if (sessionType === 'group') {
-      const effectiveGroup = grp + priv * 2
-      hasEnough = effectiveGroup >= n
-    }
-    if (!hasEnough) return res.status(409).json({ error: 'Insufficient balance' })
+    const hasEnough = hasEnoughBalance(user, sessionType, n)
+    if (!hasEnough) return res.status(409).json({ error: 'Insufficient balance', code: 'INSUFFICIENT_BALANCE', routedToPayment: true })
 
     let ref = genRef()
-    while (db.find('bookings', b => b.ref === ref)) ref = genRef()
+    while (await db.find('bookings', b => b.ref === ref)) ref = genRef()
 
-    const booking = db.insert('bookings', {
+    const booking = await db.insert('bookings', {
       ref, user_id: req.user.id, session_type: sessionType, mode: 'balance',
       sessions_json: JSON.stringify(sessions), total: 0, status: STATUS.SCHEDULE_APPROVED,
       player_name: req.user.name,
@@ -127,9 +114,9 @@ router.post('/from-balance', (req, res) => {
 
     // Create schedule_approved slots (no payment step, player confirms)
     for (const sess of sessions) {
-      const existingSlot = db.find('slots', s => s.date === sess.date && s.time === sess.time && s.court === sess.court)
+      const existingSlot = await db.find('slots', s => s.date === sess.date && s.time === sess.time && s.court === sess.court)
       if (!existingSlot) {
-        db.insert('slots', {
+        await db.insert('slots', {
           date: sess.date, time: sess.time, court: sess.court,
           player_text: req.user.name, booking_id: booking.id,
           user_id: req.user.id, session_type: sessionType, status: STATUS.SCHEDULE_APPROVED,
@@ -139,10 +126,13 @@ router.post('/from-balance', (req, res) => {
 
     // Notify player to confirm
     for (const sess of sessions) {
-      notify(req.user.id, 'schedule_approved', 'Awaiting Your Confirmation',
+      await notify(req.user.id, 'schedule_approved', 'Awaiting Your Confirmation',
         `Your ${sessionType} session on ${sess.date} at ${sess.time} (Court ${sess.court}) has been booked from your balance. Please confirm your attendance.`,
         '/profile')
     }
+
+    await auditCreate(req, 'booking', booking.id, { ref: booking.ref, session_type: sessionType, mode: 'balance', total: 0, sessions: sessions.length })
+    await auditBalanceChange(req, 'user', req.user.id, null, null, 'balance.deduct')
 
     res.status(201).json({ booking, bookedFromBalance: true })
   } catch (err) {
@@ -152,15 +142,15 @@ router.post('/from-balance', (req, res) => {
 })
 
 // POST / — create booking + slots + payment (player pays in-app)
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { sessionType, mode, sessions, totalPrice, method } = req.body
     if (!sessionType || !sessions || !totalPrice) return res.status(400).json({ error: 'Missing booking data' })
 
     let ref = genRef()
-    while (db.find('bookings', b => b.ref === ref)) ref = genRef()
+    while (await db.find('bookings', b => b.ref === ref)) ref = genRef()
 
-    const booking = db.insert('bookings', {
+    const booking = await db.insert('bookings', {
       ref, user_id: req.user?.id || null, session_type: sessionType, mode,
       sessions_json: JSON.stringify(sessions), total: totalPrice, status: STATUS.PAYMENT_PENDING,
       player_name: req.user?.name || null,
@@ -169,9 +159,9 @@ router.post('/', (req, res) => {
     // Create payment_pending slots for ALL sessions
     if (sessions && sessions.length > 0) {
       for (const sess of sessions) {
-        const existingSlot = db.find('slots', s => s.date === sess.date && s.time === sess.time && s.court === sess.court)
+        const existingSlot = await db.find('slots', s => s.date === sess.date && s.time === sess.time && s.court === sess.court)
         if (!existingSlot) {
-          db.insert('slots', {
+          await db.insert('slots', {
             date: sess.date, time: sess.time, court: sess.court,
             player_text: req.user?.name || 'Player', booking_id: booking.id,
             user_id: req.user?.id || null, session_type: sessionType, status: STATUS.PAYMENT_PENDING,
@@ -180,8 +170,8 @@ router.post('/', (req, res) => {
       }
 
       // Create payment record (payment_pending until admin approves)
-      const payRef = genPayRef()
-      db.insert('payments', {
+      const payRef = await genPayRef()
+      await db.insert('payments', {
         ref: payRef,
         date: new Date().toISOString().slice(0, 10),
         player_name: req.user?.name || 'Player',
@@ -197,9 +187,9 @@ router.post('/', (req, res) => {
       })
 
       // Notify admins
-      const admins = db.findAll('users', u => u.role === 'superadmin' || u.role === 'admin')
+      const admins = await db.findAll('users', u => u.role === 'superadmin' || u.role === 'admin')
       for (const admin of admins) {
-        db.insert('notifications', {
+        await db.insert('notifications', {
           user_id: admin.id, kind: 'new_payment',
           title: 'New Payment Pending',
           body: `${req.user?.name || 'Player'} submitted payment for ${sessionType} booking (${sessions.length} sessions).`,
@@ -207,6 +197,8 @@ router.post('/', (req, res) => {
         })
       }
     }
+
+    await auditCreate(req, 'booking', booking.id, { ref: booking.ref, session_type: sessionType, mode, total: totalPrice, sessions: sessions.length })
 
     res.status(201).json(booking)
   } catch (err) {
@@ -216,21 +208,22 @@ router.post('/', (req, res) => {
 })
 
 // PUT /:id/status — update booking status
-router.put('/:id/status', requireRole('superadmin', 'admin'), (req, res) => {
+router.put('/:id/status', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const { status } = req.body
     const valid = ['payment_pending', 'payment_approved', 'schedule_approved', 'player_confirmed', 'cancelled', 'denied']
     if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' })
-    const booking = db.get('bookings', parseInt(req.params.id))
+    const booking = await db.get('bookings', parseInt(req.params.id))
     if (!booking) return res.status(404).json({ error: 'Booking not found' })
 
     const updates = { status }
 
     if (status === 'cancelled') {
-      freeSlotsForBooking(booking)
+      await freeSlotsForBooking(booking)
     }
 
-    const updated = db.update('bookings', parseInt(req.params.id), updates)
+    const updated = await db.update('bookings', parseInt(req.params.id), updates)
+    await auditUpdate(req, 'booking', booking.id, { status: booking.status }, { status })
     res.json(updated)
   } catch (err) {
     console.error('Update booking error:', err)
@@ -239,9 +232,9 @@ router.put('/:id/status', requireRole('superadmin', 'admin'), (req, res) => {
 })
 
 // PUT /:id/sessions — edit booking sessions
-router.put('/:id/sessions', requireRole('superadmin', 'admin'), (req, res) => {
+router.put('/:id/sessions', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
-    const booking = db.get('bookings', parseInt(req.params.id))
+    const booking = await db.get('bookings', parseInt(req.params.id))
     if (!booking) return res.status(404).json({ error: 'Booking not found' })
 
     const { sessions, sessionType, total } = req.body
@@ -253,28 +246,29 @@ router.put('/:id/sessions', requireRole('superadmin', 'admin'), (req, res) => {
     if (total !== undefined) updates.total = total
 
     if (booking.status === STATUS.PLAYER_CONFIRMED) {
-      const oldSessions = JSON.parse(booking.sessions_json || '[]')
+      const oldSessions = parseIfString(booking.sessions_json || '[]')
       const oldSet = new Set(oldSessions.map(s => `${s.date}|${s.time}|${s.court}`))
       const newSet = new Set(sessions.map(s => `${s.date}|${s.time}|${s.court}`))
 
       for (const key of oldSet) {
         if (!newSet.has(key)) {
           const [date, time, court] = key.split('|')
-          const slots = db.findAll('slots', s => s.date === date && s.time === time && s.court === parseInt(court) && s.booking_id === booking.id)
-          for (const slot of slots) db.remove('slots', slot.id)
+          const slots = await db.findAll('slots', s => s.date === date && s.time === time && s.court === parseInt(court) && s.booking_id === booking.id)
+          for (const slot of slots) await db.remove('slots', slot.id)
         }
       }
 
       const playerName = booking.player_name || 'Player'
       for (const s of sessions) {
-        db.upsert('slots',
+        await db.upsert('slots',
           ['date', 'time', 'court'],
           { date: s.date, time: s.time, court: s.court, player_text: playerName, booking_id: booking.id, user_id: booking.user_id, session_type: sessionType || booking.session_type, status: STATUS.PLAYER_CONFIRMED }
         )
       }
     }
 
-    const updated = db.update('bookings', parseInt(req.params.id), updates)
+    const updated = await db.update('bookings', parseInt(req.params.id), updates)
+    await auditUpdate(req, 'booking', booking.id, { sessions: booking.sessions_json }, { sessions: JSON.stringify(sessions), session_type: updates.session_type, total: updates.total })
     res.json(updated)
   } catch (err) {
     console.error('Edit booking sessions error:', err)
@@ -283,27 +277,35 @@ router.put('/:id/sessions', requireRole('superadmin', 'admin'), (req, res) => {
 })
 
 // DELETE /:id
-router.delete('/:id', requireRole('superadmin', 'admin'), (req, res) => {
+router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
-    const booking = db.get('bookings', parseInt(req.params.id))
+    const booking = await db.get('bookings', parseInt(req.params.id))
     if (!booking) return res.status(404).json({ error: 'Booking not found' })
 
-    freeSlotsForBooking(booking)
+    const payment = await db.find('payments', p => p.booking_id === booking.id)
 
-    // Reverse any payment credits if payment was approved
-    const payment = db.find('payments', p => p.booking_id === booking.id)
+    // Remove slots
+    const slots = await db.findAll('slots', s => s.booking_id === booking.id)
+    for (const slot of slots) await db.remove('slots', slot.id)
+
+    // Reverse balance using shared helper (conversion-aware)
     if (payment && payment.status === STATUS.PAYMENT_APPROVED && payment.player_id) {
-      const user = db.get('users', payment.player_id)
-      if (user) {
-        db.update('users', payment.player_id, {
-          private_balance: (user.private_balance || 0) - (payment.private_sessions || 0),
-          group_balance: (user.group_balance || 0) - (payment.group_sessions || 0),
-        })
+      for (let i = 0; i < (payment.private_sessions || 0); i++) {
+        await reverseBalance(payment.player_id, 'private')
       }
-      db.remove('payments', payment.id)
+      for (let i = 0; i < (payment.group_sessions || 0); i++) {
+        await reverseBalance(payment.player_id, 'group')
+      }
+      await db.remove('payments', payment.id)
     }
 
-    db.remove('bookings', parseInt(req.params.id))
+    await db.remove('bookings', parseInt(req.params.id))
+
+    await auditDelete(req, 'booking', booking.id, { ref: booking.ref, session_type: booking.session_type, total: booking.total, player_id: booking.user_id })
+    if (payment?.player_id) {
+      await auditBalanceChange(req, 'user', payment.player_id, null, null, 'balance.reverse')
+    }
+
     res.json({ ok: true })
   } catch (err) {
     console.error('Delete booking error:', err)

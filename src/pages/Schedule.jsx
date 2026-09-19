@@ -4,6 +4,8 @@ import {
   ArrowRight,
   Calendar as CalendarIcon,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Flame,
   Grid,
@@ -34,6 +36,13 @@ function groupSlotsByDate(slots) {
   return map
 }
 
+function toLocalDateStr(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function formatDateShort(dateStr) {
   const [, m, d] = dateStr.split('-')
   return `${Number(d)}/${Number(m)}`
@@ -51,7 +60,7 @@ export default function Schedule() {
   const navigate = useNavigate()
   const [mineOnly, setMineOnly] = useState(initialMine)
   const [scheduleView, setScheduleView] = useState('day')
-  const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [scheduleDate, setScheduleDate] = useState(() => toLocalDateStr(new Date()))
   const [showFlyerModal, setShowFlyerModal] = useState(false)
   const [slots, setSlots] = useState([])
   const [myBookings, setMyBookings] = useState([])
@@ -69,6 +78,17 @@ export default function Schedule() {
     }
     return keys
   }, [myBookings])
+
+  const awaitingConfirmationSlots = useMemo(() => {
+    if (!user) return []
+    const name = (user.name || '').toLowerCase()
+    return slots.filter(s => {
+      if (s.status !== 'schedule_approved') return false
+      if (!s.player_text) return false
+      const names = s.player_text.split(/[/+]/).map(n => n.trim().toLowerCase())
+      return names.includes(name)
+    })
+  }, [user, slots])
 
   const mySlotKeys = useMemo(() => {
     if (!user) return new Set()
@@ -91,7 +111,7 @@ export default function Schedule() {
     const to = new Date(today)
     to.setDate(today.getDate() + 30)
 
-    api.get(`/slots?from=${from.toISOString().slice(0, 10)}&to=${to.toISOString().slice(0, 10)}&visible_only=1`)
+    api.get(`/slots?from=${toLocalDateStr(from)}&to=${toLocalDateStr(to)}&visible_only=1`)
       .then(setSlots)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -171,7 +191,7 @@ export default function Schedule() {
     for (let i = 0; i < 7; i++) {
       const dd = new Date(start)
       dd.setDate(start.getDate() + i)
-      dates.push(dd.toISOString().slice(0, 10))
+      dates.push(toLocalDateStr(dd))
     }
     return dates
   }, [scheduleDate])
@@ -228,22 +248,10 @@ export default function Schedule() {
           </div>
         ) : (
           <>
-            {dateChips.length > 0 && (
-              <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-                <span className="text-xs font-bold text-muted uppercase mr-2">Quick Dates:</span>
-                {dateChips.map((chip) => (
-                  <button
-                    key={chip.date}
-                    onClick={() => { setScheduleDate(chip.date); setScheduleView('day') }}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
-                      scheduleDate === chip.date && scheduleView === 'day'
-                        ? 'bg-lime-400 text-slate-950 border-lime-400 shadow-md shadow-lime-400/20'
-                        : 'bg-surface text-theme border-theme hover:border-slate-300 dark:hover:border-slate-700'
-                    }`}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
+            {user && awaitingConfirmationSlots.length > 0 && (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm font-bold text-center">
+                ⏳ You have {awaitingConfirmationSlots.length} slot{awaitingConfirmationSlots.length > 1 ? 's' : ''} awaiting your confirmation —{' '}
+                <Link to="/profile" className="underline font-extrabold">go to Profile → My Slots</Link> to confirm.
               </div>
             )}
 
@@ -279,8 +287,24 @@ export default function Schedule() {
 
               {scheduleView === 'day' && (
                 <div className="flex items-center gap-3">
-                  <label className="text-xs font-bold text-theme uppercase tracking-wider">Date:</label>
+                  <button onClick={() => { const d = new Date(scheduleDate + 'T00:00:00'); d.setDate(d.getDate() - 1); setScheduleDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title="Previous day">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
                   <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-lime-400" />
+                  <button onClick={() => { const d = new Date(scheduleDate + 'T00:00:00'); d.setDate(d.getDate() + 1); setScheduleDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title="Next day">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {scheduleView === 'week' && (
+                <div className="flex items-center gap-3">
+                  <button onClick={() => { const d = new Date(scheduleDate + 'T00:00:00'); d.setDate(d.getDate() - 7); setScheduleDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title="Previous week">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-bold text-theme">{getDayName(weekDates[0])} {formatDateShort(weekDates[0])} – {getDayName(weekDates[6])} {formatDateShort(weekDates[6])}</span>
+                  <button onClick={() => { const d = new Date(scheduleDate + 'T00:00:00'); d.setDate(d.getDate() + 7); setScheduleDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title="Next week">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
               )}
 
@@ -327,9 +351,9 @@ export default function Schedule() {
                                 isMine ? 'bg-lime-400/15 text-lime-400' : 'bg-lime-400/5 text-lime-400'
                               }`}>
                                 {player || 'Available'}{isMine ? ' ★' : ''}
-                                {player && slotObj?.session_type && (
-                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${slotObj.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
-                                    {slotObj.session_type === 'group' ? 'GRP' : 'PVT'}
+                                {player && (
+                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${(slotObj?.session_type || 'private') === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
+                                    {(slotObj?.session_type || 'private') === 'group' ? 'GRP' : 'PVT'}
                                   </span>
                                 )}
                                 {player && slotObj?.coach_name && (
@@ -350,7 +374,7 @@ export default function Schedule() {
                   <div className="grid grid-cols-8 gap-3 pb-4 border-b border-theme text-center font-heading text-sm font-extrabold text-theme">
                     <div className="text-left text-muted text-xs uppercase">Time Slot</div>
                     {weekDates.map(date => (
-                      <div key={date} className="text-lime-400 text-xs">{getDayName(date)} ({formatDateShort(date)})</div>
+                      <button key={date} onClick={() => { setScheduleDate(date); setScheduleView('day') }} className="text-lime-400 text-xs hover:text-lime-300 hover:underline cursor-pointer transition-all">{getDayName(date)} ({formatDateShort(date)})</button>
                     ))}
                   </div>
                   <div className="divide-y divide-theme pt-2 space-y-2">

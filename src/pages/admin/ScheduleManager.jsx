@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Calendar as CalendarIcon, Check, Clock, Download, FileSpreadsheet, Plus, Trash2, Upload, X, ArrowRightLeft, Undo2, UserCheck, Settings } from 'lucide-react'
+import { Calendar as CalendarIcon, Check, Clock, Download, FileSpreadsheet, Plus, Trash2, Upload, X, ArrowRightLeft, Undo2, UserCheck, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import PlayerSearchInput from '../../components/PlayerSearchInput'
@@ -33,6 +33,12 @@ const STATUS_LABELS = {
   denied: 'Denied',
 }
 
+function toLocalDateStr(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 function formatDateShort(d) { const [,m,day] = d.split('-'); return `${Number(day)}/${Number(m)}` }
 function getDayName(d) { return DAY_NAMES[new Date(d + 'T00:00:00').getDay()] }
 
@@ -41,14 +47,14 @@ export default function ScheduleManager() {
   const canEdit = isAdmin
   const [activeTab, setActiveTab] = useState('schedule')
   const [view, setView] = useState('day')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => toLocalDateStr(new Date()))
   const [slots, setSlots] = useState([])
   const [loading, setLoading] = useState(true)
   const [editSlot, setEditSlot] = useState(null)
   const [addSlot, setAddSlot] = useState(null)
   const [addForm, setAddForm] = useState({ date: '', time: '15:00', court: 1, player_text: '', session_type: null, coach_id: null })
-  const [addPartner, setAddPartner] = useState('')
-  const [selectedPlayer, setSelectedPlayer] = useState(null)
+  const [addPlayers, setAddPlayers] = useState([''])
+  const [selectedPlayers, setSelectedPlayers] = useState([])
   const [conversionRequests, setConversionRequests] = useState([])
   const [convLoading, setConvLoading] = useState(false)
   const [importPreview, setImportPreview] = useState(null)
@@ -70,7 +76,7 @@ export default function ScheduleManager() {
     start.setDate(today.getDate() - 30)
     const end = new Date(today)
     end.setDate(today.getDate() + 30)
-    api.get(`/slots?from=${start.toISOString().slice(0, 10)}&to=${end.toISOString().slice(0, 10)}`)
+    api.get(`/slots?from=${toLocalDateStr(start)}&to=${toLocalDateStr(end)}`)
       .then(setSlots)
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -146,7 +152,7 @@ export default function ScheduleManager() {
     for (let i = 0; i < 7; i++) {
       const dd = new Date(start)
       dd.setDate(start.getDate() + i)
-      dates.push(dd.toISOString().slice(0, 10))
+      dates.push(toLocalDateStr(dd))
     }
     return dates
   }, [date])
@@ -231,41 +237,43 @@ export default function ScheduleManager() {
   }
 
   const handleAddSlot = async () => {
-    if (selectedPlayer && !isSuperAdmin) {
-      const priv = selectedPlayer.private_balance || 0
-      const grp = selectedPlayer.group_balance || 0
-      if (priv + grp <= 0 && selectedPlayer.balance_zero_since) {
-        const zeroDate = new Date(selectedPlayer.balance_zero_since)
-        const now = new Date()
-        const diffDays = Math.floor((now - zeroDate) / (1000 * 60 * 60 * 24))
-        if (diffDays > 14) {
-          setBalanceWarning({ type: 'blocked', player: selectedPlayer.full_name, days: diffDays })
-          return
-        }
+    // Check all selected players' balances
+    if (!isSuperAdmin) {
+      const blockedPlayers = []
+      for (const sp of selectedPlayers) {
+        if (!sp) continue
+        const warn = checkPlayerBalance(sp)
+        if (warn?.type === 'blocked') blockedPlayers.push(warn.player)
+      }
+      if (blockedPlayers.length > 0) {
+        setBalanceWarning({ type: 'blocked', player: blockedPlayers.join(', '), days: 0 })
+        return
       }
     }
     try {
-      const payload = { ...addForm }
-      if (addForm.session_type === 'group' && addPartner.trim()) {
-        payload.player_text = `${addForm.player_text} / ${addPartner.trim()}`
-      }
+      const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
+      const payload = { ...addForm, player_text: joinedNames }
       await api.post('/slots', payload)
       setAddSlot(null)
       setAddForm({ date: '', time: '15:00', court: 1, player_text: '', session_type: null, coach_id: null })
-      setAddPartner('')
-      setSelectedPlayer(null)
+      setAddPlayers([''])
+      setSelectedPlayers([])
       fetchSlots()
     } catch (err) {
       const msg = err.message || ''
       if (msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')) {
-        const payload = { ...addForm }
-        if (addForm.session_type === 'group' && addPartner.trim()) {
-          payload.player_text = `${addForm.player_text} / ${addPartner.trim()}`
-        }
-        const player = selectedPlayer?.full_name || addForm.player_text
+        const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
         const stype = addForm.session_type || 'private'
-        const remaining = selectedPlayer ? (selectedPlayer[stype + '_balance'] || 0) : 0
-        setPendingOverride({ payload, player, sessionType: stype, remaining })
+        // Find which players are insufficient
+        const insufficient = []
+        for (const sp of selectedPlayers) {
+          if (!sp) continue
+          const priv = sp.private_balance || 0
+          const grp = sp.group_balance || 0
+          const hasEnough = stype === 'private' ? priv > 0 : grp > 0
+          if (!hasEnough) insufficient.push({ name: sp.full_name || sp.name, remaining: stype === 'private' ? priv : grp })
+        }
+        setPendingOverride({ payload: { ...addForm, player_text: joinedNames }, players: insufficient, sessionType: stype })
       }
     }
   }
@@ -285,8 +293,8 @@ export default function ScheduleManager() {
       setPendingOverride(null)
       setAddSlot(null)
       setAddForm({ date: '', time: '15:00', court: 1, player_text: '', session_type: null, coach_id: null })
-      setAddPartner('')
-      setSelectedPlayer(null)
+      setAddPlayers([''])
+      setSelectedPlayers([])
       fetchSlots()
     } catch (err) {
       alert(err.message || 'Failed to add slot')
@@ -414,7 +422,13 @@ export default function ScheduleManager() {
               </button>
             </div>
             <div className="flex gap-2 items-center">
+              <button onClick={() => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() - (view === 'day' ? 1 : 7)); setDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title={view === 'day' ? 'Previous day' : 'Previous week'}>
+                <ChevronLeft className="w-4 h-4" />
+              </button>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-lime-400" />
+              <button onClick={() => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (view === 'day' ? 1 : 7)); setDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title={view === 'day' ? 'Next day' : 'Next week'}>
+                <ChevronRight className="w-4 h-4" />
+              </button>
               {canEdit && (
                 <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date }) }} className="px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold flex items-center gap-1">
                   <Plus className="w-4 h-4" /> Add Slot
@@ -494,11 +508,9 @@ export default function ScheduleManager() {
                                 <>
                                   <div className="flex flex-col items-center gap-0.5 min-w-0">
                                     <span className="truncate">{slot.player_text}</span>
-                                    {slot.session_type && (
-                                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${slot.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
-                                        {slot.session_type === 'group' ? 'GRP' : 'PVT'}
-                                      </span>
-                                    )}
+                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${(slot.session_type || 'private') === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
+                                      {(slot.session_type || 'private') === 'group' ? 'GRP' : 'PVT'}
+                                    </span>
                                     {slot.coach_name && (
                                       <span className="text-[8px] font-bold text-amber-400">{slot.coach_name}</span>
                                     )}
@@ -567,6 +579,12 @@ export default function ScheduleManager() {
                             ) : (
                               <>
                                 <span className="block">{[s1 && `C1: ${s1.player_text}`, s2 && `C2: ${s2.player_text}`, s3 && `C3: ${s3.player_text}`].filter(Boolean).join(' / ')}</span>
+                                {(() => {
+                                  const types = [s1, s2, s3].map(s => s?.session_type || 'private')
+                                  const uniqueTypes = [...new Set(types)]
+                                  const typeLabel = uniqueTypes.length === 1 ? (uniqueTypes[0] === 'group' ? 'GRP' : 'PVT') : uniqueTypes.map(t => t === 'group' ? 'GRP' : 'PVT').join('+')
+                                  return <span className="block text-[9px] font-bold mt-0.5">{typeLabel}</span>
+                                })()}
                                 {(() => {
                                   const coachNames = [s1?.coach_name, s2?.coach_name, s3?.coach_name].filter(Boolean)
                                   return coachNames.length > 0 ? <span className="block text-[9px] text-amber-400 mt-0.5">{coachNames.join(', ')}</span> : null
@@ -713,14 +731,6 @@ export default function ScheduleManager() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase mb-1">Player Name</label>
-                <PlayerSearchInput value={addForm.player_text} onChange={val => setAddForm({ ...addForm, player_text: val })} onPlayerSelect={(p) => {
-                setSelectedPlayer(p)
-                const warn = checkPlayerBalance(p)
-                if (warn) setBalanceWarning(warn)
-              }} placeholder="e.g. Zain" />
-              </div>
-              <div>
                 <label className="block text-xs font-semibold text-theme uppercase mb-1">Session Type</label>
                 <select value={addForm.session_type || ''} onChange={e => setAddForm({ ...addForm, session_type: e.target.value || null })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs">
                   <option value="">None (Admin slot)</option>
@@ -728,10 +738,36 @@ export default function ScheduleManager() {
                   <option value="group">Group</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-theme uppercase mb-1">Player Name</label>
+                <PlayerSearchInput strict value={addPlayers[0] || ''} onChange={val => {
+                  const updated = [...addPlayers]; updated[0] = val; setAddPlayers(updated)
+                }} onPlayerSelect={(p) => {
+                  const updatedSel = [...selectedPlayers]; updatedSel[0] = p; setSelectedPlayers(updatedSel)
+                  const warn = checkPlayerBalance(p)
+                  if (warn) setBalanceWarning(warn)
+                }} placeholder="e.g. Zain" />
+              </div>
               {addForm.session_type === 'group' && (
-                <div>
-                  <label className="block text-xs font-semibold text-theme uppercase mb-1">Partner</label>
-                  <PlayerSearchInput value={addPartner} onChange={setAddPartner} placeholder="e.g. Zain" />
+                <div className="space-y-2">
+                  {addPlayers.slice(1).map((p, i) => (
+                    <div key={i} className="flex gap-1">
+                      <div className="flex-1">
+                        <PlayerSearchInput strict value={p} onChange={val => {
+                          const updated = [...addPlayers]; updated[i + 1] = val; setAddPlayers(updated)
+                        }} onPlayerSelect={(pl) => {
+                          const updatedSel = [...selectedPlayers]; updatedSel[i + 1] = pl; setSelectedPlayers(updatedSel)
+                        }} placeholder={`Player ${i + 2}`} />
+                      </div>
+                      <button type="button" onClick={() => {
+                        setAddPlayers(addPlayers.filter((_, j) => j !== i + 1))
+                        setSelectedPlayers(selectedPlayers.filter((_, j) => j !== i + 1))
+                      }} className="px-2 text-rose-400 hover:text-rose-300"><X className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                  {addPlayers.length < 4 && (
+                    <button type="button" onClick={() => setAddPlayers([...addPlayers, ''])} className="text-[10px] font-bold text-lime-400 hover:text-lime-300">+ Add Player ({addPlayers.length}/4)</button>
+                  )}
                 </div>
               )}
               {coaches.length > 0 && (
@@ -795,8 +831,11 @@ export default function ScheduleManager() {
             </div>
             <h3 className="text-lg font-bold text-theme mb-2">Insufficient Balance</h3>
             <p className="text-muted text-sm mb-4">
-              {pendingOverride.player} has {pendingOverride.remaining} remaining {pendingOverride.sessionType} session(s), needs 1.
-              Add this slot anyway as a <span className="text-lime-400 font-bold">free/bonus session</span>?
+              {pendingOverride.players.length === 1
+                ? <>{pendingOverride.players[0].name} has {pendingOverride.players[0].remaining} remaining {pendingOverride.sessionType} session(s), needs 1.</>
+                : <>{pendingOverride.players.map(p => `${p.name} (${p.remaining})`).join(', ')} need {pendingOverride.sessionType} sessions.</>
+              }
+              {' '}Add this slot anyway as a <span className="text-lime-400 font-bold">free/bonus session</span>?
             </p>
             <div className="flex gap-2">
               <button onClick={() => setPendingOverride(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
@@ -813,17 +852,15 @@ export default function ScheduleManager() {
 function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
   const existingParts = (slot.player_text || '').split(/\s*\/\s*/)
   const [form, setForm] = useState({ player_text: existingParts[0] || '', date: slot.date, time: slot.time, court: slot.court, session_type: slot.session_type || null, coach_id: slot.coach_id || null })
-  const [partner, setPartner] = useState(existingParts[1] || '')
+  const [players, setPlayers] = useState(existingParts.length > 0 ? existingParts : [''])
   const [loading, setLoading] = useState(false)
   const [pendingOverride, setPendingOverride] = useState(null)
 
   const handleSave = async (balanceOverride) => {
     setLoading(true)
     try {
-      const payload = { ...form }
-      if (form.session_type === 'group' && partner.trim()) {
-        payload.player_text = `${form.player_text} / ${partner.trim()}`
-      }
+      const joinedNames = players.filter(n => n.trim()).join(' / ')
+      const payload = { ...form, player_text: joinedNames }
       if (balanceOverride) payload.balanceOverride = balanceOverride
       await api.put(`/slots/${slot.id}`, payload)
       onSaved()
@@ -832,7 +869,7 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
       if (msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')) {
         const stype = form.session_type || 'private'
         setPendingOverride({
-          player: form.player_text,
+          player: players.filter(n => n.trim()).join(', '),
           sessionType: stype,
           remaining: 0,
         })
@@ -845,10 +882,8 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
 
   const handleOverrideConfirm = async (mode) => {
     if (!pendingOverride) return
-    const payload = { ...form }
-    if (form.session_type === 'group' && partner.trim()) {
-      payload.player_text = `${form.player_text} / ${partner.trim()}`
-    }
+    const joinedNames = players.filter(n => n.trim()).join(' / ')
+    const payload = { ...form, player_text: joinedNames }
     payload.balanceOverride = mode
     try {
       await api.put(`/slots/${slot.id}`, payload)
@@ -869,8 +904,27 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-semibold text-theme uppercase mb-1">Player Name</label>
-            <PlayerSearchInput value={form.player_text} onChange={val => setForm({ ...form, player_text: val })} />
+            <PlayerSearchInput strict value={players[0] || ''} onChange={val => {
+              const updated = [...players]; updated[0] = val; setPlayers(updated)
+            }} />
           </div>
+          {form.session_type === 'group' && (
+            <div className="space-y-2">
+              {players.slice(1).map((p, i) => (
+                <div key={i} className="flex gap-1">
+                  <div className="flex-1">
+                    <PlayerSearchInput strict value={p} onChange={val => {
+                      const updated = [...players]; updated[i + 1] = val; setPlayers(updated)
+                    }} placeholder={`Player ${i + 2}`} />
+                  </div>
+                  <button type="button" onClick={() => setPlayers(players.filter((_, j) => j !== i + 1))} className="px-2 text-rose-400 hover:text-rose-300"><X className="w-4 h-4" /></button>
+                </div>
+              ))}
+              {players.length < 4 && (
+                <button type="button" onClick={() => setPlayers([...players, ''])} className="text-[10px] font-bold text-lime-400 hover:text-lime-300">+ Add Player ({players.length}/4)</button>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-theme uppercase mb-1">Session Type</label>
             {slot.booking_id ? (
@@ -885,12 +939,6 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
               </select>
             )}
           </div>
-          {form.session_type === 'group' && (
-            <div>
-              <label className="block text-xs font-semibold text-theme uppercase mb-1">Partner</label>
-              <PlayerSearchInput value={partner} onChange={setPartner} placeholder="e.g. Zain" />
-            </div>
-          )}
           <div>
             <label className="block text-xs font-semibold text-theme uppercase mb-1">Date</label>
             <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs" />

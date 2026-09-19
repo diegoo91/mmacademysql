@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../lib/api'
 
-export default function PlayerSearchInput({ value, onChange, onPlayerSelect, placeholder }) {
+export default function PlayerSearchInput({ value, onChange, onPlayerSelect, placeholder, strict }) {
   const [query, setQuery] = useState(value || '')
   const [suggestions, setSuggestions] = useState([])
   const [open, setOpen] = useState(false)
@@ -29,13 +29,20 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
 
   const handleInput = (val) => {
     setQuery(val)
-    onChange(val)
+    if (!strict) onChange(val)
     setActiveIdx(-1)
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => fetchSuggestions(val), 250)
   }
 
   const selectName = (name, player) => {
+    if (strict) {
+      setQuery(name)
+      onChange(name)
+      setOpen(false)
+      if (onPlayerSelect && player) onPlayerSelect(player)
+      return
+    }
     const parts = query.split(/[/+]/)
     parts[parts.length - 1] = name
     const newVal = parts.join(query.includes('/') ? ' / ' : ' + ')
@@ -48,6 +55,16 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
   const addNewPlayer = () => { setOpen(false) }
 
   const handleKeyDown = (e) => {
+    if (strict) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)) }
+      else if (e.key === 'Enter' && activeIdx >= 0 && activeIdx < suggestions.length) {
+        e.preventDefault()
+        selectName(suggestions[activeIdx].full_name, suggestions[activeIdx])
+      }
+      else if (e.key === 'Escape') setOpen(false)
+      return
+    }
     const items = [...suggestions, { full_name: `Add '${query}' as new player` }]
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, items.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, -1)) }
@@ -60,7 +77,7 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
   }
 
   const items = suggestions.map(s => s.full_name)
-  const showAddNew = query.length >= 3 && !items.some(n => n.toLowerCase() === query.toLowerCase())
+  const showAddNew = !strict && query.length >= 3 && !items.some(n => n.toLowerCase() === query.toLowerCase())
 
   return (
     <div ref={wrapRef} className="relative">

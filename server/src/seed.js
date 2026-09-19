@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import XLSX from 'xlsx'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import db from './database.js'
+import db from './db.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -11,15 +11,15 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
 if (!ADMIN_PASSWORD) throw new Error('ADMIN_PASSWORD env var is required')
 const ADMIN_NAME = process.env.ADMIN_NAME || 'Super Admin'
 
-const existing = db.find('users', u => u.email === ADMIN_EMAIL)
+const existing = await db.find('users', u => u.email === ADMIN_EMAIL)
 if (existing) {
   console.log(`Admin ${ADMIN_EMAIL} already exists (id=${existing.id}). Updating...`)
-  const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12)
-  db.update('users', existing.id, { password_hash: hash, role: 'superadmin', force_password_change: 1 })
+  const hash = await bcrypt.hash(ADMIN_PASSWORD, 12)
+  await db.update('users', existing.id, { password_hash: hash, role: 'superadmin', force_password_change: 1 })
   console.log('Admin updated.')
 } else {
-  const hash = bcrypt.hashSync(ADMIN_PASSWORD, 12)
-  const user = db.insert('users', {
+  const hash = await bcrypt.hash(ADMIN_PASSWORD, 12)
+  const user = await db.insert('users', {
     name: ADMIN_NAME, email: ADMIN_EMAIL, phone: '', dob: '',
     password_hash: hash, role: 'superadmin', skill_level: 'Intermediate',
     member_since: new Date().getFullYear().toString(), force_password_change: 1
@@ -77,7 +77,7 @@ const EXCEL_PATH = join(__dirname, 'data', 'MM_Padel_Academy_Schedule.xlsx')
 let slotsCreated = 0
 const allIndividualNames = new Set()
 
-db.clear('slots')
+await db.clear('slots')
 console.log('Cleared existing slots.')
 
 try {
@@ -123,19 +123,19 @@ try {
         const court2Raw = String(values[2] || '').trim()
 
         if (court1Raw && court1Raw !== 'Available') {
-          db.insert('slots', { date: dateStr, time, court: 1, player_text: court1Raw, booking_id: null })
+          await db.insert('slots', { date: dateStr, time, court: 1, player_text: court1Raw, booking_id: null })
           slotsCreated++
           splitCompoundName(court1Raw).forEach(n => allIndividualNames.add(n))
         }
         if (court2Raw && court2Raw !== 'Available') {
-          db.insert('slots', { date: dateStr, time, court: 2, player_text: court2Raw, booking_id: null })
+          await db.insert('slots', { date: dateStr, time, court: 2, player_text: court2Raw, booking_id: null })
           slotsCreated++
           splitCompoundName(court2Raw).forEach(n => allIndividualNames.add(n))
         }
       } else {
         const playerRaw = String(values[1] || '').trim()
         if (playerRaw && playerRaw !== 'Available') {
-          db.insert('slots', { date: dateStr, time, court: 1, player_text: playerRaw, booking_id: null })
+          await db.insert('slots', { date: dateStr, time, court: 1, player_text: playerRaw, booking_id: null })
           slotsCreated++
           splitCompoundName(playerRaw).forEach(n => allIndividualNames.add(n))
         }
@@ -153,8 +153,8 @@ const uniqueNames = [...allIndividualNames].sort()
 let playersCreated = 0
 for (const name of uniqueNames) {
   const email = generateEmail(name)
-  if (db.find('users', u => u.email === email)) continue
-  db.insert('users', {
+  if (await db.find('users', u => u.email === email)) continue
+  await db.insert('users', {
     name, email, phone: '', dob: '',
     role: 'player', password_hash: null, is_claimed: false,
     skill_level: 'Intermediate', notes: '',
@@ -165,11 +165,11 @@ for (const name of uniqueNames) {
 }
 console.log(`Seeded ${playersCreated} player-users from schedule.`)
 
-const allBookings = db.findAll('bookings')
+const allBookings = await db.findAll('bookings')
 for (const b of allBookings) {
   if (b.paid === undefined || b.paid === null) {
     const isCompleted = b.status === 'completed' || b.status === 'confirmed'
-    db.update('bookings', b.id, {
+    await db.update('bookings', b.id, {
       paid: isCompleted ? 1 : 0,
       amountPaid: isCompleted ? (Number(b.total) || 0) : 0,
       paidAt: isCompleted ? b.updated_at : null,

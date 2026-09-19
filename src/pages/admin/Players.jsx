@@ -248,7 +248,7 @@ function PlayerHistoryModal({ player, onClose }) {
             <div className="w-10 h-10 rounded-full bg-lime-400/20 text-lime-400 flex items-center justify-center font-bold text-sm">{player.full_name.charAt(0)}</div>
             <div>
               <h3 className="text-lg font-bold text-theme">{player.full_name} — Session History</h3>
-              <p className="text-xs text-muted">{sessions.length} used sessions</p>
+              <p className="text-xs text-muted">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
@@ -275,7 +275,7 @@ function PlayerHistoryModal({ player, onClose }) {
                     <td className="px-3 py-2.5">{s.date}</td>
                     <td className="px-3 py-2.5 font-mono">{s.time}</td>
                     <td className="px-3 py-2.5">Court {s.court}</td>
-                    <td className="px-3 py-2.5"><span className="text-[10px] font-bold uppercase">{s.session_type || '-'}</span></td>
+                    <td className="px-3 py-2.5"><span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${s.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>{s.session_type || 'private'}</span></td>
                     <td className="px-3 py-2.5 text-center">
                       {s.paid ? <span className="px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-400 text-[10px] font-bold">Paid</span> : <span className="text-slate-400">-</span>}
                     </td>

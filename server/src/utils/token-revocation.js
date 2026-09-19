@@ -1,28 +1,57 @@
-import { nanoid } from 'nanoid'
+import { createHash } from 'crypto'
+import db from '../db.js'
 
-// In-memory refresh token revocation store
-// Key: jti (unique token id), Value: { revokedAt }
-const revokedTokens = new Map()
+// SHA-256 hash of a refresh token — used as the lookup key in app_sessions.
+// Tokens are high-entropy random strings so SHA-256 is sufficient (not password-grade).
+function hashToken(token) {
+  return createHash('sha256').update(token).digest('hex')
+}
 
-// Cleanup expired tokens every 10 minutes
-setInterval(() => {
-  const now = Date.now()
-  // Tokens older than 7 days (max refresh lifetime) can be removed
-  for (const [jti, val] of revokedTokens) {
-    if (val.revokedAt < now - 7 * 24 * 60 * 60 * 1000) {
-      revokedTokens.delete(jti)
-    }
+export async function createSession(userId, refreshToken, expiresAt) {
+  const token_hash = hashToken(refreshToken)
+  return db.insert('app_sessions', {
+    user_id: userId,
+    refresh_token: token_hash,
+    refresh_expires_at: new Date(expiresAt).toISOString(),
+    loggedin_at: new Date().toISOString(),
+    is_active: '1',
+  })
+}
+
+export async function findActiveSession(refreshToken) {
+  const token_hash = hashToken(refreshToken)
+  const row = await db.find('app_sessions', s => s.refresh_token === token_hash && s.is_active === '1')
+  return row || null
+}
+
+export async function rotateSession(refreshToken) {
+  const token_hash = hashToken(refreshToken)
+  const row = await db.find('app_sessions', s => s.refresh_token === token_hash && s.is_active === '1')
+  if (row) {
+    await db.update('app_sessions', row.id, {
+      is_active: '0',
+      loggedout_at: new Date().toISOString(),
+    })
   }
-}, 10 * 60 * 1000).unref?.()
-
-export function generateJti() {
-  return nanoid(21)
+  return row
 }
 
-export function revokeRefreshToken(jti) {
-  if (jti) revokedTokens.set(jti, { revokedAt: Date.now() })
+export async function deactivateSession(refreshToken) {
+  const token_hash = hashToken(refreshToken)
+  const row = await db.find('app_sessions', s => s.refresh_token === token_hash && s.is_active === '1')
+  if (row) {
+    await db.update('app_sessions', row.id, {
+      is_active: '0',
+      loggedout_at: new Date().toISOString(),
+    })
+  }
+  return row
 }
 
-export function isRefreshTokenRevoked(jti) {
-  return revokedTokens.has(jti)
+export async function updateLastRequest(sessionId) {
+  try {
+    await db.update('app_sessions', sessionId, {
+      last_req_at: new Date().toISOString(),
+    })
+  } catch { /* non-fatal */ }
 }

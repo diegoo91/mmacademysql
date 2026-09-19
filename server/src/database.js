@@ -22,14 +22,14 @@ if (!existsSync(DB_PATH) && existsSync(OLD_DB_PATH)) {
 // This setup is for testing/demo only. Production data would require either Railway's paid
 // persistent volumes or migrating to a real database (Postgres, SQLite on volume, etc.).
 
-let data = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [] }
+let data = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], roles: [], coach_daily_hours: [], coach_payments: [] }
 
 if (existsSync(DB_PATH)) {
   try { data = JSON.parse(readFileSync(DB_PATH, 'utf-8')) } catch { /* start fresh */ }
 }
 
 // Ensure all expected collections exist (handles adding new collections)
-const DEFAULTS = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], court_defaults: [] }
+const DEFAULTS = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], court_defaults: [], roles: [], coach_daily_hours: [], coach_payments: [] }
 for (const [key, val] of Object.entries(DEFAULTS)) {
   if (!Array.isArray(data[key])) data[key] = val
 }
@@ -48,10 +48,22 @@ if (data.users.filter(u => u.role === 'coach').length === 0) {
   const COACH_HASH = '$2a$10$7V27YSU20H7PcyNtbkrmOu7h1Vo09lDAXFEMWZQ73/y9DmVxIy9z2'
   const ts = now()
   const baseId = nextId('users')
-  const c1 = { id: baseId, name: 'Coach Laila', email: 'laila@mmpadel.com', phone: '', dob: '', role: 'coach', password_hash: COACH_HASH, is_claimed: true, skill_level: 'Advanced', notes: '', private_balance: 0, group_balance: 0, member_since: '2026', force_password_change: 0, member_code: String(baseId).padStart(3, '0'), created_at: ts, updated_at: ts }
-  const c2 = { id: baseId + 1, name: 'Coach Carlos', email: 'carlos@mmpadel.com', phone: '', dob: '', role: 'coach', password_hash: COACH_HASH, is_claimed: true, skill_level: 'Advanced', notes: '', private_balance: 0, group_balance: 0, member_since: '2026', force_password_change: 0, member_code: String(baseId + 1).padStart(3, '0'), created_at: ts, updated_at: ts }
+  const c1 = { id: baseId, name: 'Coach Laila', email: 'laila@mmpadel.com', phone: '', dob: '', role: 'coach', password_hash: COACH_HASH, is_claimed: true, skill_level: 'Advanced', notes: '', private_balance: 0, group_balance: 0, member_since: '2026', force_password_change: 0, account_status: 'active', member_code: String(baseId).padStart(3, '0'), created_at: ts, updated_at: ts }
+  const c2 = { id: baseId + 1, name: 'Coach Omar', email: 'omar@mmpadel.com', phone: '', dob: '', role: 'coach', password_hash: COACH_HASH, is_claimed: true, skill_level: 'Advanced', notes: '', private_balance: 0, group_balance: 0, member_since: '2026', force_password_change: 0, account_status: 'active', member_code: String(baseId + 1).padStart(3, '0'), created_at: ts, updated_at: ts }
   data.users.push(c1, c2)
   data.court_defaults = [{ id: 1, court: 1, coach_id: c1.id }, { id: 2, court: 2, coach_id: c2.id }, { id: 3, court: 3, coach_id: c1.id }]
+  save()
+}
+
+// Seed system roles if missing
+if (!data.roles || data.roles.length === 0) {
+  const ts = now()
+  data.roles = [
+    { id: 1, name: 'superadmin', display_name: 'Super Admin', level: 4, permissions: ['dashboard','bookings','schedule','players','results','users','imports','comments','conversions'], is_system: true, created_at: ts, updated_at: ts },
+    { id: 2, name: 'admin', display_name: 'Admin', level: 3, permissions: ['dashboard','bookings','schedule','players','results','imports','comments','conversions'], is_system: true, created_at: ts, updated_at: ts },
+    { id: 3, name: 'coach', display_name: 'Coach', level: 2, permissions: ['schedule','players','results'], is_system: true, created_at: ts, updated_at: ts },
+    { id: 4, name: 'player', display_name: 'Player', level: 1, permissions: [], is_system: true, created_at: ts, updated_at: ts },
+  ]
   save()
 }
 

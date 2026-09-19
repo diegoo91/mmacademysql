@@ -1,7 +1,8 @@
 import { Router } from 'express'
-import db from '../database.js'
+import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
+import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const router = Router()
 router.use(authenticate)
@@ -11,10 +12,21 @@ function deriveWinner(scoreA, scoreB) {
   return scoreA > scoreB ? 'A' : 'B'
 }
 
-router.get('/', (req, res) => {
+async function resolveIds(names) {
+  if (!Array.isArray(names)) return []
+  const ids = []
+  for (const name of names) {
+    if (!name) { ids.push(null); continue }
+    const user = await db.find('users', u => (u.name || '').toLowerCase() === name.toLowerCase())
+    ids.push(user ? user.id : null)
+  }
+  return ids
+}
+
+router.get('/', async (req, res) => {
   try {
     const { from, to, player, competition, status, page = 1, limit = 100 } = req.query
-    let all = db.findAll('results')
+    let all = await db.findAll('results')
     if (req.user.role === 'player') {
       all = all.filter(r => r.status === 'confirmed')
     } else if (status) {
@@ -25,8 +37,8 @@ router.get('/', (req, res) => {
     if (player) {
       const q = player.toLowerCase()
       all = all.filter(r => {
-        const sideA = r.sideA || [r.player_a].filter(Boolean)
-        const sideB = r.sideB || [r.player_b].filter(Boolean)
+        const sideA = Array.isArray(r.sideA) ? r.sideA : [r.player_a].filter(Boolean)
+        const sideB = Array.isArray(r.sideB) ? r.sideB : [r.player_b].filter(Boolean)
         return [...sideA, ...sideB].some(n => n.toLowerCase().includes(q))
       })
     }
@@ -41,9 +53,9 @@ router.get('/', (req, res) => {
   }
 })
 
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const result = db.get('results', parseInt(req.params.id))
+    const result = await db.get('results', parseInt(req.params.id))
     if (!result) return res.status(404).json({ error: 'Result not found' })
     res.json(result)
   } catch (err) {
@@ -52,9 +64,9 @@ router.get('/:id', (req, res) => {
   }
 })
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const { date, format, sideA, sideB, score_a, score_b, court, competition, notes } = req.body
+    const { date, format, sideA, sideB, sideA_ids, sideB_ids, score_a, score_b, court, competition, notes } = req.body
     if (!date || !format || !sideA || !sideB) {
       return res.status(400).json({ error: 'Date, format, sideA, and sideB are required' })
     }
@@ -67,6 +79,19 @@ router.post('/', (req, res) => {
     if (!Array.isArray(sideB) || sideB.length < 1 || sideB.length > 2) {
       return res.status(400).json({ error: 'sideB must have 1-2 players' })
     }
+
+    // Enforce IDs resolve — reject if any name doesn't match a DB player
+    const idsA = await resolveIds(sideA)
+    const idsB = await resolveIds(sideB)
+    const unresolvedA = sideA.filter((name, i) => name && !idsA[i])
+    const unresolvedB = sideB.filter((name, i) => name && !idsB[i])
+    if (unresolvedA.length > 0 || unresolvedB.length > 0) {
+      return res.status(400).json({
+        code: 'UNKNOWN_PLAYER',
+        players: [...unresolvedA, ...unresolvedB],
+      })
+    }
+
     const sa = Number(score_a) || 0
     const sb = Number(score_b) || 0
     if (sa === sb) return res.status(400).json({ error: 'Scores cannot be tied' })
@@ -74,10 +99,11 @@ router.post('/', (req, res) => {
     const winner_side = deriveWinner(sa, sb)
     const status = (req.user.role === 'superadmin' || req.user.role === 'admin') ? 'confirmed' : 'pending'
 
-    const result = db.insert('results', {
+    const result = await db.insert('results', {
       date,
       format,
       sideA, sideB,
+      sideA_ids: idsA, sideB_ids: idsB,
       player_a: sideA[0] || '',
       player_b: sideB[0] || '',
       score_a: sa, score_b: sb,
@@ -91,6 +117,7 @@ router.post('/', (req, res) => {
       notes: notes || '',
       import_batch: null,
     })
+    await auditCreate(req, 'result', result.id, { date, format, sideA, sideB, score_a: sa, score_b: sb, status })
     res.status(201).json(result)
   } catch (err) {
     console.error('Create result error:', err)
@@ -98,12 +125,13 @@ router.post('/', (req, res) => {
   }
 })
 
-router.put('/:id/confirm', requireRole('superadmin', 'admin'), (req, res) => {
+router.put('/:id/confirm', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
-    const result = db.get('results', id)
+    const result = await db.get('results', id)
     if (!result) return res.status(404).json({ error: 'Result not found' })
-    const updated = db.update('results', id, { status: 'confirmed' })
+    const updated = await db.update('results', id, { status: 'confirmed' })
+    await auditUpdate(req, 'result', result.id, { status: result.status }, { status: 'confirmed' })
     res.json(updated)
   } catch (err) {
     console.error('Confirm result error:', err)
@@ -111,17 +139,34 @@ router.put('/:id/confirm', requireRole('superadmin', 'admin'), (req, res) => {
   }
 })
 
-router.put('/:id', requireRole('superadmin', 'admin'), (req, res) => {
+router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
-    const result = db.get('results', id)
+    const result = await db.get('results', id)
     if (!result) return res.status(404).json({ error: 'Result not found' })
-    const { date, format, sideA, sideB, score_a, score_b, court, competition, notes, status } = req.body
+    const { date, format, sideA, sideB, sideA_ids, sideB_ids, score_a, score_b, court, competition, notes, status } = req.body
+    const newSideA = sideA || result.sideA
+    const newSideB = sideB || result.sideB
+
+    // Enforce IDs resolve if sides changed
+    const idsA = sideA ? await resolveIds(sideA) : (sideA_ids || result.sideA_ids)
+    const idsB = sideB ? await resolveIds(sideB) : (sideB_ids || result.sideB_ids)
+    if (sideA) {
+      const unresolved = sideA.filter((name, i) => name && !idsA[i])
+      if (unresolved.length > 0) return res.status(400).json({ code: 'UNKNOWN_PLAYER', players: unresolved })
+    }
+    if (sideB) {
+      const unresolved = sideB.filter((name, i) => name && !idsB[i])
+      if (unresolved.length > 0) return res.status(400).json({ code: 'UNKNOWN_PLAYER', players: unresolved })
+    }
+
     const updates = {
       date: date || result.date,
       format: format || result.format,
-      sideA: sideA || result.sideA,
-      sideB: sideB || result.sideB,
+      sideA: newSideA,
+      sideB: newSideB,
+      sideA_ids: idsA,
+      sideB_ids: idsB,
       player_a: sideA ? sideA[0] : result.player_a,
       player_b: sideB ? sideB[0] : result.player_b,
       score_a: score_a ?? result.score_a,
@@ -134,7 +179,8 @@ router.put('/:id', requireRole('superadmin', 'admin'), (req, res) => {
       notes: notes ?? result.notes,
       status: status || result.status,
     }
-    const updated = db.update('results', id, updates)
+    const updated = await db.update('results', id, updates)
+    await auditUpdate(req, 'result', result.id, { date: result.date, score_a: result.score_a, score_b: result.score_b, status: result.status }, { date: updates.date, score_a: updates.score_a, score_b: updates.score_b, status: updates.status })
     res.json(updated)
   } catch (err) {
     console.error('Update result error:', err)
@@ -142,10 +188,12 @@ router.put('/:id', requireRole('superadmin', 'admin'), (req, res) => {
   }
 })
 
-router.delete('/:id', requireRole('superadmin', 'admin'), (req, res) => {
+router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
-    if (!db.get('results', parseInt(req.params.id))) return res.status(404).json({ error: 'Result not found' })
-    db.remove('results', parseInt(req.params.id))
+    const result = await db.get('results', parseInt(req.params.id))
+    if (!result) return res.status(404).json({ error: 'Result not found' })
+    await db.remove('results', parseInt(req.params.id))
+    await auditDelete(req, 'result', result.id, { date: result.date, sideA: result.sideA, sideB: result.sideB, score_a: result.score_a, score_b: result.score_b })
     res.json({ ok: true })
   } catch (err) {
     console.error('Delete result error:', err)
