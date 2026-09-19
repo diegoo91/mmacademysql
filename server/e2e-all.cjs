@@ -96,7 +96,7 @@ async function run() {
   // ── AUTH (login once, cache tokens) ──
   console.log('\n[auth]')
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@mmpadel.com'
-  const adminPass = process.env.ADMIN_PASSWORD || '***REDACTED***'
+  const adminPass = process.env.ADMIN_PASSWORD || 'changeme_use_ADMIN_PASSWORD_env'
 
   const adminLogin = await req('POST', '/auth/login', { email: adminEmail, password: adminPass }, null)
   mark('POST /auth/login (admin)', adminLogin.ok, JSON.stringify(adminLogin.data))

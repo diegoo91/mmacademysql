@@ -18,16 +18,24 @@ let instance = null
 
 export function getKnex() {
   if (!instance) {
+    const connStr = process.env.DATABASE_URL
+    const connection = connStr
+      ? { connectionString: connStr, ssl: { rejectUnauthorized: false } }
+      : {
+          host: process.env.DB_HOST || dbConfig.host,
+          port: Number(process.env.DB_PORT || dbConfig.port),
+          database: process.env.DB_NAME || dbConfig.database,
+          user: process.env.DB_USER || dbConfig.user,
+          password: process.env.DB_PASSWORD ?? dbConfig.password,
+          ssl: process.env.DB_HOST && process.env.DB_HOST.includes('supabase')
+            ? { rejectUnauthorized: false }
+            : undefined,
+        }
     instance = knexLib({
       client: 'pg',
-      connection: {
-        host: process.env.DB_HOST || dbConfig.host,
-        port: Number(process.env.DB_PORT || dbConfig.port),
-        database: process.env.DB_NAME || dbConfig.database,
-        user: process.env.DB_USER || dbConfig.user,
-        password: process.env.DB_PASSWORD ?? dbConfig.password,
-      },
+      connection,
       pool: { min: 0, max: Number(process.env.DB_CONNECTION_LIMIT || dbConfig.connectionLimit) },
+      acquireConnectionTimeout: 10000,
     })
   }
   return instance

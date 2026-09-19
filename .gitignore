@@ -31,6 +31,18 @@ server/academy.db.json
 server/data/academy.db.json
 server/data/uploads/
 server/data/backups/
+server/data/migrate.sql
+server/uploads/
+server/backups/
+
+# Database dumps / exports (may contain PII + password hashes)
+*.dmp
+*.dump
+*.sql
+!server/schema.sql
+!server/migrations/*.sql
+mysql-export/
+backup_*.dmp
 
 # Spreadsheet files (may contain credentials)
 *.xlsx
