@@ -176,10 +176,14 @@ function AppRoutes() {
 }
 
 export default function App() {
+  // Follow vite `base` (/mmacademysql/ on project Pages, / on custom domain)
+  // so routes resolve on both without further edits.
+  const baseUrl = import.meta.env.BASE_URL || '/'
+  const basename = baseUrl === '/' ? '/' : baseUrl.replace(/\/+$/, '')
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter basename={import.meta.env.PROD ? '/MMAcademy' : ''}>
+        <BrowserRouter basename={basename}>
           <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
