@@ -69,20 +69,21 @@ router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
     const id = parseInt(req.params.id)
     const user = await db.get('users', id)
     if (!user) return res.status(404).json({ error: 'User not found' })
-    const { name, email, phone, role, skill_level, permissions, notes, private_balance, group_balance } = req.body
+    const { name, email, phone, role, skill_level, notes, private_balance, group_balance } = req.body
     const roleNames = (await db.findAll('roles')).map(r => r.name)
     if (role && !roleNames.includes(role)) return res.status(400).json({ error: 'Invalid role' })
     const err = validateLength('name', name, LIMITS.name) || validateLength('notes', notes, LIMITS.notes)
     if (err) return res.status(400).json({ error: err })
+    if (email && email !== user.email) {
+      const existing = await db.find('users', u => u.email === email)
+      if (existing) return res.status(409).json({ error: 'Email already exists' })
+    }
     if (role && role !== user.role && user.id === req.user.id) return res.status(400).json({ error: 'Cannot change your own role' })
     // Escalation guard: only superadmin may assign the superadmin role
     if (role === 'superadmin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only superadmin can assign the superadmin role' })
     }
     const updates = { name: name || user.name, email: email || user.email, phone: phone ?? user.phone, role: role || user.role, skill_level: skill_level || user.skill_level, notes: notes ?? user.notes, private_balance: private_balance !== undefined ? Number(private_balance) : user.private_balance, group_balance: group_balance !== undefined ? Number(group_balance) : user.group_balance }
-    if (req.user.role === 'superadmin' && Array.isArray(permissions)) {
-      updates.permissions = permissions
-    }
     const updated = await db.update('users', id, updates)
     const { password_hash, ...safe } = updated
     // Audit role changes
