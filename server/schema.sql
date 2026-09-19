@@ -11,23 +11,12 @@
 --   updated_at triggers auto-fires (app does NOT set updated_at)
 -- ============================================================================
 
--- ---------------------------------------------------------------- app_sessions ---
-DROP TABLE IF EXISTS app_sessions CASCADE;
-CREATE TABLE app_sessions (
-    session_id BIGSERIAL PRIMARY KEY,
-    refresh_token VARCHAR(510) NOT NULL,
-    refresh_expires_at TIMESTAMP NULL DEFAULT NULL,
-    user_id BIGINT,
-    loggedin_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    loggedout_at TIMESTAMP NULL DEFAULT NULL,
-    last_req_at TIMESTAMP NULL DEFAULT NULL,
-    is_active VARCHAR(2) NOT NULL DEFAULT '1'
-);
-ALTER SEQUENCE app_sessions_session_id_seq START WITH 1000;
-
 -- ----------------------------------------------------------------- users ---
+-- NOTE: app_sessions is (re)created AFTER this cleanup block — do not create it above.
 DROP TABLE IF EXISTS refresh_denylist CASCADE;
 DROP TABLE IF EXISTS app_sessions CASCADE;
+DROP TABLE IF EXISTS coach_payments CASCADE;
+DROP TABLE IF EXISTS coach_daily_hours CASCADE;
 DROP TABLE IF EXISTS roles CASCADE;
 DROP TABLE IF EXISTS court_defaults CASCADE;
 DROP TABLE IF EXISTS audit_logs CASCADE;
@@ -43,6 +32,22 @@ DROP TABLE IF EXISTS results CASCADE;
 DROP TABLE IF EXISTS import_batches CASCADE;
 DROP TABLE IF EXISTS players CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+
+-- ------------------------------------------------------------ app_sessions ---
+-- Created here (after all cleanup DROPs above) so it is never dropped twice.
+CREATE TABLE app_sessions (
+    session_id BIGSERIAL PRIMARY KEY,
+    refresh_token VARCHAR(510) NOT NULL,
+    refresh_expires_at TIMESTAMP NULL DEFAULT NULL,
+    user_id INT,
+    loggedin_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    loggedout_at TIMESTAMP NULL DEFAULT NULL,
+    last_req_at TIMESTAMP NULL DEFAULT NULL,
+    is_active VARCHAR(2) NOT NULL DEFAULT '1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+ALTER SEQUENCE app_sessions_session_id_seq START WITH 1000;
 
 CREATE TABLE users (
     user_id SERIAL PRIMARY KEY,
@@ -423,6 +428,40 @@ INSERT INTO roles (name, display_name, level, permissions, is_system) VALUES
   ('coach',      'Coach',       2, '["schedule","players","results"]'::jsonb, true),
   ('player',     'Player',      1, '[]'::jsonb, true)
 ON CONFLICT (name) DO NOTHING;
+
+-- ------------------------------------------------- refresh_denylist ---
+-- Persistent refresh-token revocation store (replaces the old in-memory Map).
+CREATE TABLE refresh_denylist (
+    jti VARCHAR(50) PRIMARY KEY,
+    expires_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_denylist_expires ON refresh_denylist(expires_at);
+
+-- ------------------------------------------------- coach_daily_hours ---
+CREATE TABLE coach_daily_hours (
+    id SERIAL PRIMARY KEY,
+    coach_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    hours NUMERIC NOT NULL DEFAULT 0,
+    notes TEXT DEFAULT '',
+    source VARCHAR(32) DEFAULT 'manual',
+    created_by INT,
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    UNIQUE (coach_id, date)
+);
+
+-- ---------------------------------------------------- coach_payments ---
+CREATE TABLE coach_payments (
+    id SERIAL PRIMARY KEY,
+    coach_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    hours_deducted NUMERIC NOT NULL DEFAULT 0,
+    amount NUMERIC DEFAULT 0,
+    notes TEXT DEFAULT '',
+    created_by INT,
+    created_at TIMESTAMP DEFAULT now()
+);
 
 -- --------------------------------------------------- balance CHECK constraints ---
 ALTER TABLE users ADD CONSTRAINT chk_private_balance CHECK (private_balance >= 0);

@@ -59,9 +59,14 @@ function splitStatements(sql) {
   const n = sql.length
   while (i < n) {
     const c = sql[i]
-    if (tag) {
+    if (tag !== null) {
+      if (c === '$' && sql.startsWith('$' + tag + '$', i)) {
+        cur += '$' + tag + '$'
+        i += tag.length + 2
+        tag = null
+        continue
+      }
       cur += c
-      if (c === '$' && sql.startsWith(tag + '$', i)) { cur += tag + '$'; i += tag.length + 1; tag = null }
       i++
       continue
     }
@@ -145,7 +150,11 @@ async function main() {
       console.log('  schema applied')
     }
     console.log('Truncating destination tables...')
-    const existing = tables.filter((t) => (await dst.query('SELECT 1 FROM pg_tables WHERE schemaname=$1 AND tablename=$2', ['public', t])).rows.length)
+    const existing = []
+    for (const t of tables) {
+      const r = await dst.query('SELECT 1 FROM pg_tables WHERE schemaname=$1 AND tablename=$2', ['public', t])
+      if (r.rows.length) existing.push(t)
+    }
     if (existing.length) await dst.query(`TRUNCATE ${existing.map((t) => `"${t}"`).join(', ')} CASCADE`)
 
     console.log('Copying rows...')
@@ -154,7 +163,15 @@ async function main() {
       const n = counts[t]
       if (!n) { console.log(`  ${t}: 0 rows (skipped)`); continue }
       const { rows } = await src.query(`SELECT * FROM "${t}"`)
-      const cols = Object.keys(rows[0])
+      // Intersect with destination columns so schema drift never breaks the copy.
+      const { rows: dcols } = await dst.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1`,
+        [t]
+      )
+      const destCols = new Set(dcols.map((r) => r.column_name))
+      const cols = Object.keys(rows[0]).filter((c) => destCols.has(c))
+      const skipped = Object.keys(rows[0]).filter((c) => !destCols.has(c))
+      if (skipped.length) console.log(`  ${t}: skipping columns missing in dest: ${skipped.join(', ')}`)
       for (let i = 0; i < rows.length; i += 200) {
         const chunk = rows.slice(i, i + 200)
         const ph = chunk.map((_, ri) => `(${cols.map((_, ci) => `$${ri * cols.length + ci + 1}`).join(', ')})`).join(', ')
