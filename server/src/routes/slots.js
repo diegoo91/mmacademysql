@@ -164,7 +164,7 @@ async function findPlayerUserById(userId) {
 
 
 // PUT /:id — generic update (admin edits slot fields)
-router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const slot = await db.get('slots', id)
@@ -290,7 +290,7 @@ router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
 })
 
 // POST / — create slot (admin manual)
-router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const { date, time, court, player_text, session_type, balanceOverride, coach_id } = req.body
     if (!date || !time || !court) return res.status(400).json({ error: 'Date, time, and court are required' })
@@ -378,7 +378,7 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
 })
 
 // DELETE /:id
-router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/:id', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -392,7 +392,7 @@ router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
 })
 
 // PUT /:id/approve — old approve for pending (now only for payment_approved → schedule_approved per-slot)
-router.put('/:id/approve', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/approve', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -417,7 +417,7 @@ router.put('/:id/approve', requireRole('superadmin', 'admin'), async (req, res) 
 })
 
 // PUT /:id/toggle-type
-router.put('/:id/toggle-type', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/toggle-type', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -548,7 +548,7 @@ router.put('/:id/decline', async (req, res) => {
 })
 
 // PUT /:id/mark-attended — admin forces schedule_approved → player_confirmed (retroactive deduction)
-router.put('/:id/mark-attended', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/mark-attended', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -598,7 +598,7 @@ router.put('/:id/mark-attended', requireRole('superadmin', 'admin'), async (req,
 })
 
 // PUT /day/:date/approve — batch approve all payment_approved slots on a date → schedule_approved
-router.put('/day/:date/approve', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/day/:date/approve', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const { date } = req.params
     const slots = await db.findAll('slots', s => s.date === date && s.status === STATUS.PAYMENT_APPROVED)
@@ -626,7 +626,7 @@ router.put('/day/:date/approve', requireRole('superadmin', 'admin'), async (req,
 })
 
 // PUT /day/:date/undo — batch revert schedule_approved slots on a date → payment_approved
-router.put('/day/:date/undo', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/day/:date/undo', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const { date } = req.params
     const slots = await db.findAll('slots', s => s.date === date && s.status === STATUS.SCHEDULE_APPROVED)
@@ -654,7 +654,7 @@ router.put('/day/:date/undo', requireRole('superadmin', 'admin'), async (req, re
 })
 
 // PUT /auto-confirm-past — auto-confirm all schedule_approved slots with dates before today
-router.put('/auto-confirm-past', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/auto-confirm-past', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
     const today = getCairoToday()
     const slots = await db.findAll('slots', s => s.date < today && s.status === STATUS.SCHEDULE_APPROVED)
