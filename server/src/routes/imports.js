@@ -160,14 +160,28 @@ const TEMPLATES = {
     async commit(rows) {
       let count = 0
       for (const r of rows) {
-        await db.upsert('slots', ['date', 'time', 'court'], {
-          date: r.date.trim(),
-          time: r.time.trim(),
-          court: parseInt(r.court),
-          player_text: r.player || '',
-          session_type: r.session_type || 'group',
-          booking_id: null,
-        })
+        const date = r.date.trim()
+        const time = r.time.trim()
+        const court = parseInt(r.court)
+        const existing = await db.find('slots', s => s.date === date && s.time === time && s.court === court)
+        if (existing) {
+          const existingNames = (existing.player_text || '').split('/').map(n => n.trim()).filter(Boolean)
+          const newName = (r.player || '').trim()
+          if (newName && !existingNames.includes(newName)) {
+            existingNames.push(newName)
+            await db.update('slots', existing.id, {
+              player_text: existingNames.join(' / '),
+              session_type: r.session_type || existing.session_type || 'group',
+            })
+          }
+        } else {
+          await db.insert('slots', {
+            date, time, court,
+            player_text: r.player || '',
+            session_type: r.session_type || 'group',
+            booking_id: null,
+          })
+        }
         count++
       }
       return count
