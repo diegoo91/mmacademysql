@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Link, useSearchParams, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
   Calendar as CalendarIcon,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   RefreshCw,
   Sparkles,
   UserCheck,
+  X,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -54,11 +56,8 @@ function getDayName(dateStr) {
 }
 
 export default function Schedule() {
-  const [searchParams] = useSearchParams()
-  const initialMine = searchParams.get('mine') === '1'
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [mineOnly, setMineOnly] = useState(initialMine)
   const [scheduleView, setScheduleView] = useState('day')
   const [scheduleDate, setScheduleDate] = useState(() => toLocalDateStr(new Date()))
   const [showFlyerModal, setShowFlyerModal] = useState(false)
@@ -125,6 +124,24 @@ export default function Schedule() {
     }
   }, [user])
 
+  const handleConfirmSlot = async (slotId) => {
+    try {
+      await api.put(`/slots/${slotId}/confirm`)
+      setSlots(prev => prev.map(s => s.id === slotId ? { ...s, status: 'player_confirmed' } : s))
+    } catch (err) {
+      alert(err.message || 'Failed to confirm')
+    }
+  }
+
+  const handleDeclineSlot = async (slotId) => {
+    try {
+      await api.put(`/slots/${slotId}/decline`)
+      setSlots(prev => prev.filter(s => s.id !== slotId))
+    } catch (err) {
+      alert(err.message || 'Failed to decline')
+    }
+  }
+
   const handleProceedToBook = () => {
     if (!user) { navigate('/login'); return }
     navigate('/book')
@@ -146,7 +163,7 @@ export default function Schedule() {
   const currentDaySlots = useMemo(() => {
     const daySlots = slotsByDate.get(scheduleDate) || []
     const times = [...new Set(daySlots.map(s => s.time))].sort()
-    const rows = times.map(time => {
+    return times.map(time => {
       const c1 = daySlots.find(s => s.time === time && s.court === 1)
       const c2 = daySlots.find(s => s.time === time && s.court === 2)
       const c3 = daySlots.find(s => s.time === time && s.court === 3)
@@ -161,26 +178,15 @@ export default function Schedule() {
         slot3: c3 || null,
       }
     })
-    if (mineOnly && user) {
-      return rows.filter(r =>
-        mySlotKeys.has(`${scheduleDate}|${r.time}|1`) || mySlotKeys.has(`${scheduleDate}|${r.time}|2`) || mySlotKeys.has(`${scheduleDate}|${r.time}|3`)
-        || mySessionKeys.has(`${scheduleDate}|${r.time}|1`) || mySessionKeys.has(`${scheduleDate}|${r.time}|2`) || mySessionKeys.has(`${scheduleDate}|${r.time}|3`)
-      )
-    }
-    return rows
-  }, [scheduleDate, slotsByDate, mineOnly, user, mySessionKeys, mySlotKeys])
+  }, [scheduleDate, slotsByDate])
 
   const weekTimes = useMemo(() => {
     const set = new Set()
     for (const s of slots) {
-      if (mineOnly && user) {
-        if (mySlotKeys.has(`${s.date}|${s.time}|${s.court}`) || mySessionKeys.has(`${s.date}|${s.time}|${s.court}`)) set.add(s.time)
-      } else {
-        set.add(s.time)
-      }
+      set.add(s.time)
     }
     return [...set].sort()
-  }, [slots, mineOnly, user, mySessionKeys, mySlotKeys])
+  }, [slots])
 
   const weekDates = useMemo(() => {
     const d = new Date(scheduleDate + 'T00:00:00')
@@ -221,9 +227,9 @@ export default function Schedule() {
         <div className="text-center space-y-3 mb-8">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-lime-400/10 border border-lime-400/30 text-lime-400 text-xs font-bold uppercase tracking-widest">
             <Flame className="w-4 h-4" />
-            <span>{mineOnly ? 'My Schedule' : 'Official Court Availability & Schedule'}</span>
+            <span>Official Court Availability & Schedule</span>
           </div>
-          <h1 className="font-heading text-3xl sm:text-4xl font-black text-theme">{mineOnly ? 'My Upcoming Sessions' : 'Academy Booking Schedule'}</h1>
+          <h1 className="font-heading text-3xl sm:text-4xl font-black text-theme">Academy Booking Schedule</h1>
           <p className="text-muted text-sm max-w-xl mx-auto">
             Sunday to Thursday • 3:00 PM to 11:00 PM • {COURTS} courts • All sessions 1 hour • Live from server.
           </p>
@@ -250,8 +256,7 @@ export default function Schedule() {
           <>
             {user && awaitingConfirmationSlots.length > 0 && (
               <div className="mb-6 p-4 rounded-2xl bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm font-bold text-center">
-                ⏳ You have {awaitingConfirmationSlots.length} slot{awaitingConfirmationSlots.length > 1 ? 's' : ''} awaiting your confirmation —{' '}
-                <Link to="/profile" className="underline font-extrabold">go to Profile → My Slots</Link> to confirm.
+                ⏳ You have {awaitingConfirmationSlots.length} slot{awaitingConfirmationSlots.length > 1 ? 's' : ''} awaiting your confirmation — tap Confirm on any highlighted slot below.
               </div>
             )}
 
@@ -266,17 +271,10 @@ export default function Schedule() {
               </div>
 
               {user && (
-                <button
-                  onClick={() => setMineOnly(v => !v)}
-                  className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 border ${
-                    mineOnly
-                      ? 'bg-lime-400 text-slate-950 border-lime-400 shadow-md shadow-lime-400/20'
-                      : 'bg-surface text-theme border-theme hover:border-lime-400/50'
-                  }`}
-                >
+                <div className="flex items-center gap-1 text-xs text-lime-400 font-bold">
                   <UserCheck className="w-4 h-4" />
-                  <span>My Schedule</span>
-                </button>
+                  <span>Logged in as {user.name}</span>
+                </div>
               )}
               {!user && (
                 <Link to="/login" className="px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 border bg-surface text-muted border-theme hover:border-lime-400/50 opacity-60">
@@ -312,6 +310,7 @@ export default function Schedule() {
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-lime-400" /><span className="text-theme">Available</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-rose-500" /><span className="text-theme">Booked</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-500" /><span className="text-theme">Pending</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-purple-500" /><span className="text-theme">Awaiting You</span></div>
               </div>
             </div>
 
@@ -346,6 +345,7 @@ export default function Schedule() {
                             const courtNum = i + 1
                             const player = slotObj?.player_text || ''
                             const isMine = mySlotKeys.has(`${scheduleDate}|${slot.time}|${courtNum}`) || mySessionKeys.has(`${scheduleDate}|${slot.time}|${courtNum}`)
+                            const isAwaiting = slotObj?.status === 'schedule_approved' && isMine
                             return (
                                <div key={i} className={`px-4 py-3 border-l border-theme text-xs font-bold text-center flex flex-col items-center justify-center gap-1 ${
                                 isMine ? 'bg-lime-400/15 text-lime-400' : 'bg-lime-400/5 text-lime-400'
@@ -358,6 +358,19 @@ export default function Schedule() {
                                 )}
                                 {player && slotObj?.coach_name && (
                                   <span className="text-[9px] font-bold text-amber-400">{slotObj.coach_name}</span>
+                                )}
+                                {isAwaiting && (
+                                  <span className="text-[9px] font-bold text-purple-400">⏳ Awaiting you</span>
+                                )}
+                                {isAwaiting && (
+                                  <div className="flex gap-1 mt-0.5">
+                                    <button onClick={() => handleConfirmSlot(slotObj.id)} className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 text-[9px] font-bold flex items-center gap-0.5">
+                                      <Check className="w-2.5 h-2.5" />Confirm
+                                    </button>
+                                    <button onClick={() => handleDeclineSlot(slotObj.id)} className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 text-[9px] font-bold flex items-center gap-0.5">
+                                      <X className="w-2.5 h-2.5" />Decline
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             )

@@ -36,6 +36,8 @@ async function resolveScheduleNames(playerText) {
 
 async function notifyUser(userId, kind, title, body, link) {
   if (!userId) return
+  const existing = await db.find('notifications', n => n.user_id === userId && n.kind === kind && n.body === body)
+  if (existing) return
   await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
 }
 

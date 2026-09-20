@@ -61,7 +61,7 @@ const STATUS = {
   DENIED: 'denied',
 }
 
-const PLAYER_VISIBLE_STATUSES = [STATUS.PLAYER_CONFIRMED]
+const PLAYER_VISIBLE_STATUSES = [STATUS.PLAYER_CONFIRMED, STATUS.SCHEDULE_APPROVED]
 
 router.get('/', optionalAuth, async (req, res) => {
   try {
