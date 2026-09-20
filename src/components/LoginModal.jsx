@@ -29,7 +29,7 @@ export default function LoginModal() {
       } else if (u.role === 'coach') {
         navigate('/admin/schedule')
       } else {
-        navigate('/schedule?mine=1')
+        navigate('/schedule')
       }
     } catch (err) {
       setError(err.message || 'Login failed.')
@@ -51,7 +51,7 @@ export default function LoginModal() {
       } else if (u.role === 'coach') {
         navigate('/admin/schedule')
       } else {
-        navigate('/schedule?mine=1')
+        navigate('/schedule')
       }
     } catch {
       setError('Demo login failed. The demo account may not exist yet.')

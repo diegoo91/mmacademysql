@@ -26,7 +26,7 @@ export default function Login() {
       } else if (u.role === 'coach') {
         navigate('/admin/schedule')
       } else {
-        navigate('/schedule?mine=1')
+        navigate('/schedule')
       }
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.')
@@ -38,7 +38,7 @@ export default function Login() {
   if (user) {
     if (user.role === 'superadmin' || user.role === 'admin') return <Navigate to="/admin" replace />
     if (user.role === 'coach') return <Navigate to="/admin/schedule" replace />
-    return <Navigate to="/schedule?mine=1" replace />
+    return <Navigate to="/schedule" replace />
   }
 
   return (

@@ -20,7 +20,6 @@ export default function Navbar() {
     { name: 'Home', path: '/' },
     ...(!user ? [{ name: 'Sign Up', path: '/signup' }] : []),
     { name: 'Schedule', path: '/schedule' },
-    ...(user && user.role === 'player' ? [{ name: 'My Schedule', path: '/schedule?mine=1' }] : []),
     { name: 'Book a Session', path: '/book' },
   ]
 

@@ -453,7 +453,7 @@ export default function Profile() {
                 Submit Match Result
               </button>
               <Link
-                to={hasCredits ? '/schedule?mine=1' : '/book'}
+                to={hasCredits ? '/schedule' : '/book'}
                 className="w-full py-3.5 rounded-xl bg-surface border border-theme text-theme font-extrabold text-sm transition-all flex items-center justify-center gap-2"
               >
                 <Calendar className="w-4 h-4" />
