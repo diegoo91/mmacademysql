@@ -212,7 +212,7 @@ EXECUTE FUNCTION update_timestamp();
 CREATE TABLE slots (
     id SERIAL PRIMARY KEY,
     date DATE,
-    time VARCHAR(10),
+    time VARCHAR(20),
     court INT,
     player_name_1 VARCHAR(255),
     player_name_2 VARCHAR(255),

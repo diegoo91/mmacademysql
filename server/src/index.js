@@ -145,6 +145,22 @@ try {
   console.log('Migration check for account_status skipped:', err.message)
 }
 
+// Migration: widen slots.time from VARCHAR(10) to VARCHAR(20) for HH:MM-HH:MM ranges (safe idempotent)
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    const col = await knex.raw("SELECT character_maximum_length FROM information_schema.columns WHERE table_name = 'slots' AND column_name = 'time'")
+    const maxLen = col.rows?.[0]?.character_maximum_length
+    if (maxLen && maxLen < 20) {
+      await knex.raw('ALTER TABLE slots ALTER COLUMN time TYPE VARCHAR(20)')
+      console.log('Migration: widened slots.time to VARCHAR(20)')
+    }
+  }
+} catch (err) {
+  console.log('Migration check for slots.time skipped:', err.message)
+}
+
 // Ensure roles table exists and has the 4 system roles (safe idempotent migration)
 async function ensureRoles() {
   try {
