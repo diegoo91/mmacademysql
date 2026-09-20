@@ -710,11 +710,8 @@ router.put('/notify-awaiting', authenticate, requireRole('superadmin', 'admin'),
         const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
         if (user) {
           const body = `A ${slot.session_type || 'session'} on ${slot.date} at ${slot.time} (Court ${slot.court}) has been assigned to you. Please confirm your attendance.`
-          const existing = await db.find('notifications', n => n.user_id === user.id && n.kind === 'schedule_approved' && n.body === body)
-          if (!existing) {
-            await db.insert('notifications', { user_id: user.id, kind: 'schedule_approved', title: 'Awaiting Your Confirmation', body, link: '/profile', read: 0 })
-            notified++
-          }
+          await notifyUser(user.id, 'schedule_approved', 'Awaiting Your Confirmation', body, '/profile')
+          notified++
         }
       }
     }
