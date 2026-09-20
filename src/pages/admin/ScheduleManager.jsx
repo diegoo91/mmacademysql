@@ -61,6 +61,12 @@ export default function ScheduleManager() {
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
   const [uploadMessage, setUploadMessage] = useState(null)
+  const [scheduleUnknowns, setScheduleUnknowns] = useState([])
+  const [creatingPlayer, setCreatingPlayer] = useState(null)
+  const [newPlayerEmail, setNewPlayerEmail] = useState('')
+  const [newPlayerPhone, setNewPlayerPhone] = useState('')
+  const [createPlayerLoading, setCreatePlayerLoading] = useState(false)
+  const [createPlayerError, setCreatePlayerError] = useState('')
   const [balanceWarning, setBalanceWarning] = useState(null)
   const [pendingOverride, setPendingOverride] = useState(null)
   const [dayActionLoading, setDayActionLoading] = useState(null)
@@ -305,11 +311,13 @@ export default function ScheduleManager() {
     if (!importFile) return
     setImporting(true)
     setUploadMessage(null)
+    setScheduleUnknowns([])
     try {
       const fd = new FormData()
       fd.append('file', importFile)
       const preview = await api.upload('/imports/schedule/preview', fd)
       setImportPreview(preview)
+      setScheduleUnknowns(preview.scheduleUnknowns || [])
       setUploadMessage(null)
     } catch (err) {
       setUploadMessage({ type: 'error', text: err.message || 'Upload failed. Please try again.' })
@@ -322,14 +330,47 @@ export default function ScheduleManager() {
     if (!importPreview) return
     try {
       const result = await api.post('/imports/schedule/commit', { rows: importPreview.allRows || importPreview.preview, filename: importPreview.filename })
-      setUploadMessage({ type: 'success', text: `Imported ${result.inserted} time slots from ${importPreview.filename || 'file'}.` })
+      let msg = `Imported ${result.inserted} time slots from ${importPreview.filename || 'file'}.`
+      if (result.commitErrors?.length) {
+        msg += ` ${result.commitErrors.length} skipped (name conflicts).`
+      }
+      setUploadMessage({ type: 'success', text: msg })
       setImportPreview(null)
       setImportFile(null)
+      setScheduleUnknowns([])
       fetchSlots()
       setActiveTab('schedule')
     } catch (err) {
       setUploadMessage({ type: 'error', text: err.message || 'Commit failed. Please try again.' })
     }
+  }
+
+  const handleCreatePlayerFromUnknown = async (unknown) => {
+    if (!newPlayerEmail.trim()) { setCreatePlayerError('Email is required'); return }
+    setCreatePlayerLoading(true)
+    setCreatePlayerError('')
+    try {
+      await api.post('/players', { full_name: unknown.name, email: newPlayerEmail.trim(), phone: newPlayerPhone.trim() || undefined })
+      const updated = scheduleUnknowns.filter(u => !(u.row === unknown.row && u.name === unknown.name))
+      setScheduleUnknowns(updated)
+      setCreatingPlayer(null)
+      setNewPlayerEmail('')
+      setNewPlayerPhone('')
+    } catch (err) {
+      setCreatePlayerError(err.message || 'Failed to create player')
+    }
+    setCreatePlayerLoading(false)
+  }
+
+  const handleDeleteSlotFromUnknown = (unknown) => {
+    const rows = importPreview.allRows || importPreview.preview
+    const idx = unknown.row - 2
+    if (idx >= 0 && idx < rows.length) {
+      const updatedRows = [...rows]
+      updatedRows.splice(idx, 1)
+      setImportPreview({ ...importPreview, allRows: updatedRows, validRows: updatedRows.length, totalRows: updatedRows.length })
+    }
+    setScheduleUnknowns(scheduleUnknowns.filter(u => !(u.row === unknown.row && u.name === unknown.name)))
   }
 
   const pendingConversions = conversionRequests.filter(r => r.status === 'pending')
@@ -641,6 +682,7 @@ export default function ScheduleManager() {
                   <span className="text-muted">Total: <strong className="text-theme">{importPreview.totalRows}</strong></span>
                   <span className="text-emerald-400">Valid: <strong>{importPreview.validRows}</strong></span>
                   {importPreview.errors.length > 0 && <span className="text-rose-400">Errors: <strong>{importPreview.errors.length}</strong></span>}
+                  {scheduleUnknowns.length > 0 && <span className="text-amber-400">Unknown players: <strong>{scheduleUnknowns.length}</strong></span>}
                 </div>
                 {importPreview.errors.length > 0 && (
                   <div className="max-h-40 overflow-y-auto space-y-1">
@@ -649,8 +691,42 @@ export default function ScheduleManager() {
                     ))}
                   </div>
                 )}
-                <button onClick={handleCommitImport} disabled={importPreview.validRows === 0} className="px-6 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold disabled:opacity-50">
-                  Import {importPreview.validRows} Slots
+                {scheduleUnknowns.length > 0 && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                    <p className="text-xs font-bold text-amber-400">Unrecognized Player Names</p>
+                    <p className="text-[11px] text-muted">Each unknown must be resolved before import. Create a new account or delete the slot.</p>
+                    {scheduleUnknowns.map((u, i) => (
+                      <div key={i} className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] text-theme font-semibold">{u.name}</span>
+                        <span className="text-[10px] text-muted">{u.date} {u.time} Court {u.court}</span>
+                        {creatingPlayer?.row === u.row && creatingPlayer?.name === u.name ? (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <input type="email" value={newPlayerEmail} onChange={e => setNewPlayerEmail(e.target.value)} placeholder="Email *" className="text-[11px] px-2 py-1 rounded-lg bg-surface border border-theme text-theme w-36" />
+                            <input type="text" value={newPlayerPhone} onChange={e => setNewPlayerPhone(e.target.value)} placeholder="Phone" className="text-[11px] px-2 py-1 rounded-lg bg-surface border border-theme text-theme w-24" />
+                            <button onClick={() => handleCreatePlayerFromUnknown(u)} disabled={createPlayerLoading} className="text-[10px] px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold hover:bg-emerald-500/30 disabled:opacity-50">
+                              {createPlayerLoading ? '...' : 'Save'}
+                            </button>
+                            <button onClick={() => { setCreatingPlayer(null); setCreatePlayerError('') }} className="text-[10px] px-2 py-1 rounded-lg bg-surface text-muted hover:text-theme">
+                              Cancel
+                            </button>
+                            {createPlayerError && <span className="text-[10px] text-rose-400">{createPlayerError}</span>}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => { setCreatingPlayer(u); setNewPlayerEmail(''); setNewPlayerPhone(''); setCreatePlayerError('') }} className="text-[10px] px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold hover:bg-emerald-500/30">
+                              + Create Account
+                            </button>
+                            <button onClick={() => handleDeleteSlotFromUnknown(u)} className="text-[10px] px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 font-bold hover:bg-rose-500/30">
+                              Delete Slot
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={handleCommitImport} disabled={importPreview.validRows === 0 || scheduleUnknowns.length > 0} className="px-6 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold disabled:opacity-50">
+                  {scheduleUnknowns.length > 0 ? `Resolve ${scheduleUnknowns.length} unknown player(s) first` : `Import ${importPreview.validRows} Slots`}
                 </button>
               </div>
             )}

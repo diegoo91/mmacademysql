@@ -139,6 +139,8 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
     const { full_name, email, phone, dob, skill_level, notes } = req.body
     if (!full_name || !email) return res.status(400).json({ error: 'Full name and email are required' })
     if (await db.find('users', u => u.email === email)) return res.status(409).json({ error: 'Email already exists' })
+    const nameConflict = await db.find('users', u => u.name && u.name.toLowerCase() === full_name.trim().toLowerCase())
+    if (nameConflict) return res.status(409).json({ error: `Player "${full_name}" already exists (different email: ${nameConflict.email})` })
     const validSkills = ['Beginner', 'Intermediate', 'Advanced']
     if (skill_level && !validSkills.includes(skill_level)) return res.status(400).json({ error: 'Invalid skill level' })
     const user = await db.insert('users', {

@@ -53,6 +53,8 @@ router.post('/', requireRole('superadmin'), async (req, res) => {
     const roleNames = (await db.findAll('roles')).map(r => r.name)
     if (role && !roleNames.includes(role)) return res.status(400).json({ error: 'Invalid role' })
     if (await db.find('users', u => u.email === email)) return res.status(409).json({ error: 'Email already exists' })
+    const nameConflict = await db.find('users', u => u.name && u.name.toLowerCase() === name.trim().toLowerCase())
+    if (nameConflict) return res.status(409).json({ error: `User "${name}" already exists (different email: ${nameConflict.email})` })
     const hash = await bcrypt.hash(password, 12)
     const user = await db.insert('users', { name, email, phone: phone || '', role: role || 'player', password_hash: hash, member_since: new Date().getFullYear().toString(), force_password_change: 0, skill_level: 'Intermediate', dob: '', notes: '', private_balance: 0, group_balance: 0, is_claimed: true, member_code: await nextMemberCode() })
     const { password_hash, ...safe } = user

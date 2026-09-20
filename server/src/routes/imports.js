@@ -9,7 +9,59 @@ import { unlinkSync } from 'fs'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
-import { auditCreate } from '../middleware/audit.js'
+import { auditCreate, auditUpdate } from '../middleware/audit.js'
+import { deductBalance, creditBalance } from '../utils/balance.js'
+
+// Cairo timezone helpers
+function getCairoToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' })
+}
+
+// Resolve all player names against users table
+async function resolveScheduleNames(playerText) {
+  if (!playerText?.trim()) return { matched: [], unknowns: [], names: [] }
+  const names = playerText.split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+  const matched = []
+  const unknowns = []
+  for (const name of names) {
+    const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
+    if (user) {
+      matched.push({ name, user })
+    } else {
+      unknowns.push(name)
+    }
+  }
+  return { matched, unknowns, names }
+}
+
+async function notifyUser(userId, kind, title, body, link) {
+  if (!userId) return
+  await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
+}
+
+const STATUS = {
+  AVAILABLE: 'available',
+  PAYMENT_PENDING: 'payment_pending',
+  PAYMENT_APPROVED: 'payment_approved',
+  SCHEDULE_APPROVED: 'schedule_approved',
+  PLAYER_CONFIRMED: 'player_confirmed',
+  CANCELLED: 'cancelled',
+  DENIED: 'denied',
+}
+
+// Resolve unknowns for schedule preview rows
+async function resolveUnknownsForRows(rows) {
+  const unknowns = []
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    if (!r.player?.trim()) continue
+    const { unknowns: rowUnknowns } = await resolveScheduleNames(r.player)
+    for (const name of rowUnknowns) {
+      unknowns.push({ row: i + 2, date: r.date, time: r.time, court: r.court, name })
+    }
+  }
+  return unknowns
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -158,36 +210,61 @@ const TEMPLATES = {
       return errors
     },
     async commit(rows) {
+      const today = getCairoToday()
       let count = 0
       for (const r of rows) {
         const date = r.date.trim()
         const time = r.time.trim()
         const court = parseInt(r.court)
-        const matches = await db.findAll('slots', s => s.date === date && s.time === time && s.court === court)
         const newName = (r.player || '').trim()
+        const sessionType = r.session_type || 'private'
+        const matches = await db.findAll('slots', s => s.date === date && s.time === time && s.court === court)
+
         if (matches.length > 0) {
           const allNames = new Set()
           for (const m of matches) {
-            for (const n of (m.player_text || '').split('/').map(s => s.trim()).filter(Boolean)) {
+            for (const n of (m.player_text || '').split(/\s*\/\s*/).map(s => s.trim()).filter(Boolean)) {
               allNames.add(n)
             }
           }
           if (newName) allNames.add(newName)
           const mergedNames = [...allNames].join(' / ')
-          await db.update('slots', matches[0].id, {
-            player_text: mergedNames,
-            session_type: r.session_type || matches[0].session_type || 'group',
-          })
+
+          const updates = { player_text: mergedNames, session_type: r.session_type || matches[0].session_type || 'group' }
+          if (!matches[0].status) updates.status = STATUS.SCHEDULE_APPROVED
+          if (!matches[0].user_id && newName) {
+            const { matched } = await resolveScheduleNames(newName)
+            if (matched.length > 0 && !updates.user_id) updates.user_id = matched[0].user.id
+          }
+
+          await db.update('slots', matches[0].id, updates)
           for (let i = 1; i < matches.length; i++) {
             await db.remove('slots', matches[i].id)
           }
         } else {
-          await db.insert('slots', {
-            date, time, court,
-            player_text: newName,
-            session_type: r.session_type || 'group',
+          const { matched } = await resolveScheduleNames(newName)
+          const isFuture = date >= today
+          const slotStatus = isFuture ? STATUS.SCHEDULE_APPROVED : STATUS.PLAYER_CONFIRMED
+
+          const slot = await db.insert('slots', {
+            date, time, court, player_text: newName,
+            session_type: sessionType,
+            status: slotStatus,
             booking_id: null,
+            user_id: sessionType === 'private' ? (matched[0]?.user.id || null) : null,
           })
+
+          if (isFuture) {
+            for (const m of matched) {
+              await notifyUser(m.user.id, 'schedule_approved', 'Awaiting Your Confirmation',
+                `A ${sessionType} session on ${date} at ${time} (Court ${court}) has been assigned to you. Please confirm your attendance.`,
+                '/profile')
+            }
+          } else {
+            for (const m of matched) {
+              await deductBalance(m.user.id, sessionType)
+            }
+          }
         }
         count++
       }
@@ -299,10 +376,16 @@ const TEMPLATES = {
     },
     async commit(rows) {
       let count = 0
+      const errors = []
       for (const r of rows) {
         if (!r.email?.trim()) continue
         const existing = await db.find('users', u => u.email.toLowerCase().trim() === r.email.toLowerCase().trim())
         if (existing) continue
+        const nameConflict = await db.find('users', u => u.name && u.name.toLowerCase() === r.full_name.trim().toLowerCase())
+        if (nameConflict) {
+          errors.push({ name: r.full_name.trim(), email: r.email.trim(), conflictWith: nameConflict.email })
+          continue
+        }
         await db.insert('users', {
           name: r.full_name.trim(),
           email: r.email.trim().toLowerCase(),
@@ -320,7 +403,7 @@ const TEMPLATES = {
         })
         count++
       }
-      return count
+      return { count, errors }
     },
   },
 }
@@ -524,6 +607,7 @@ router.post('/:kind/preview', upload.single('file'), async (req, res) => {
       errors: allErrors.filter(Boolean),
       preview: rows.slice(0, 20),
       allRows: rows,
+      scheduleUnknowns: kind === 'schedule' ? await resolveUnknownsForRows(rows) : undefined,
     })
   } catch (err) {
     console.error('Preview error:', err)
@@ -559,9 +643,11 @@ router.post('/:kind/commit', async (req, res) => {
     let errorCount = 0
     for (const row of processedRows) { if (tmpl.validate(row).length) errorCount++ }
     const batch = await db.insert('import_batches', { kind, filename: filename || 'unknown.xlsx', row_count: processedRows.length, error_count: errorCount, by_user: req.user.id, status: 'committed' })
-    const inserted = await tmpl.commit(processedRows, batch.id)
+    const commitResult = await tmpl.commit(processedRows, batch.id)
+    const inserted = typeof commitResult === 'object' ? commitResult.count : commitResult
+    const commitErrors = typeof commitResult === 'object' ? commitResult.errors : []
     await auditCreate(req, 'import_batch', batch.id, { kind, filename, row_count: processedRows.length, inserted, error_count: errorCount })
-    res.json({ batchId: batch.id, kind, inserted, totalRows: processedRows.length, errorRows: errorCount })
+    res.json({ batchId: batch.id, kind, inserted, totalRows: processedRows.length, errorRows: errorCount, commitErrors })
   } catch (err) {
     console.error('Commit error:', err)
     res.status(500).json({ error: 'Commit failed' })
