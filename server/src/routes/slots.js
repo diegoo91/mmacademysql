@@ -162,6 +162,8 @@ router.put('/notify-awaiting', requireRole('superadmin', 'admin'), async (req, r
 
 async function notifyUser(userId, kind, title, body, link) {
   if (!userId) return
+  const all = await db.findAll('notifications', n => n.user_id === userId && n.kind === kind)
+  if (all.some(n => n.body === body)) return
   await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
 }
 
