@@ -163,21 +163,28 @@ const TEMPLATES = {
         const date = r.date.trim()
         const time = r.time.trim()
         const court = parseInt(r.court)
-        const existing = await db.find('slots', s => s.date === date && s.time === time && s.court === court)
-        if (existing) {
-          const existingNames = (existing.player_text || '').split('/').map(n => n.trim()).filter(Boolean)
-          const newName = (r.player || '').trim()
-          if (newName && !existingNames.includes(newName)) {
-            existingNames.push(newName)
-            await db.update('slots', existing.id, {
-              player_text: existingNames.join(' / '),
-              session_type: r.session_type || existing.session_type || 'group',
-            })
+        const matches = await db.findAll('slots', s => s.date === date && s.time === time && s.court === court)
+        const newName = (r.player || '').trim()
+        if (matches.length > 0) {
+          const allNames = new Set()
+          for (const m of matches) {
+            for (const n of (m.player_text || '').split('/').map(s => s.trim()).filter(Boolean)) {
+              allNames.add(n)
+            }
+          }
+          if (newName) allNames.add(newName)
+          const mergedNames = [...allNames].join(' / ')
+          await db.update('slots', matches[0].id, {
+            player_text: mergedNames,
+            session_type: r.session_type || matches[0].session_type || 'group',
+          })
+          for (let i = 1; i < matches.length; i++) {
+            await db.remove('slots', matches[i].id)
           }
         } else {
           await db.insert('slots', {
             date, time, court,
-            player_text: r.player || '',
+            player_text: newName,
             session_type: r.session_type || 'group',
             booking_id: null,
           })
