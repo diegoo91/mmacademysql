@@ -136,6 +136,30 @@ router.put('/court-defaults', authenticate, requireRole('superadmin', 'admin'), 
 
 router.use(authenticate)
 
+// PUT /notify-awaiting — one-time backfill: send notifications for all schedule_approved slots
+router.put('/notify-awaiting', requireRole('superadmin', 'admin'), async (req, res) => {
+  try {
+    const allSlots = await db.findAll('slots')
+    const awaiting = allSlots.filter(s => s.status === 'schedule_approved')
+    let notified = 0
+    for (const slot of awaiting) {
+      const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+      for (const name of names) {
+        const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
+        if (user) {
+          const body = `A ${slot.session_type || 'session'} on ${slot.date} at ${slot.time} (Court ${slot.court}) has been assigned to you. Please confirm your attendance.`
+          await notifyUser(user.id, 'schedule_approved', 'Awaiting Your Confirmation', body, '/profile')
+          notified++
+        }
+      }
+    }
+    res.json({ slots: awaiting.length, notified })
+  } catch (err) {
+    console.error('Notify awaiting error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 async function notifyUser(userId, kind, title, body, link) {
   if (!userId) return
   await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
@@ -693,29 +717,6 @@ router.put('/auto-confirm-past', authenticate, requireRole('superadmin', 'admin'
     res.json({ confirmed: count })
   } catch (err) {
     console.error('Auto-confirm past error:', err)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// PUT /notify-awaiting — one-time backfill: send notifications for all schedule_approved slots missing them
-router.put('/notify-awaiting', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
-  try {
-    const slots = await db.findAll('slots', s => s.status === STATUS.SCHEDULE_APPROVED)
-    let notified = 0
-    for (const slot of slots) {
-      const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
-      for (const name of names) {
-        const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
-        if (user) {
-          const body = `A ${slot.session_type || 'session'} on ${slot.date} at ${slot.time} (Court ${slot.court}) has been assigned to you. Please confirm your attendance.`
-          await notifyUser(user.id, 'schedule_approved', 'Awaiting Your Confirmation', body, '/profile')
-          notified++
-        }
-      }
-    }
-    res.json({ slots: slots.length, notified })
-  } catch (err) {
-    console.error('Notify awaiting error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
