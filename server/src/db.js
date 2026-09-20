@@ -262,7 +262,7 @@ function pgApi(trx) {
   async function findAll(table, where, opts = {}) {
     if (typeof where === 'function') {
       const rows = await q(table).select()
-      return pageRows(sortRows(normalizeRows(table, rows.filter(where)), opts.orderBy), opts)
+      return pageRows(sortRows(normalizeRows(table, rows.filter(r => where(normalizeFromPg(table, r)))), opts.orderBy), opts)
     }
     let b = applyObjectWhere(q(table), where)
     if (opts.orderBy && typeof opts.orderBy !== 'function') {
