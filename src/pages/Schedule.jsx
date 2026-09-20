@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
+  CalendarCheck,
   Calendar as CalendarIcon,
   Check,
   CheckCircle2,
@@ -59,6 +60,7 @@ export default function Schedule() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [scheduleView, setScheduleView] = useState('day')
+  const [mineOnly, setMineOnly] = useState(false)
   const [scheduleDate, setScheduleDate] = useState(() => toLocalDateStr(new Date()))
   const [showFlyerModal, setShowFlyerModal] = useState(false)
   const [slots, setSlots] = useState([])
@@ -147,7 +149,19 @@ export default function Schedule() {
     navigate('/book')
   }
 
-  const slotsByDate = useMemo(() => groupSlotsByDate(slots), [slots])
+  const filteredSlots = useMemo(() => {
+    if (!mineOnly || !user) return slots
+    const name = (user.name || '').toLowerCase()
+    return slots.filter(s => {
+      if (s.player_text) {
+        const names = s.player_text.split(/[/+]/).map(n => n.trim().toLowerCase())
+        if (names.includes(name)) return true
+      }
+      return s.user_id === user.id
+    })
+  }, [slots, mineOnly, user])
+
+  const slotsByDate = useMemo(() => groupSlotsByDate(filteredSlots), [filteredSlots])
 
   const availableDates = useMemo(() => {
     return [...slotsByDate.keys()].sort()
@@ -271,10 +285,13 @@ export default function Schedule() {
               </div>
 
               {user && (
-                <div className="flex items-center gap-1 text-xs text-lime-400 font-bold">
-                  <UserCheck className="w-4 h-4" />
-                  <span>Logged in as {user.name}</span>
-                </div>
+                <button
+                  onClick={() => setMineOnly(v => !v)}
+                  className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${mineOnly ? 'bg-purple-500 text-white shadow-md' : 'bg-surface border border-theme text-muted hover:border-purple-400/50'}`}
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  <span>My Schedule</span>
+                </button>
               )}
               {!user && (
                 <Link to="/login" className="px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 border bg-surface text-muted border-theme hover:border-lime-400/50 opacity-60">
