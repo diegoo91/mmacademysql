@@ -169,7 +169,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
     const id = parseInt(req.params.id)
     const slot = await db.get('slots', id)
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
-    const { player_text, date, time, court, session_type, status, balanceOverride, coach_id } = req.body
+    const { player_text, date, time, court, session_type, status, balanceOverride, coach_id, user_id: bodyUserId } = req.body
     const err = validateLength('Player', player_text, LIMITS.playerText)
     if (err) return res.status(400).json({ error: err })
     const newDate = date || slot.date
@@ -185,6 +185,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
       coach_id: coach_id !== undefined ? coach_id : slot.coach_id,
       status: status || slot.status,
     }
+    if (bodyUserId !== undefined) updates.user_id = bodyUserId
 
     if (player_text !== undefined) {
       if (!player_text?.trim()) {
@@ -271,6 +272,15 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
           }
         }
       }
+    }
+
+    // Auto-resolve user_id for private slots that have player_text but no user_id
+    const slotType = (updates.session_type || slot.session_type) || 'private'
+    const slotText = updates.player_text || slot.player_text
+    if (slotType === 'private' && slotText?.trim() && !updates.user_id && !slot.user_id) {
+      const first = slotText.split(/\s*\/\s*/)[0].trim()
+      const u = await db.find('users', x => x.role === 'player' && x.name && x.name.toLowerCase() === first.toLowerCase())
+      if (u) updates.user_id = u.id
     }
 
     const updated = await db.update('slots', id, updates)
