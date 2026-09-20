@@ -138,6 +138,8 @@ router.use(authenticate)
 
 async function notifyUser(userId, kind, title, body, link) {
   if (!userId) return
+  const existing = await db.find('notifications', n => n.user_id === userId && n.kind === kind && n.body === body)
+  if (existing) return
   await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
 }
 
@@ -693,6 +695,32 @@ router.put('/auto-confirm-past', authenticate, requireRole('superadmin', 'admin'
     res.json({ confirmed: count })
   } catch (err) {
     console.error('Auto-confirm past error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// PUT /notify-awaiting — one-time backfill: send notifications for all schedule_approved slots missing them
+router.put('/notify-awaiting', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+  try {
+    const slots = await db.findAll('slots', s => s.status === STATUS.SCHEDULE_APPROVED)
+    let notified = 0
+    for (const slot of slots) {
+      const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+      for (const name of names) {
+        const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
+        if (user) {
+          const body = `A ${slot.session_type || 'session'} on ${slot.date} at ${slot.time} (Court ${slot.court}) has been assigned to you. Please confirm your attendance.`
+          const existing = await db.find('notifications', n => n.user_id === user.id && n.kind === 'schedule_approved' && n.body === body)
+          if (!existing) {
+            await db.insert('notifications', { user_id: user.id, kind: 'schedule_approved', title: 'Awaiting Your Confirmation', body, link: '/profile', read: 0 })
+            notified++
+          }
+        }
+      }
+    }
+    res.json({ slots: slots.length, notified })
+  } catch (err) {
+    console.error('Notify awaiting error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
