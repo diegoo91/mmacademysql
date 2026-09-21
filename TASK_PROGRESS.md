@@ -97,25 +97,72 @@
 
 ---
 
+## Supabase Migration — Completed (2026-09-19)
+
+**Scope:** Migrate local PostgreSQL to Supabase (hosted Postgres).
+
+- [x] Supabase project created: `ptakjxykexvwhympkwfg`, user `postgres.ptakjxykexvwhympkwfg`
+- [x] `scripts/migrate-local-pg-to-supabase.js` — schema apply + data load + verify
+- [x] Pooler resolved: `aws-1-eu-west-1.pooler.supabase.com:6543` (IPv4-compatible; `aws-0` dead; direct host IPv6-only)
+- [x] Data load: **1292 rows, 19 tables** — all counts verified
+- [x] Live write test: signup/login/delete via pooler — **PASS**
+- [x] `server/schema.sql` fixed: `app_sessions` placement, `created_at`/`updated_at`, `refresh_denylist`, `coach_daily_hours`, `coach_payments`
+- [x] Repo made public, history rewritten (purged dumps/uploads/hashes), `.gitignore` hardened
+
+---
+
+## Railway Deploy — Completed (2026-09-19)
+
+**Scope:** Deploy backend to Railway (replaces local `:5174` as production).
+
+- [x] Railway service: `mm-academy-api-production`, root dir `server/`, watch `server/**`, healthcheck `/api/health`
+- [x] `server/package.json` — added `engines: { node: ">=20" }` for Railway Node 20
+- [x] Railway env vars: `DATABASE_URL` (pooler), `JWT_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=production`, `CORS_ORIGINS`
+- [x] `VITE_API_BASE` repo variable set → `https://mm-academy-api-production.up.railway.app/api`
+- [x] Pages redeployed — bundle verified: Railway URL in, `localhost:5174` out
+- [x] CORS `FRONTEND_URL=https://diegoo91.github.io` set on Railway
+- [x] `render.yaml` committed (inert — Railway deprecated config-as-code)
+- [x] Frontend: `base: '/mmacademysql/'`, router `basename` from `BASE_URL`, `public/CNAME`
+
+---
+
+## Production PG Bug Fixes — Completed (2026-09-19)
+
+- [x] `PUT /api/users/:id` 500 — removed nonexistent `permissions` column, added 409 duplicate email guard (`5dee471`)
+- [x] Import commit 500 — `slots.time VARCHAR(10)` too narrow → widened to `VARCHAR(20)` + boot migration (`c00278c`)
+- [x] Schedule import overwrite → merge: group players combine into one slot (`b85f3dc`, `e93d6e8`)
+- [x] `db.findAll` predicate bug — raw knex rows (Date objects) never `===` strings → normalize before filter (`4d591d4`)
+- [x] Added `authenticate` middleware to 9 protected slot routes (`760ad90`)
+- [x] Schedule import merge verified working — group pairs merge into one slot with both players
+
+---
+
 ## Next (in order)
 
-1. **e2e re-run with fresh JSON DB** — previous run had stale admin password; re-run `e2e-all.cjs` to confirm 87+/89
-2. **README section** — local setup instructions: `DB_*` env vars, loader usage, port map, smoke command
-3. **`git status/diff` review** — do NOT commit unless asked
-4. **⚠️ `IMPORT_SECRET` appeared once in plain text in chat output** — rotate it later if it guards anything sensitive
+1. **Stop local `:5174` server** — no longer needed; Railway is the production backend
+2. **Custom domain `www.mmacademy.com`** — DNS verification pending (CNAME in `public/CNAME`)
+3. **`api.mmacademy.com`** — optional custom API domain (point CNAME to Railway)
+4. **Rotate Supabase DB password** — appeared in plain text in chat
+5. **Rotate `IMPORT_SECRET`** — appeared in plain text in chat
 
 ---
 
 ## Environment / commands
 
-- Workdirs: API in `server/` (`node src/index.js`, `PORT` env), loader in repo root (`node scripts/migrate-json-to-mysql.js [--dry-run|--force|--skip-schema]`).
-- Port map: `:5175` = MySQL DB server (not HTTP), `:5174` = Node API (JSON backend), `:5176` = Node API (MySQL backend, needs `DB_ENABLED=true PORT=5176`).
-- Boot: `node src/index.js` from `server/` (reads `server/.env`).
-- `oxlint`: `npx oxlint` from `server/`.
-- Frontend build: `npx vite build` from repo root.
-- e2e: `node e2e-all.cjs` from `server/` (server must be running on `:5174`).
+- **Production backend**: Railway dashboard → `mm-academy-api-production` (service `mm-academy-api`)
+- **Frontend**: GitHub Pages at `https://diegoo91.github.io/mmacademysql/`
+- **`VITE_API_BASE`**: set as repo variable → `https://mm-academy-api-production.up.railway.app/api` (baked into bundle at build time)
+- **Railway config**: Root Directory `server`, Watch Paths `server/**`, healthcheck `/api/health`
+- **Railway env vars**: `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=production`, `CORS_ORIGINS`
+- Boot: Railway auto-runs `npm ci && npm start` from `server/`
+- Frontend build: `npx vite build` from repo root (Pages uses `deploy.yml` workflow)
+- e2e: `node e2e-all.cjs` from `server/` (tests Railway endpoint via env vars)
+
+---
 
 ## Data state right now
 
-- PostgreSQL `mmacademy` (localhost:5432): holds migrated data (413 rows, 13 tables) + `roles` table (4 system roles) + `refresh_denylist` table + E2E test residue.
-- `server/data/academy.db.json`: JSON backend with `roles` collection seeded.
+- **Supabase** (source of truth): `ptakjxykexvwhympkwfg` — 1292 rows, 19 tables, pooler `aws-1-eu-west-1.pooler.supabase.com:6543`
+- **Railway**: `mm-academy-api-production` connected to Supabase via pooler
+- **Local pg** (`localhost:5432/mmacademy`): legacy — no longer used for production
+- **JSON backend** (`server/data/academy.db.json`): legacy fallback — `DB_ENABLED` is `true` on Railway

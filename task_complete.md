@@ -179,11 +179,56 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 ---
 
+## Phase 9: Supabase Migration + Public Repo (2026-09-19)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 120 | Repo made public, GitHub Pages confirmed live, README updated | Done | 2026-09-19 |
+| 121 | Git history rewritten via `filter-branch` — purged dumps/uploads/hashes/`inserts.sql` | Done | 2026-09-19 |
+| 122 | `.gitignore` hardened: `.env*`, `node_modules/`, `dist/`, `server/data/` | Done | 2026-09-19 |
+| 123 | E2E admin password redacted from `e2e-all.cjs` (uses env vars) | Done | 2026-09-19 |
+| 124 | `server/schema.sql` fixed: `app_sessions` placement, `created_at`/`updated_at`, `refresh_denylist`, `coach_daily_hours`, `coach_payments` | Done | 2026-09-19 |
+| 125 | `scripts/migrate-local-pg-to-supabase.js` created — schema apply + data load + verify | Done | 2026-09-19 |
+| 126 | Supabase data load: **1292 rows, 19 tables** — all counts verified | Done | 2026-09-19 |
+| 127 | Live write test vs Supabase: signup/login/delete via pooler — **PASS** | Done | 2026-09-19 |
+| 128 | Pooled vs direct host resolved — `aws-1-eu-west-1.pooler.supabase.com:6543` (IPv4-compatible) | Done | 2026-09-19 |
+
+---
+
+## Phase 10: Railway Backend + Pages Repoint (2026-09-19)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 129 | `server/package.json` — added `engines: { node: ">=20" }` for Railway Node 20 | Done | 2026-09-19 |
+| 130 | Railway service created: `mm-academy-api-production`, root dir `server/`, watch `server/**`, healthcheck `/api/health` | Done | 2026-09-19 |
+| 131 | Railway env vars set: `DATABASE_URL` (pooler), `JWT_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=production`, `CORS_ORIGINS` | Done | 2026-09-19 |
+| 132 | `render.yaml` committed (inert — config-as-code deprecated on Railway) | Done | 2026-09-19 |
+| 133 | `VITE_API_BASE` repo variable set → `https://mm-academy-api-production.up.railway.app/api` | Done | 2026-09-19 |
+| 134 | Pages redeployed — bundle verified: Railway URL in, `localhost:5174` out | Done | 2026-09-19 |
+| 135 | E2E via Railway: health OK, signup, login, admin delete, moharam (id=34, superadmin, active) | Done | 2026-09-19 |
+| 136 | Frontend: `base: '/mmacademysql/'`, router `basename` from `BASE_URL`, `public/CNAME`, multi-origin CORS | Done | 2026-09-19 |
+| 137 | CORS `FRONTEND_URL=https://diegoo91.github.io` set on Railway | Done | 2026-09-19 |
+
+---
+
+## Phase 11: Production PG Bug Fixes (2026-09-19)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 138 | `PUT /api/users/:id` 500 — removed nonexistent `permissions` column, added 409 duplicate email guard (`5dee471`) | Done | 2026-09-19 |
+| 139 | Import commit 500 — `slots.time VARCHAR(10)` too narrow → widened to `VARCHAR(20)` + boot migration (`c00278c`) | Done | 2026-09-19 |
+| 140 | Schedule import overwrite → merge: group players combine into one slot (`b85f3dc`, `e93d6e8`) | Done | 2026-09-19 |
+| 141 | `db.findAll` predicate bug — raw knex rows (Date objects) never `===` strings → normalize before filter (`4d591d4`) | Done | 2026-09-19 |
+| 142 | Added `authenticate` middleware to 9 protected slot routes (PUT, DELETE, approve, toggle-type, mark-attended) (`760ad90`) | Done | 2026-09-19 |
+| 143 | Schedule import merge verified — group pairs merge into one slot with both players | Done | 2026-09-19 |
+
+---
+
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| Total tasks completed | 119 |
+| Total tasks completed | 143 |
 | Phase 1: Initial Build | 18 |
 | Phase 2: Deployment | 6 |
 | Phase 3: Feature Enhancements | 12 |
@@ -192,6 +237,9 @@ All tasks completed from project inception (2026-09-09) through current date.
 | Phase 6: pg Migration + API Sweep + Security Audit | 18 |
 | Phase 7: Security Hardening Pass | 19 |
 | Phase 8: DB-Driven Roles | 16 |
+| Phase 9: Supabase Migration + Public Repo | 9 |
+| Phase 10: Railway Backend + Pages Repoint | 9 |
+| Phase 11: Production PG Bug Fixes | 6 |
 
 ---
 
@@ -234,6 +282,11 @@ All tasks completed from project inception (2026-09-09) through current date.
 | 33 | Hardcoded 7d cookie `MaxAge` | Derived from `REFRESH_TOKEN_EXPIRES` env | 2026-09-18 |
 | 34 | PG `roles` table missing → boot crash | Boot-time `CREATE TABLE IF NOT EXISTS` via Knex | 2026-09-18 |
 | 35 | PG JSONB insert: array passed instead of string | Added `roles` to `JSON_COLS` in `db.js` | 2026-09-18 |
+| 36 | `PUT /api/users/:id` 500 on Supabase (nonexistent `permissions` column) | Removed `permissions` from update, added 409 duplicate email guard | 2026-09-19 |
+| 37 | Import commit 500 — `slots.time VARCHAR(10)` truncates `HH:MM-HH:MM` | Widened to `VARCHAR(20)` + boot migration | 2026-09-19 |
+| 38 | Schedule import overwrites instead of merging group players | Changed from `db.upsert` to `findAll` + merge + delete extras | 2026-09-19 |
+| 39 | `db.findAll` predicate never matches — raw knex Date objects vs strings | Normalize rows before passing to predicate in `findAll` | 2026-09-19 |
+| 40 | 9 slot routes missing `authenticate` middleware — silent 401s | Added `authenticate` to PUT/DELETE/approve/toggle-type/mark-attended routes | 2026-09-19 |
 
 ---
 
@@ -241,8 +294,11 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 | Decision | Rationale |
 |----------|-----------|
-| Dual-backend (JSON + MySQL + pg) | Production (Railway) stays on JSON; local dev uses pg via `DB_ENABLED` flag |
-| `DB_ENABLED=false` default | Safe — no database dependency unless explicitly opted in |
+| Dual-backend (JSON + MySQL + pg) | Local dev uses pg; JSON was legacy fallback |
+| Supabase pooler (aws-1) over direct host | Direct host is IPv6-only; pooler is IPv4-compatible |
+| Railway backend over Render | Free tier, deploys from GitHub, healthcheck endpoint, no procfile needed |
+| Config-as-code via dashboard (not `railway.json`) | Railway deprecated config-as-code in repo; env vars + service settings in dashboard |
+| Idempotent boot migrations | `ALTER TABLE` + `ALTER COLUMN` at boot handles schema drift without manual DDL |
 | `ON DELETE SET NULL` for all FKs | Matches JSON behavior (no cascades in app) |
 | `sideA_ids`/`sideB_ids` alongside names | Backward compatible — old results without IDs still work |
 | ID-based matching in reports with name fallback | Handles legacy data gracefully |
@@ -262,28 +318,31 @@ All tasks completed from project inception (2026-09-09) through current date.
 ### Backend (server/)
 | File | Changes |
 |------|---------|
-| `server/schema.sql` | Added `sideA_ids`/`sideB_ids` JSON columns to `results`; pg DDL; `roles` table + seed; `refresh_denylist` table; CHECK constraints |
-| `server/src/db.js` | Added `sideA_ids`/`sideB_ids` to `JSON_COLS`; pg↔app column mapping; `roles` to `TABLES`/`JSON_COLS`/`DATE_COLS`; `removeWhere` method |
+| `server/schema.sql` | Added `sideA_ids`/`sideB_ids` JSON columns to `results`; pg DDL; `roles` table + seed; `refresh_denylist` table; CHECK constraints; `app_sessions` placement fix; `slots.time` widened to `VARCHAR(20)`; `coach_daily_hours` + `coach_payments` tables |
+| `server/src/db.js` | Added `sideA_ids`/`sideB_ids` to `JSON_COLS`; pg↔app column mapping; `roles` to `TABLES`/`JSON_COLS`/`DATE_COLS`; `removeWhere`; normalize rows before predicate in `findAll`; `DATE_COLS` for slots |
 | `server/src/sql.js` | Rewritten for pg (Knex/pg) |
 | `server/src/middleware/rbac.js` | DB-backed `getRole()` with cache, async `getUserPermissions()`, `requirePermission` now async |
+| `server/src/middleware/auth.js` | `authenticate` + `optionalAuth` + `requireRole` exported; `authenticate` added to 9 slot routes |
 | `server/src/middleware/validation.js` | Added `validatePassword()` helper (min-10, max-72) |
 | `server/src/utils/tokens.js` | 1d/30d defaults, `parseDuration()`, env-driven `cookieOptions` |
 | `server/src/utils/token-revocation.js` | DB-backed (`refresh_denylist`), replaces in-memory Map |
 | `server/src/utils/modules.js` | New: `ALL_MODULES`, `DEFAULT_ROLE_PERMISSIONS`, `ROLE_HIERARCHY`, `SYSTEM_ROLES` |
 | `server/src/routes/auth.js` | cookie-parser support, async bcrypt, password policy, await getUserPermissions, env-driven cookie |
-| `server/src/routes/users.js` | DB-derived validRoles, superadmin escalation guard, crypto.randomInt, async bcrypt |
+| `server/src/routes/users.js` | DB-derived validRoles, superadmin escalation guard, crypto.randomInt, async bcrypt; removed `permissions` from PUT, added 409 email guard |
 | `server/src/routes/roles.js` | New: GET + PUT (superadmin-only) |
 | `server/src/routes/players.js` | `requireRole` on all GET routes (PII scoping) |
 | `server/src/routes/payments.js` | Negative balance clamp, tx-wrapped delete |
-| `server/src/routes/slots.js` | Balance helpers wrapped in `db.transaction` |
-| `server/src/routes/imports.js` | `unlinkSync` after parse |
+| `server/src/routes/slots.js` | Balance helpers wrapped in `db.transaction`; 9 routes protected with `authenticate` |
+| `server/src/routes/imports.js` | `unlinkSync` after parse; schedule import merge (findAll + dedup + delete extras) |
 | `server/src/routes/admin-import-db.js` | Backup, preserve audit_logs, confirm, prod guard, roles in COLLECTIONS |
 | `server/src/ensure-admin.js` | Create-only (no auto-update), async bcrypt |
 | `server/src/seed.js` | Async bcrypt |
-| `server/src/index.js` | cookie-parser, 404/error middleware, roles ensure + mount, revocation DB setup |
+| `server/src/index.js` | cookie-parser, 404/error middleware, roles ensure + mount, revocation DB setup; boot migrations (account_status, slots.time widening) |
 | `server/src/database.js` | `roles` collection + seed |
+| `server/package.json` | `engines: { node: ">=20" }` for Railway |
 | `server/.env.example` | 1d/30d token defaults |
 | `server/e2e-all.cjs` | Existing: 99-endpoint sweep |
+| `scripts/migrate-local-pg-to-supabase.js` | New: schema apply + data load + verify for Supabase |
 
 ### Frontend (src/)
 | File | Changes |
@@ -292,8 +351,13 @@ All tasks completed from project inception (2026-09-09) through current date.
 | `src/pages/admin/Roles.jsx` | New: role permissions management page |
 | `src/pages/admin/Users.jsx` | Role dropdown from GET /roles, baseline hint |
 | `src/pages/admin/AdminLayout.jsx` | Roles nav link (superadmin-only) |
+| `src/pages/admin/ScheduleManager.jsx` | Upload/preview/import/delete slot UI |
 | `src/pages/Schedule.jsx` | Removed Quick Dates, awaiting-confirmation banner |
 | `src/pages/SignUp.jsx` | Password min-10 |
 | `src/pages/Profile.jsx` | Password min-10 |
 | `src/App.jsx` | Roles route, password min-10 |
-| `.gitignore` | uploads, backups, logs, exports |
+| `vite.config.js` | `base: '/mmacademysql/'` for GitHub Pages subpath |
+| `.gitignore` | uploads, backups, logs, exports, `.env*`, `node_modules/`, `dist/`, `server/data/` |
+| `public/CNAME` | `www.mmacademy.com` for custom domain |
+| `.github/workflows/deploy.yml` | Pages deploy with `VITE_API_BASE` baked in at build time |
+| `render.yaml` | Inert (Railway deprecated config-as-code; kept for reference) |
