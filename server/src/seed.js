@@ -52,7 +52,6 @@ const NAME_ALIASES = {
   'yasin fathala': 'Yasin Fathallah',
   'yassin mahmoud': 'Yasin Mahmoud',
   'ammar abdelghany': 'Ammar Abd El Ghany',
-  'titos': 'Totos',
   'ahmed salah': 'Ahmed Saleh',
   'hassan': 'Hassan Medhat',
   'zein': 'Zain',

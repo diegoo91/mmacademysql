@@ -10,8 +10,6 @@ const PLAYER_MAP = {
   'farida fathalaa': 'Farida Fathallah',
   'farida fathalaah': 'Farida Fathallah',
   'ammar abdelghany': 'Ammar Abd El Ghany',
-  'titos': 'Totos',
-  'totos': 'Totos',
   'yassin mahmoud': 'Yasin Mahmoud',
   'eyad darwish': 'Eyad Dawish',
   'eyad dawish': 'Eyad Dawish',

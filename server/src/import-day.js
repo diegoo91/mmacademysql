@@ -2,7 +2,6 @@ import db from './database.js'
 
 const PLAYER_MAP = {
   'farida fathala': 'Farida Fathallah',
-  'titos': 'Totos',
 }
 
 function resolveName(raw) {
