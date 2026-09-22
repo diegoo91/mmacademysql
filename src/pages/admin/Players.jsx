@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { AlertCircle, CheckCircle2, Download, Edit, FileUp, History, Plus, Search, Trash2, Upload, X } from 'lucide-react'
+import { AlertCircle, ArrowRightLeft, CheckCircle2, Download, Edit, FileUp, History, Plus, Search, Trash2, Upload, X } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 
@@ -234,11 +234,22 @@ function ImportModal({ kind, onClose, onDone }) {
 
 function PlayerHistoryModal({ player, onClose }) {
   const [sessions, setSessions] = useState([])
+  const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get(`/players/${player.id}/sessions`).then(data => setSessions(data.sessions || [])).catch(() => {}).finally(() => setLoading(false))
+    api.get(`/players/${player.id}/report`).then(data => {
+      setReport(data)
+      setSessions(data.sessions || [])
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [player.id])
+
+  const handleDownloadPDF = async () => {
+    if (!report) return
+    const { generateReceiptPDF } = await import('../../lib/receiptPDF')
+    const doc = generateReceiptPDF(report)
+    doc.save(`receipt_${player.full_name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.pdf`)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn">
@@ -247,11 +258,18 @@ function PlayerHistoryModal({ player, onClose }) {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-lime-400/20 text-lime-400 flex items-center justify-center font-bold text-sm">{player.full_name.charAt(0)}</div>
             <div>
-              <h3 className="text-lg font-bold text-theme">{player.full_name} — Session History</h3>
-              <p className="text-xs text-muted">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
+              <h3 className="text-lg font-bold text-theme">{player.full_name} — Session Report</h3>
+              <p className="text-xs text-muted">{sessions.length} session{sessions.length !== 1 ? 's' : ''}{report && report.amount_owed > 0 && <span className="ml-2 text-amber-400 font-bold">EGP {report.amount_owed.toLocaleString()} owed</span>}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
+          <div className="flex items-center gap-2">
+            {report && report.amount_owed > 0 && (
+              <button onClick={handleDownloadPDF} className="px-3 py-1.5 rounded-lg bg-amber-400/10 text-amber-400 text-xs font-bold hover:bg-amber-400/20 flex items-center gap-1">
+                <Download className="w-3 h-3" /> Receipt PDF
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
+          </div>
         </div>
         {loading ? (
           <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
@@ -291,6 +309,94 @@ function PlayerHistoryModal({ player, onClose }) {
   )
 }
 
+function TransferModal({ player, onClose, allPlayers }) {
+  const [toPlayer, setToPlayer] = useState('')
+  const [sessionType, setSessionType] = useState('private')
+  const [count, setCount] = useState(1)
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState(null)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!toPlayer) { setError('Select a recipient'); return }
+    if (count <= 0) { setError('Count must be > 0'); return }
+    setLoading(true)
+    try {
+      const res = await api.post('/transfers', {
+        from_player_id: player.id,
+        to_player_id: parseInt(toPlayer),
+        session_type: sessionType,
+        count: parseInt(count),
+        notes: notes || undefined,
+      })
+      setResult(res.transfer)
+    } catch (err) {
+      setError(err.message || 'Transfer failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (result) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+        <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
+          <CheckCircle2 className="w-12 h-12 text-lime-400 mx-auto mb-4" />
+          <h3 className="text-lg font-bold text-theme mb-2">Transfer Complete</h3>
+          <p className="text-muted text-sm mb-4">Transferred {result.count} {result.session_type} session(s) from {result.from.name} to {result.to.name}</p>
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-lime-400 text-slate-900 font-bold text-sm">Done</button>
+        </div>
+      </div>
+    )
+  }
+
+  const others = allPlayers.filter(p => p.id !== player.id)
+  const availablePriv = player.total_private || 0
+  const availableGrp = (player.total_group || 0) + (player.total_private || 0) * 2
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+      <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-theme">Transfer Sessions — {player.full_name}</h3>
+          <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-muted uppercase">Transfer To</label>
+            <select value={toPlayer} onChange={e => setToPlayer(e.target.value)} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm">
+              <option value="">Select player...</option>
+              {others.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-muted uppercase">Session Type</label>
+            <div className="flex gap-2 mt-1">
+              <button type="button" onClick={() => setSessionType('private')} className={`flex-1 py-2 rounded-xl text-sm font-bold border ${sessionType === 'private' ? 'bg-blue-400/20 border-blue-400 text-blue-400' : 'bg-surface border-theme text-muted'}`}>Private ({availablePriv} avail)</button>
+              <button type="button" onClick={() => setSessionType('group')} className={`flex-1 py-2 rounded-xl text-sm font-bold border ${sessionType === 'group' ? 'bg-purple-400/20 border-purple-400 text-purple-400' : 'bg-surface border-theme text-muted'}`}>Group ({availableGrp} eff.)</button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-muted uppercase">Count</label>
+            <input type="number" min="1" value={count} onChange={e => setCount(e.target.value)} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-muted uppercase">Notes (optional)</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm" placeholder="Reason for transfer..." />
+          </div>
+          {error && <p className="text-rose-400 text-xs font-bold">{error}</p>}
+          <button type="submit" disabled={loading} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-bold text-sm disabled:opacity-50">
+            {loading ? 'Transferring...' : 'Confirm Transfer'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function Players() {
   const { isAdmin } = useAuth()
   const canEdit = isAdmin
@@ -305,6 +411,7 @@ export default function Players() {
   const [showImport, setShowImport] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [historyPlayer, setHistoryPlayer] = useState(null)
+  const [transferPlayer, setTransferPlayer] = useState(null)
 
   const fetchPlayers = () => {
     setLoading(true)
@@ -439,6 +546,7 @@ export default function Players() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => setHistoryPlayer(p)} title="View Sessions" className="p-2 text-muted hover:text-lime-400 hover:bg-lime-400/10 rounded-lg transition-colors"><History className="w-4 h-4" /></button>
+                        <button onClick={() => setTransferPlayer(p)} title="Transfer Sessions" className="p-2 text-muted hover:text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors"><ArrowRightLeft className="w-4 h-4" /></button>
                         {canEdit && (
                           <>
                             <button onClick={() => setEditPlayer(p)} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"><Edit className="w-4 h-4" /></button>
@@ -466,6 +574,7 @@ export default function Players() {
       {(showAdd || editPlayer) && <PlayerModal player={editPlayer} onClose={() => { setShowAdd(false); setEditPlayer(null) }} onSave={() => { setShowAdd(false); setEditPlayer(null); fetchPlayers() }} />}
       {showImport && <ImportModal kind="players" onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); fetchPlayers() }} />}
       {historyPlayer && <PlayerHistoryModal player={historyPlayer} onClose={() => setHistoryPlayer(null)} />}
+      {transferPlayer && <TransferModal player={transferPlayer} onClose={() => { setTransferPlayer(null); fetchPlayers() }} allPlayers={players} />}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">

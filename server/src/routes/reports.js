@@ -2,6 +2,7 @@ import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
+import { computeUnpaidPlayers } from '../utils/sessionPaid.js'
 
 const router = Router()
 router.use(authenticate)
@@ -335,7 +336,18 @@ router.delete('/coach-payments/:id', requireRole('superadmin', 'admin'), async (
     const removed = await db.remove('coach_payments', req.params.id)
     res.json({ ok: removed })
   } catch (err) {
-    console.error('Delete coach payment error:', err)
+    console.error('Delete coach payments error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// GET /reports/unpaid — admin: all players with unpaid sessions
+router.get('/unpaid', requireRole('superadmin', 'admin'), async (req, res) => {
+  try {
+    const unpaid = await computeUnpaidPlayers()
+    res.json({ unpaid_players: unpaid, total_owed: unpaid.reduce((s, p) => s + p.amount_owed, 0) })
+  } catch (err) {
+    console.error('Unpaid players report error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

@@ -27,6 +27,8 @@ import paymentsRoutes from './routes/payments.js'
 import auditLogsRoutes from './routes/audit-logs.js'
 import adminImportDbRoutes from './routes/admin-import-db.js'
 import rolesRoutes from './routes/roles.js'
+import transfersRoutes from './routes/transfers.js'
+import guestBookingRequestsRoutes from './routes/guest-booking-requests.js'
 import { ensureAdmin } from './ensure-admin.js'
 import { autoAudit } from './middleware/auto-audit.js'
 import { SYSTEM_ROLES } from './utils/modules.js'
@@ -110,6 +112,8 @@ app.use('/api/payments', actionLimiter, paymentsRoutes)
 app.use('/api/audit-logs', auditLogsRoutes)
 app.use('/api/admin/import-db', adminImportDbRoutes)
 app.use('/api/roles', rolesRoutes)
+app.use('/api/transfers', transfersRoutes)
+app.use('/api/guest-booking-requests', guestBookingRequestsRoutes)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
 

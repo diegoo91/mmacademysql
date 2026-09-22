@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Calendar as CalendarIcon, DollarSign, Download, TrendingUp, Trophy, Users } from 'lucide-react'
+import { Calendar as CalendarIcon, DollarSign, Download, AlertTriangle, TrendingUp, Trophy, Users } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 
@@ -62,6 +62,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
   const [coachHours, setCoachHours] = useState(null)
   const [coachBalance, setCoachBalance] = useState(null)
+  const [unpaidPlayers, setUnpaidPlayers] = useState(null)
 
   const fetchReport = () => {
     setLoading(true)
@@ -74,7 +75,7 @@ export default function Reports() {
     api.get(`/reports/summary?${params}`).then(setData).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchReport(); if (isAdmin) { fetchCoachHours(); fetchCoachBalance() } }, [preset, from, to])
+  useEffect(() => { fetchReport(); if (isAdmin) { fetchCoachHours(); fetchCoachBalance(); fetchUnpaidPlayers() } }, [preset, from, to])
 
   const fetchCoachHours = () => {
     const params = new URLSearchParams()
@@ -88,6 +89,10 @@ export default function Reports() {
 
   const fetchCoachBalance = () => {
     api.get('/reports/coach-balance').then(setCoachBalance).catch(() => {})
+  }
+
+  const fetchUnpaidPlayers = () => {
+    api.get('/reports/unpaid').then(setUnpaidPlayers).catch(() => {})
   }
 
   return (
@@ -214,40 +219,36 @@ export default function Reports() {
 
           <div className="glass-panel rounded-2xl p-6 border border-theme">
             <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 text-lime-400" /> Schedule History
+              <AlertTriangle className="w-5 h-5 text-amber-400" /> Unpaid Players
               <button onClick={() => {
-                const range = preset === 'custom' ? `${from || 'start'}_to_${to || 'end'}` : preset
-                downloadCSV(`schedule_history_${range}.csv`, ['Date', 'Time', 'Court', 'Player'],
-                  data.scheduleHistory.map(s => [s.date, s.time, `Court ${s.court}`, s.player_text])
-                )
+                const rows = (unpaidPlayers?.unpaid_players || []).map(p => [
+                  p.name, p.unpaid_sessions, p.unpaid_private, p.unpaid_group, `EGP ${p.amount_owed.toLocaleString()}`
+                ])
+                downloadCSV(`unpaid_players.csv`, ['Player', 'Unpaid Sessions', 'Private', 'Group', 'Amount Owed'], rows)
               }} className="ml-auto px-2 py-1 rounded-lg text-[10px] font-bold text-muted hover:text-lime-400 hover:bg-lime-400/10 flex items-center gap-1">
                 <Download className="w-3 h-3" /> CSV
               </button>
             </h3>
-            {data.scheduleHistory.length === 0 ? (
-              <p className="text-sm text-muted text-center py-4">No schedule data in this period.</p>
+            {(!unpaidPlayers || !unpaidPlayers.unpaid_players || unpaidPlayers.unpaid_players.length === 0) ? (
+              <p className="text-sm text-muted text-center py-4">No players with unpaid sessions.</p>
             ) : (
-              <div className="max-h-80 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-surface dark:bg-slate-900">
-                    <tr className="text-muted uppercase">
-                      <th className="text-left px-3 py-2 font-semibold">Date</th>
-                      <th className="text-left px-3 py-2 font-semibold">Time</th>
-                      <th className="text-left px-3 py-2 font-semibold">Court</th>
-                      <th className="text-left px-3 py-2 font-semibold">Player</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-theme">
-                    {data.scheduleHistory.slice(0, 50).map((s, i) => (
-                      <tr key={i} className="text-theme">
-                        <td className="px-3 py-2">{s.date}</td>
-                        <td className="px-3 py-2 font-mono">{s.time}</td>
-                        <td className="px-3 py-2">Court {s.court}</td>
-                        <td className="px-3 py-2 font-semibold">{s.player_text}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="max-h-80 overflow-y-auto space-y-2">
+                {unpaidPlayers.unpaid_players.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-theme/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xs">{p.name.charAt(0)}</div>
+                      <div>
+                        <span className="font-semibold text-theme text-sm">{p.name}</span>
+                        <div className="text-[10px] text-muted">{p.unpaid_sessions} unpaid ({p.unpaid_private}P + {p.unpaid_group}G)</div>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-amber-400/10 text-amber-400 text-xs font-bold">EGP {p.amount_owed.toLocaleString()}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between px-4 py-2 border-t border-theme">
+                  <span className="text-xs font-bold text-muted">Total Owed</span>
+                  <span className="text-sm font-black text-amber-400">EGP {unpaidPlayers.total_owed.toLocaleString()}</span>
+                </div>
               </div>
             )}
           </div>

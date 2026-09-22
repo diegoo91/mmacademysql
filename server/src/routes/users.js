@@ -243,4 +243,46 @@ router.get('/export-credentials', requireRole('superadmin'), async (req, res) =>
   }
 })
 
+// POST /auto-lock-inactive — superadmin: lock players inactive for >30 days
+router.post('/auto-lock-inactive', requireRole('superadmin'), async (req, res) => {
+  try {
+    const days = parseInt(req.body?.days) || 30
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - days)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+
+    const players = await db.findAll('users', u => u.role === 'player')
+    const slots = await db.findAll('slots')
+    const locked = []
+
+    for (const player of players) {
+      if (player.account_status === 'locked') continue
+
+      const playerName = (player.name || '').toLowerCase()
+      const myConfirmed = slots
+        .filter(s => {
+          if (s.status !== 'player_confirmed') return false
+          if (!s.player_text) return false
+          const names = s.player_text.split(/[/+]/).map(n => n.trim().toLowerCase())
+          return names.includes(playerName)
+        })
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+      const lastDate = myConfirmed[0]?.date
+      if (!lastDate || lastDate < cutoffStr) {
+        await db.update('users', player.id, { account_status: 'locked' })
+        await auditUpdate(req, 'user', player.id,
+          { account_status: 'active', last_session_date: lastDate || null },
+          { account_status: 'locked', reason: `inactive_${days}_days` })
+        locked.push({ id: player.id, name: player.name, last_session: lastDate || 'never' })
+      }
+    }
+
+    res.json({ locked_count: locked.length, locked })
+  } catch (err) {
+    console.error('Auto-lock error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 export default router

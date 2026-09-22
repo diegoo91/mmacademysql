@@ -3,6 +3,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { updateUserBalance } from '../utils/balance.js'
+import { computePlayerSessions } from '../utils/sessionPaid.js'
 
 const router = Router()
 router.use(authenticate)
@@ -62,62 +63,32 @@ router.get('/:id/sessions', requireRole('superadmin', 'admin', 'coach'), async (
     const id = parseInt(req.params.id)
     const player = await db.get('users', id)
     if (!player || player.role !== 'player') return res.status(404).json({ error: 'Player not found' })
-    const playerName = (player.name || '').toLowerCase()
-
-    const allSlots = await db.findAll('slots')
-    const playerSlots = allSlots
-      .filter(s => {
-        if (!s.player_text) return false
-        const names = s.player_text.split(/[/+]/).map(n => n.trim().toLowerCase())
-        return names.includes(playerName)
-      })
-      .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
-
-    const payments = (await db.findAll('payments'))
-      .filter(p => p.player_id === player.id && p.status === 'payment_approved')
-      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-
-    let poolPriv = 0, poolGrp = 0
-    for (const p of payments) {
-      poolPriv += p.private_sessions || 0
-      poolGrp += p.group_sessions || 0
-    }
-
-    const sessions = []
-    for (const s of playerSlots) {
-      const booking = s.booking_id ? await db.get('bookings', s.booking_id) : null
-      const directPayment = booking
-        ? await db.find('payments', p => p.booking_id === booking.id && p.status === 'payment_approved')
-        : null
-      const sessionType = s.session_type || (booking ? booking.session_type : null) || 'private'
-
-      let paid = false
-      let paidVia = null
-      if (directPayment || booking?.paid) {
-        paid = true
-        paidVia = 'payment'
-      } else {
-        if (sessionType === 'private') {
-          if (poolPriv > 0) { poolPriv--; paid = true; paidVia = 'payment' }
-          else if (poolGrp >= 2) { poolGrp -= 2; paid = true; paidVia = 'converted' }
-        } else {
-          if (poolGrp > 0) { poolGrp--; paid = true; paidVia = 'payment' }
-          else if (poolPriv > 0) { poolPriv--; poolGrp += 1; paid = true; paidVia = 'converted' }
-        }
-
-      }
-
-      sessions.push({
-        date: s.date, time: s.time, court: s.court,
-        session_type: sessionType, paid, paid_via: paidVia,
-        booking_ref: booking ? booking.ref : null, status: s.status,
-      })
-    }
-
-    sessions.reverse()
+    const { sessions } = await computePlayerSessions(player)
     res.json({ player: { id: player.id, full_name: player.name }, sessions })
   } catch (err) {
     console.error('Player sessions error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/:id/report', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id)
+    const player = await db.get('users', id)
+    if (!player || player.role !== 'player') return res.status(404).json({ error: 'Player not found' })
+
+    const isAdmin = req.user && (req.user.role === 'superadmin' || req.user.role === 'admin')
+    const isSelf = req.user && req.user.id === player.id
+    if (!isAdmin && !isSelf) return res.status(403).json({ error: 'Access denied' })
+
+    const { sessions, amountOwed } = await computePlayerSessions(player)
+    res.json({
+      player: { id: player.id, name: player.name, email: player.email, phone: player.phone },
+      sessions,
+      amount_owed: amountOwed,
+    })
+  } catch (err) {
+    console.error('Player report error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

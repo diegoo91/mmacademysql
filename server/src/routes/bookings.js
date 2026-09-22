@@ -141,6 +141,46 @@ router.post('/from-balance', async (req, res) => {
   }
 })
 
+// POST /guest — admin: create booking for walk-in guest (no account needed)
+router.post('/guest', requireRole('superadmin', 'admin'), async (req, res) => {
+  try {
+    const { guest_name, guest_phone, guest_email, sessionType, sessions } = req.body
+    if (!guest_name || !sessionType || !sessions || !Array.isArray(sessions) || sessions.length === 0) {
+      return res.status(400).json({ error: 'guest_name, sessionType, and sessions[] are required' })
+    }
+
+    let ref = genRef()
+    while (await db.find('bookings', b => b.ref === ref)) ref = genRef()
+
+    const booking = await db.insert('bookings', {
+      ref, user_id: null, session_type: sessionType, mode: 'guest',
+      sessions_json: JSON.stringify(sessions), total: 0, status: STATUS.SCHEDULE_APPROVED,
+      player_name: guest_name,
+    })
+
+    for (const sess of sessions) {
+      const existingSlot = await db.find('slots', s => s.date === sess.date && s.time === sess.time && s.court === parseInt(sess.court))
+      if (!existingSlot) {
+        await db.insert('slots', {
+          date: sess.date, time: sess.time, court: sess.court,
+          player_text: guest_name, booking_id: booking.id,
+          user_id: null, session_type: sessionType, status: STATUS.SCHEDULE_APPROVED,
+        })
+      }
+    }
+
+    await auditCreate(req, 'guest_booking', booking.id, {
+      ref: booking.ref, guest_name, guest_phone: guest_phone || null,
+      session_type: sessionType, sessions: sessions.length,
+    })
+
+    res.status(201).json({ booking, guest_name })
+  } catch (err) {
+    console.error('Guest booking error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // POST / — create booking + slots + payment (player pays in-app)
 router.post('/', async (req, res) => {
   try {

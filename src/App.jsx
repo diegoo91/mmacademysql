@@ -8,6 +8,7 @@ import Home from './pages/Home'
 import SignUp from './pages/SignUp'
 import Schedule from './pages/Schedule'
 import Book from './pages/Book'
+import GuestBooking from './pages/GuestBooking'
 import Payment from './pages/Payment'
 import Profile from './pages/Profile'
 import Login from './pages/Login'
@@ -102,6 +103,7 @@ function AppRoutes() {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/book" element={<Book />} />
+        <Route path="/guest-booking" element={<GuestBooking />} />
         <Route path="/payment" element={<Payment />} />
         <Route path="/profile" element={
           <ProtectedRoute>

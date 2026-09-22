@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, Clock, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key, BarChart3 } from 'lucide-react'
+import { Camera, Clock, Download, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key, BarChart3 } from 'lucide-react'
 import { api, fileUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -325,6 +325,23 @@ export default function Profile() {
             </div>
           ))}
         </div>
+
+        {/* My Report - Session Statement */}
+        <button
+          onClick={async () => {
+            try {
+              const data = await api.get(`/players/${user.id}/report`)
+              const { generateReceiptPDF } = await import('../lib/receiptPDF')
+              const doc = generateReceiptPDF(data)
+              doc.save(`my_report_${new Date().toISOString().slice(0,10)}.pdf`)
+            } catch (err) {
+              alert('Failed to generate report: ' + (err.message || 'Unknown error'))
+            }
+          }}
+          className="w-full px-4 py-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 font-bold text-sm hover:bg-amber-400/20 transition-all flex items-center justify-center gap-2"
+        >
+          <Download className="w-4 h-4" /> Generate My Report (PDF)
+        </button>
 
         {/* Coach My Hours & Balance Panel */}
         {user?.role === 'coach' && (

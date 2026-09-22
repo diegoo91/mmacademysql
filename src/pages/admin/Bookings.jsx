@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { DollarSign, Plus, Trash2, Search, Check, X as XIcon } from 'lucide-react'
+import { DollarSign, Plus, Trash2, Search, Check, X as XIcon, Users } from 'lucide-react'
 import { api } from '../../lib/api'
 
 const PAYMENT_STATUS_COLORS = {
@@ -19,6 +19,7 @@ export default function Bookings() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [guestRequests, setGuestRequests] = useState([])
   const [players, setPlayers] = useState([])
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -36,10 +37,12 @@ export default function Bookings() {
     Promise.all([
       api.get('/payments'),
       api.get('/users'),
+      api.get('/guest-booking-requests'),
     ])
-      .then(([p, u]) => {
+      .then(([p, u, g]) => {
         setPayments(Array.isArray(p) ? p : [])
         setPlayers(Array.isArray(u) ? u.filter(x => x.role === 'player') : [])
+        setGuestRequests(g.requests || [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -260,6 +263,42 @@ export default function Bookings() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* Guest Booking Requests */}
+      <div className="glass-panel rounded-2xl border border-theme p-6 mt-6">
+        <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2">
+          <Users className="w-5 h-5 text-amber-400" /> Guest Booking Requests ({guestRequests.length})
+        </h3>
+        {guestRequests.length === 0 ? (
+          <p className="text-sm text-muted text-center py-4">No guest booking requests.</p>
+        ) : (
+          <div className="space-y-3">
+            {guestRequests.map(r => {
+              const payload = (() => { try { return JSON.parse(r.payload) } catch { return {} } })()
+              return (
+                <div key={r.id} className="flex items-start justify-between px-4 py-3 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-theme/50">
+                  <div>
+                    <span className="font-semibold text-theme text-sm">{payload.guest_name}</span>
+                    <span className="text-muted text-xs ml-2">{payload.guest_phone}</span>
+                    <div className="text-[10px] text-muted mt-1">
+                      {payload.preferred_date && <span>{payload.preferred_date} </span>}
+                      {payload.preferred_time && <span>{payload.preferred_time} </span>}
+                      {payload.preferred_court && <span>Court {payload.preferred_court} </span>}
+                      <span className="uppercase font-bold">{payload.session_type || 'private'}</span>
+                      {payload.notes && <span className="ml-2 italic">- {payload.notes}</span>}
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    r.status === 'pending' ? 'bg-amber-400/15 text-amber-400' :
+                    r.status === 'approved' ? 'bg-emerald-400/15 text-emerald-400' :
+                    'bg-rose-400/15 text-rose-400'
+                  }`}>{r.status}</span>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

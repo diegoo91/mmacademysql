@@ -463,6 +463,22 @@ CREATE TABLE coach_payments (
     created_at TIMESTAMP DEFAULT now()
 );
 
+-- ------------------------------------------------ session_transfers ---
+CREATE TABLE session_transfers (
+    id SERIAL PRIMARY KEY,
+    from_player_id INT NOT NULL REFERENCES users(user_id),
+    to_player_id INT NOT NULL REFERENCES users(user_id),
+    session_type VARCHAR(20) NOT NULL,
+    count INT NOT NULL,
+    from_balance_before INT,
+    from_balance_after INT,
+    to_balance_before INT,
+    to_balance_after INT,
+    notes TEXT,
+    created_by INT REFERENCES users(user_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- --------------------------------------------------- balance CHECK constraints ---
 ALTER TABLE users ADD CONSTRAINT chk_private_balance CHECK (private_balance >= 0);
 ALTER TABLE users ADD CONSTRAINT chk_group_balance CHECK (group_balance >= 0);
