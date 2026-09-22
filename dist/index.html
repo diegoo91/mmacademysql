@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/mmacademysql/images/logo.jpg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MM Padel Academy | Premier Padel Training & Court Reservations</title>
+    <meta
+      name="description"
+      content="Book padel courts, join certified coaching programs, and register for MM Padel Academy memberships online."
+    />
+    <script>
+      (function() {
+        var t = localStorage.getItem('mm_padel_theme') || 'dark';
+        var themeClasses = ['theme-light','theme-ocean','theme-forest','theme-sunset','theme-royal','theme-contrast'];
+        var cls = { light:'theme-light', ocean:'theme-ocean', forest:'theme-forest', sunset:'theme-sunset', royal:'theme-royal', contrast:'theme-contrast' };
+        var isDark = t !== 'light';
+        function apply(el) {
+          if (!el) return;
+          themeClasses.forEach(function(c) { el.classList.remove(c); });
+          if (isDark) el.classList.add('dark'); else el.classList.remove('dark');
+          if (cls[t]) el.classList.add(cls[t]);
+        }
+        apply(document.documentElement);
+        if (document.body) apply(document.body);
+      })();
+    </script>
+    <script type="module" crossorigin src="/mmacademysql/assets/index-DqLJMYvk.js"></script>
+    <link rel="stylesheet" crossorigin href="/mmacademysql/assets/index-YcJM9y9N.css">
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-lime-400 selection:text-slate-950">
+    <div id="root"></div>
+  </body>
+</html>
