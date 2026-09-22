@@ -45,7 +45,7 @@ router.post('/signup', async (req, res) => {
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' })
     const err = validateLength('name', name, LIMITS.name) || validateLength('email', email, LIMITS.email) || validateLength('phone', phone, LIMITS.phone)
     if (err) return res.status(400).json({ error: err })
-    if (typeof password !== 'string' || password.length < 10) return res.status(400).json({ error: 'Password must be at least 10 characters' })
+    if (typeof password !== 'string' || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
     if (password.length > 72) return res.status(400).json({ error: 'Password must not exceed 72 characters' })
     if (await db.find('users', u => u.email === email)) return res.status(409).json({ error: 'Email already registered' })
     const hash = await bcrypt.hash(password, 12)
@@ -159,7 +159,7 @@ router.post('/change-password', authenticate, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body
     if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' })
-    if (typeof newPassword !== 'string' || newPassword.length < 10) return res.status(400).json({ error: 'New password must be at least 10 characters' })
+    if (typeof newPassword !== 'string' || newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' })
     if (newPassword.length > 72) return res.status(400).json({ error: 'New password must not exceed 72 characters' })
     const user = await db.get('users', req.user.id)
     if (!(await bcrypt.compare(currentPassword, user.password_hash))) return res.status(401).json({ error: 'Current password is incorrect' })
@@ -177,7 +177,7 @@ router.post('/force-change-password', authenticate, async (req, res) => {
   try {
     const { newPassword } = req.body
     if (!newPassword) return res.status(400).json({ error: 'New password required' })
-    if (typeof newPassword !== 'string' || newPassword.length < 10) return res.status(400).json({ error: 'New password must be at least 10 characters' })
+    if (typeof newPassword !== 'string' || newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' })
     if (newPassword.length > 72) return res.status(400).json({ error: 'New password must not exceed 72 characters' })
     const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })

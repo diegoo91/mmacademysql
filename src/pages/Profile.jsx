@@ -156,8 +156,8 @@ export default function Profile() {
         setPwSaving(false)
         return
       }
-      if (pwForm.newPassword.length < 10) {
-        setPwMsg('New password must be at least 10 characters')
+      if (pwForm.newPassword.length < 8) {
+        setPwMsg('New password must be at least 8 characters')
         setPwSaving(false)
         return
       }

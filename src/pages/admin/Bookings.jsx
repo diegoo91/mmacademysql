@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { DollarSign, Plus, Trash2, Search, Check, X as XIcon, Users } from 'lucide-react'
+import { DollarSign, Plus, Trash2, Search, Check, X as XIcon, Users, UserPlus } from 'lucide-react'
 import { api } from '../../lib/api'
 
 const PAYMENT_STATUS_COLORS = {
@@ -31,6 +31,13 @@ export default function Bookings() {
     notes: '',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [showGuestForm, setShowGuestForm] = useState(false)
+  const [guestForm, setGuestForm] = useState({
+    guest_name: '', guest_phone: '', guest_email: '',
+    sessionType: 'private', date: new Date().toISOString().slice(0, 10),
+    time: '', court: '1',
+  })
+  const [guestSubmitting, setGuestSubmitting] = useState(false)
 
   const fetchData = () => {
     setLoading(true)
@@ -99,6 +106,27 @@ export default function Bookings() {
     }
   }
 
+  const handleGuestBooking = async (e) => {
+    e.preventDefault()
+    if (!guestForm.guest_name || !guestForm.time) return
+    setGuestSubmitting(true)
+    try {
+      await api.post('/bookings/guest', {
+        guest_name: guestForm.guest_name,
+        guest_phone: guestForm.guest_phone,
+        guest_email: guestForm.guest_email,
+        sessionType: guestForm.sessionType,
+        sessions: [{ date: guestForm.date, time: guestForm.time, court: parseInt(guestForm.court) }],
+      })
+      setShowGuestForm(false)
+      setGuestForm({ guest_name: '', guest_phone: '', guest_email: '', sessionType: 'private', date: new Date().toISOString().slice(0, 10), time: '', court: '1' })
+      fetchData()
+    } catch (err) {
+      alert(err.message || 'Failed to create guest booking')
+    }
+    setGuestSubmitting(false)
+  }
+
   const filtered = payments.filter(p => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -119,6 +147,9 @@ export default function Bookings() {
         </div>
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-lime-500/10 text-lime-400 border border-lime-500/30 hover:bg-lime-500/20 transition-colors text-sm font-bold">
           <Plus className="w-4 h-4" /> Add Payment
+        </button>
+        <button onClick={() => { setShowGuestForm(!showGuestForm); setShowForm(false) }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 transition-colors text-sm font-bold">
+          <UserPlus className="w-4 h-4" /> Book for Guest
         </button>
       </div>
 
@@ -168,6 +199,64 @@ export default function Bookings() {
               {submitting ? 'Saving...' : 'Save Payment'}
             </button>
             <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 rounded-xl bg-slate-500/10 text-muted border border-theme text-sm font-bold">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Book for Guest Form */}
+      {showGuestForm && (
+        <form onSubmit={handleGuestBooking} className="glass-panel rounded-2xl border border-amber-400/30 p-6 space-y-4">
+          <h3 className="text-lg font-bold text-amber-400 flex items-center gap-2"><UserPlus className="w-5 h-5" /> Book for Guest (Walk-in)</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Guest Name *</label>
+              <input type="text" value={guestForm.guest_name} onChange={e => setGuestForm({ ...guestForm, guest_name: e.target.value })} required className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm" placeholder="Full name" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Phone</label>
+              <input type="text" value={guestForm.guest_phone} onChange={e => setGuestForm({ ...guestForm, guest_phone: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm" placeholder="Phone number" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Email</label>
+              <input type="email" value={guestForm.guest_email} onChange={e => setGuestForm({ ...guestForm, guest_email: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm" placeholder="Email (optional)" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Session Type *</label>
+              <select value={guestForm.sessionType} onChange={e => setGuestForm({ ...guestForm, sessionType: e.target.value })} required className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm">
+                <option value="private">Private</option>
+                <option value="group">Group</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Date *</label>
+              <input type="date" value={guestForm.date} onChange={e => setGuestForm({ ...guestForm, date: e.target.value })} required className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Time *</label>
+              <select value={guestForm.time} onChange={e => setGuestForm({ ...guestForm, time: e.target.value })} required className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm">
+                <option value="">Select time</option>
+                {['14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'].map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted mb-1">Court *</label>
+              <select value={guestForm.court} onChange={e => setGuestForm({ ...guestForm, court: e.target.value })} required className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm">
+                <option value="1">Court 1</option>
+                <option value="2">Court 2</option>
+                <option value="3">Court 3</option>
+                <option value="4">Court 4</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={guestSubmitting} className="px-4 py-2 rounded-xl bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 text-sm font-bold disabled:opacity-50">
+              {guestSubmitting ? 'Booking...' : 'Confirm Guest Booking'}
+            </button>
+            <button type="button" onClick={() => setShowGuestForm(false)} className="px-4 py-2 rounded-xl bg-slate-500/10 text-muted border border-theme text-sm font-bold">
               Cancel
             </button>
           </div>

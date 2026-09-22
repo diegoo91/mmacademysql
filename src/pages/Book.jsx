@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
   Calendar as CalendarIcon,
@@ -10,6 +10,7 @@ import {
   Info,
   RefreshCw,
   Tag,
+  Users,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -391,6 +392,13 @@ export default function Book() {
                     <span>{bookingFromBalance ? 'Booking...' : user ? (balanceInfo?.hasEnough ? 'Book from Balance' : `Continue to Payment (${totalPrice.toLocaleString()} EGP)`) : 'Login to Continue'}</span>
                     <ArrowRight className="w-5 h-5" />
                   </button>
+
+                  {!user && (
+                    <Link to="/guest-booking" className="w-full py-3 rounded-xl bg-surface border border-theme text-theme font-bold text-xs text-center flex items-center justify-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                      <Users className="w-4 h-4" />
+                      <span>Continue as Guest (No Account Needed)</span>
+                    </Link>
+                  )}
 
                   <p className="text-[11px] text-muted text-center flex items-center justify-center gap-1">
                     <Info className="w-3.5 h-3.5" />

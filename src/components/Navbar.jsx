@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronRight, LogOut, Menu, Moon, Palette, Shield, Sun, UserPlus, X } from 'lucide-react'
+import { Bell, Calendar, ChevronRight, LogOut, Menu, Moon, Palette, Shield, Sun, UserPlus, Users, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { api } from '../lib/api'
@@ -19,6 +19,7 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', path: '/' },
     ...(!user ? [{ name: 'Sign Up', path: '/signup' }] : []),
+    ...(!user ? [{ name: 'Guest Booking', path: '/guest-booking' }] : []),
     { name: 'Schedule', path: '/schedule' },
     { name: 'Book a Session', path: '/book' },
   ]

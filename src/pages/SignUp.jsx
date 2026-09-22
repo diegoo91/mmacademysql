@@ -58,7 +58,7 @@ export default function SignUp() {
     else if (formData.phone.replace(/\D/g, '').length < 8) next.phone = 'Please enter a valid phone number'
     if (!formData.dob) next.dob = 'Date of birth is required'
     if (!formData.password) next.password = 'Password is required'
-    else if (formData.password.length < 10) next.password = 'Password must be at least 10 characters long'
+    else if (formData.password.length < 8) next.password = 'Password must be at least 8 characters long'
     else if (formData.password.length > 72) next.password = 'Password must not exceed 72 characters'
     if (!formData.confirmPassword) next.confirmPassword = 'Confirming password is required'
     else if (formData.password !== formData.confirmPassword) next.confirmPassword = 'Passwords do not match'

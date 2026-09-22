@@ -19,7 +19,7 @@ export function validateLength(field, value, max) {
 
 export function validatePassword(password) {
   if (typeof password !== 'string') return 'Password must be a string'
-  if (password.length < 10) return 'Password must be at least 10 characters'
+  if (password.length < 8) return 'Password must be at least 8 characters'
   if (password.length > 72) return 'Password must not exceed 72 characters (bcrypt limit)'
   return null
 }

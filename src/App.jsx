@@ -44,7 +44,7 @@ function ForcePasswordChange() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (newPassword.length < 10) { setError('Password must be at least 10 characters'); return }
+    if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return }
     if (newPassword !== confirm) { setError('Passwords do not match'); return }
     setSaving(true)
     try {
