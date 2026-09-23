@@ -253,6 +253,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
             updates.balance_status = 'deducted'
           } else {
             return res.status(409).json({
+              error: 'Insufficient balance',
               code: 'INSUFFICIENT_BALANCE',
               players: insufficientPlayers.map(p => ({
                 name: p.name,
@@ -270,6 +271,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
             updates.balance_status = 'deducted'
           } else {
             return res.status(409).json({
+              error: 'Insufficient balance',
               code: 'INSUFFICIENT_BALANCE',
               players: insufficientPlayers.map(p => ({
                 name: p.name,
@@ -363,6 +365,7 @@ router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, r
           balanceStatus = 'deducted'
         } else {
           return res.status(409).json({
+            error: 'Insufficient balance',
             code: 'INSUFFICIENT_BALANCE',
             players: insufficientPlayers.map(p => ({
               name: p.name,

@@ -267,7 +267,8 @@ export default function ScheduleManager() {
       fetchSlots()
     } catch (err) {
       const msg = err.message || ''
-      if (msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')) {
+      const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
+      if (isBalanceConflict && !msg.includes('Slot already exists')) {
         const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
         const stype = addForm.session_type || 'private'
         // Find which players are insufficient
@@ -280,6 +281,8 @@ export default function ScheduleManager() {
           if (!hasEnough) insufficient.push({ name: sp.full_name || sp.name, remaining: stype === 'private' ? priv : grp })
         }
         setPendingOverride({ payload: { ...addForm, player_text: joinedNames }, players: insufficient, sessionType: stype })
+      } else {
+        alert(msg || 'Failed to add slot')
       }
     }
   }
@@ -942,7 +945,8 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
       onSaved()
     } catch (err) {
       const msg = err.message || ''
-      if (msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')) {
+      const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
+      if (isBalanceConflict && !msg.includes('Slot already exists')) {
         const stype = form.session_type || 'private'
         setPendingOverride({
           player: players.filter(n => n.trim()).join(', '),

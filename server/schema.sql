@@ -480,8 +480,7 @@ CREATE TABLE session_transfers (
 );
 
 -- --------------------------------------------------- balance CHECK constraints ---
-ALTER TABLE users ADD CONSTRAINT chk_private_balance CHECK (private_balance >= 0);
-ALTER TABLE users ADD CONSTRAINT chk_group_balance CHECK (group_balance >= 0);
+-- Balances may go negative (admin "Deduct Anyway"). Do NOT add >=0 checks on users.
 ALTER TABLE payments ADD CONSTRAINT chk_payment_amount CHECK (amount >= 0);
 
 -- --------------------------------------------------- Foreign Keys ---

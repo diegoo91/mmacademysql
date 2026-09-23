@@ -165,6 +165,20 @@ try {
   console.log('Migration check for slots.time skipped:', err.message)
 }
 
+// Migration: drop balance CHECK constraints — app allows negative balances
+// (admin "Deduct Anyway" / deductBalanceAllowNegative). >=0 checks caused 500s.
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    await knex.raw('ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_private_balance')
+    await knex.raw('ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_group_balance')
+    console.log('Migration: ensured balance CHECK constraints are dropped')
+  }
+} catch (err) {
+  console.log('Migration check for balance constraints skipped:', err.message)
+}
+
 // Ensure roles table exists and has the 4 system roles (safe idempotent migration)
 async function ensureRoles() {
   try {

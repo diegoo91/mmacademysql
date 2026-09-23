@@ -103,8 +103,7 @@ for (const table of TABLES) {
 }
 
 sql += `\n-- Re-add check constraints\n`
-sql += `ALTER TABLE users ADD CONSTRAINT chk_private_balance CHECK (private_balance >= 0);\n`
-sql += `ALTER TABLE users ADD CONSTRAINT chk_group_balance CHECK (group_balance >= 0);\n`
+sql += `ALTER TABLE payments DROP CONSTRAINT IF EXISTS chk_payment_amount;\n`
 sql += `ALTER TABLE payments ADD CONSTRAINT chk_payment_amount CHECK (amount >= 0);\n`
 
 const outPath = join(__dirname, 'data', 'migrate.sql')

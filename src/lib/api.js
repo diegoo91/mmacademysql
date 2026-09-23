@@ -54,7 +54,14 @@ async function request(method, path, body, opts = {}) {
     throw new Error('Session expired')
   }
 
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`)
+  if (!res.ok) {
+    const message = data?.error || data?.code || `Request failed (${res.status})`
+    const err = new Error(message)
+    err.status = res.status
+    err.code = data?.code
+    err.data = data
+    throw err
+  }
   return data
 }
 
