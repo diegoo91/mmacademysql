@@ -51,6 +51,12 @@ const STATUS = {
   DENIED: 'denied',
 }
 
+// Academy hourly slots 15:00-23:00 (start-end pairs)
+const SCHEDULE_TIMES = Array.from({ length: 8 }, (_, i) => {
+  const h = 15 + i
+  return `${String(h).padStart(2, '0')}:00-${String(h + 1).padStart(2, '0')}:00`
+})
+
 // Resolve unknowns for schedule preview rows
 async function resolveUnknownsForRows(rows) {
   const unknowns = []
@@ -192,22 +198,28 @@ const TEMPLATES = {
     collection: 'slots',
     sheetName: 'Schedule',
     fields: ['date', 'time', 'court', 'player', 'session_type'],
-    headers: ['Date', 'Time (e.g., 10:00-12:00)', 'Court (1-6)', 'Player Full Name', 'Session Type'],
+    headers: ['Date', 'Time (e.g., 15:00-16:00)', 'Court (1-3)', 'Player Full Name', 'Session Type'],
     required: ['date', 'time', 'court', 'player'],
     validationRules: {
-      time: { type: 'custom', validate: (v) => /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(v) },
-      court: { type: 'list', values: ['1', '2', '3', '4', '5', '6'] },
+      time: { type: 'list', values: SCHEDULE_TIMES },
+      court: { type: 'list', values: ['1', '2', '3'] },
       session_type: { type: 'list', values: ['private', 'group'] },
+      player: { type: 'list', fromSheet: 'Players' },
     },
-    validate(row) {
+    async validate(row) {
       const errors = []
       if (!row.date?.trim()) errors.push('date is required')
       else if (!/^\d{4}-\d{2}-\d{2}$/.test(row.date)) errors.push('date must be YYYY-MM-DD')
       if (!row.time?.trim()) errors.push('time is required')
-      else if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(row.time.trim())) errors.push('time must be HH:MM-HH:MM')
+      else if (!SCHEDULE_TIMES.includes(row.time.trim())) errors.push('time must be an available hourly slot (15:00-16:00 ... 22:00-23:00)')
       if (!row.court) errors.push('court is required')
-      else if (!['1', '2', '3', '4', '5', '6'].includes(String(row.court))) errors.push('court must be 1-6')
+      else if (!['1', '2', '3'].includes(String(row.court))) errors.push('court must be 1-3')
       if (!row.player?.trim()) errors.push('player is required')
+      else {
+        const name = row.player.trim()
+        const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
+        if (!user) errors.push('player must be a registered player')
+      }
       if (row.session_type && !['private', 'group'].includes(row.session_type)) errors.push('session_type must be private or group')
       return errors
     },
@@ -414,7 +426,7 @@ function normalizeHeader(h) {
   return String(h).replace(/\*/g, '').replace(/\(.*?\)/g, '').replace(/_/g, ' ').trim().toLowerCase()
 }
 
-function generateSampleRows(tpl) {
+function generateSampleRows(tpl, playerNames = []) {
   switch (tpl.sheetName) {
     case 'Results':
       return [
@@ -426,11 +438,14 @@ function generateSampleRows(tpl) {
         ['John Smith', 'group', '2026-01-15 10:00, 2026-01-17 14:00', '250', 'confirmed', '1', '250', 'manual'],
         ['Jane Doe', 'private', '2026-01-16 09:00', '150', 'pending', '0', '0', 'manual'],
       ]
-    case 'Schedule':
+    case 'Schedule': {
+      const p1 = playerNames[0] || 'Player Name'
+      const p2 = playerNames[1] || playerNames[0] || 'Player Name'
       return [
-        ['2026-01-15', '10:00-12:00', '1', 'John Smith', 'group'],
-        ['2026-01-15', '12:00-14:00', '2', 'Jane Doe', 'private'],
+        ['2026-01-15', '15:00-16:00', '1', p1, 'private'],
+        ['2026-01-15', '16:00-17:00', '2', p2, 'group'],
       ]
+    }
     case 'Payments':
       return [
         ['MM-PDL-12345', '250', 'card', '2026-01-15'],
@@ -446,12 +461,21 @@ function generateSampleRows(tpl) {
   }
 }
 
-async function generateTemplate(key) {
+async function generateTemplate(key, options = {}) {
+  const { playerNames = [] } = options
   const tpl = TEMPLATES[key]
   if (!tpl) throw new Error('Invalid template')
 
   const workbook = new ExcelJS.Workbook()
   const ws = workbook.addWorksheet(tpl.sheetName || tpl.filename.replace('.xlsx', ''))
+
+  // Hidden roster sheet backing the Player dropdown (range validation)
+  if (key === 'schedule') {
+    const ps = workbook.addWorksheet('Players')
+    ps.addRow(['Player Full Name'])
+    for (const name of playerNames) ps.addRow([name])
+    ps.state = 'hidden'
+  }
 
   const headerRow = ws.addRow(tpl.headers)
   headerRow.eachCell((cell) => {
@@ -468,20 +492,49 @@ async function generateTemplate(key) {
     return { width: Math.max(h.length + 4, 20) }
   })
 
+  // Date column: YYYY-MM-DD format so Excel/Sheets offer a calendar picker.
+  // Set on the column (not pre-created cells) so sample addRow values still stick.
+  const dateFieldIdx = tpl.fields.indexOf('date')
+  if (dateFieldIdx >= 0) {
+    ws.getColumn(dateFieldIdx + 1).numFmt = 'yyyy-mm-dd'
+  }
+
+  if (key === 'schedule') {
+    ws.getCell(1, 5).note = 'Group session: add one row per player with the same Date, Time, and Court — rows merge on import.'
+    ws.getCell(1, 4).note = 'Must match an existing player (pick from the dropdown). Add new players via the Players page first.'
+  }
+
+  // Samples BEFORE dataValidation loops: getCell(r=2..1000) pre-creates rows and
+  // would otherwise push addRow samples down to row 1001 (leaving rows 2+ blank).
+  const sampleRows = generateSampleRows(tpl, playerNames)
+  for (const row of sampleRows) {
+    ws.addRow(row)
+  }
+
   if (tpl.validationRules) {
     for (const [field, rule] of Object.entries(tpl.validationRules)) {
       const colIndex = tpl.fields.indexOf(field) + 1
       if (colIndex <= 0) continue
 
       if (rule.type === 'list') {
+        let formulae
+        let errorMsg
+        if (rule.fromSheet === 'Players') {
+          if (playerNames.length === 0) continue
+          formulae = [`Players!$A$2:$A$${playerNames.length + 1}`]
+          errorMsg = 'Must pick a player from the roster'
+        } else {
+          formulae = [`"${rule.values.join(',')}"`]
+          errorMsg = `Must be one of: ${rule.values.join(', ')}`
+        }
         for (let r = 2; r <= 1000; r++) {
           ws.getCell(r, colIndex).dataValidation = {
             type: 'list',
             allowBlank: !tpl.required.includes(field),
-            formulae: [`"${rule.values.join(',')}"`],
+            formulae,
             showErrorMessage: true,
             errorTitle: 'Invalid value',
-            error: `Must be one of: ${rule.values.join(', ')}`,
+            error: errorMsg,
           }
         }
       }
@@ -501,11 +554,6 @@ async function generateTemplate(key) {
     }
   }
 
-  const sampleRows = generateSampleRows(tpl)
-  for (const row of sampleRows) {
-    ws.addRow(row)
-  }
-
   for (let r = 2; r <= sampleRows.length + 1; r++) {
     for (let c = 1; c <= tpl.headers.length; c++) {
       ws.getCell(r, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F9FF' } }
@@ -521,7 +569,15 @@ router.get('/template/:key', async (req, res) => {
     const { key } = req.params
     const tpl = TEMPLATES[key]
     if (!tpl) return res.status(400).json({ error: 'Invalid template key. Available: results, schedule, payments, bookings, players' })
-    const buffer = await generateTemplate(key)
+    let options = {}
+    if (key === 'schedule') {
+      const players = await db.findAll('users', u => u.role === 'player' && !!u.name)
+      options.playerNames = players
+        .map(p => String(p.name).trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))
+    }
+    const buffer = await generateTemplate(key, options)
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename=${tpl.filename}`)
     res.send(Buffer.from(buffer))
@@ -597,7 +653,7 @@ router.post('/:kind/preview', upload.single('file'), async (req, res) => {
         const val = data[i][col]
         mapped[field] = val !== undefined && val !== null ? String(val).trim() : ''
       }
-      const errors = tmpl.validate(mapped)
+      const errors = await Promise.resolve(tmpl.validate(mapped))
       allErrors.push(errors.length ? { row: i + 2, errors } : null)
       rows.push(mapped)
     }
@@ -643,7 +699,9 @@ router.post('/:kind/commit', async (req, res) => {
     }
 
     let errorCount = 0
-    for (const row of processedRows) { if (tmpl.validate(row).length) errorCount++ }
+    for (const row of processedRows) {
+      if ((await Promise.resolve(tmpl.validate(row))).length) errorCount++
+    }
     const batch = await db.insert('import_batches', { kind, filename: filename || 'unknown.xlsx', row_count: processedRows.length, error_count: errorCount, by_user: req.user.id, status: 'committed' })
     const commitResult = await tmpl.commit(processedRows, batch.id)
     const inserted = typeof commitResult === 'object' ? commitResult.count : commitResult
@@ -670,5 +728,7 @@ router.get('/batches', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+
+export { generateTemplate, TEMPLATES }
 
 export default router
