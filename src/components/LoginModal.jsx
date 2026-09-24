@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Lock, Mail, X } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Lock, Mail, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function LoginModal() {
@@ -8,6 +8,7 @@ export default function LoginModal() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -63,7 +64,7 @@ export default function LoginModal() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-md p-6 overflow-hidden glass-panel rounded-2xl border border-theme shadow-2xl">
-        <div className="absolute -top-24 -right-24 w-48 h-48 bg-lime-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-48 h-48 bg-brand/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <button
@@ -75,8 +76,8 @@ export default function LoginModal() {
         </button>
 
         <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-lime-400/80 shadow-lg shadow-lime-400/20 mx-auto mb-3 bg-surface">
-            <img src={`${import.meta.env.BASE_URL}images/logo.jpg`} alt="MM Padel Academy Logo" className="w-full h-full object-cover" />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-brand-text/80 shadow-lg shadow-brand/20 mx-auto mb-3 bg-surface flex items-center justify-center p-1">
+            <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="MM Padel Academy Logo" className="w-full h-full object-contain" />
           </div>
           <h3 className="text-2xl font-bold font-heading text-theme">Welcome Back</h3>
           <p className="text-sm text-muted mt-1">Access your MM Padel Academy member portal</p>
@@ -100,7 +101,7 @@ export default function LoginModal() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface/90 border border-theme text-theme text-muted focus:outline-none focus:border-lime-400 focus:ring-1 focus:ring-lime-400 text-sm transition-all"
+                className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface/90 border border-theme text-theme text-muted focus:outline-none focus:border-brand-text focus:ring-1 focus:ring-brand-text text-sm transition-all"
               />
             </div>
           </div>
@@ -112,19 +113,27 @@ export default function LoginModal() {
             <div className="relative">
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface/90 border border-theme text-theme text-muted focus:outline-none focus:border-lime-400 focus:ring-1 focus:ring-lime-400 text-sm transition-all"
+                className="w-full pl-11 pr-11 py-3 rounded-xl bg-surface/90 border border-theme text-theme text-muted focus:outline-none focus:border-brand-text focus:ring-1 focus:ring-brand-text text-sm transition-all"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm transition-all shadow-lg shadow-lime-400/20 flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+            className="w-full py-3.5 px-4 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm transition-all shadow-lg shadow-brand/20 flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
           >
             {loading ? (
               <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
@@ -141,7 +150,7 @@ export default function LoginModal() {
           <button
             onClick={handleDemoLogin}
             type="button"
-            className="text-xs text-lime-400 hover:text-lime-300 font-medium underline underline-offset-4"
+            className="text-xs text-brand-text hover:text-brand-text font-medium underline underline-offset-4"
           >
             Auto-fill Demo Account (Alex Morgan)
           </button>
@@ -149,7 +158,7 @@ export default function LoginModal() {
 
         <div className="mt-5 text-center text-xs text-muted">
           Don&apos;t have an account yet?{' '}
-          <Link to="/signup" onClick={closeLoginModal} className="text-lime-400 font-semibold hover:underline">
+          <Link to="/signup" onClick={closeLoginModal} className="text-brand-text font-semibold hover:underline">
             Create an Account
           </Link>
         </div>

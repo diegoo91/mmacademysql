@@ -171,14 +171,14 @@ export default function Book() {
 
   return (
     <div className="min-h-screen bg-theme text-theme py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      <div className="absolute top-10 left-1/4 w-[500px] h-[300px] bg-lime-500/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-10 left-1/4 w-[500px] h-[300px] bg-brand/10 rounded-full blur-[140px] pointer-events-none" />
 
       {showFlyerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/85 backdrop-blur-md animate-fadeIn">
           <div className="relative max-w-2xl w-full max-h-[90vh] bg-surface rounded-3xl overflow-hidden border border-theme p-2 shadow-2xl flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-theme">
               <h3 className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-lime-400" />
+                <ImageIcon className="w-5 h-5 text-brand-text" />
                 <span>Official MM Padel Academy Pricing Flyer</span>
               </h3>
               <button onClick={() => setShowFlyerModal(false)} className="px-3 py-1 rounded-full bg-surface hover:bg-slate-300 dark:hover:bg-slate-700 text-xs font-bold text-theme">Close ✕</button>
@@ -192,7 +192,7 @@ export default function Book() {
 
       <div className="max-w-7xl mx-auto relative z-10">
         <div className="text-center space-y-3 mb-10">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-lime-400/10 border border-lime-400/30 text-lime-400 text-xs font-bold uppercase tracking-widest">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand/10 border border-brand-text/30 text-brand-text text-xs font-bold uppercase tracking-widest">
             <Flame className="w-4 h-4" />
             <span>Official Academy Training Packages</span>
           </div>
@@ -201,7 +201,7 @@ export default function Book() {
             1 Hour Sessions &bull; Prices are Per Player &bull; {COURTS} Courts &bull; Training Days: Sunday &ndash; Thursday (3:00 PM &ndash; 11:00 PM)
           </p>
           <div className="pt-2 flex items-center justify-center gap-3">
-            <button onClick={() => setShowFlyerModal(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface hover:bg-slate-200 dark:hover:bg-slate-800 text-lime-400 font-bold text-xs border border-lime-400/40 shadow-md transition-all">
+            <button onClick={() => setShowFlyerModal(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface hover:bg-slate-200 dark:hover:bg-slate-800 text-brand-text font-bold text-xs border border-brand-text/40 shadow-md transition-all">
               <ImageIcon className="w-4 h-4" /><span>View Official Pricing Flyer</span>
             </button>
             <button onClick={fetchSlots} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface hover:bg-slate-200 dark:hover:bg-slate-800 text-theme font-bold text-xs border border-theme transition-all">
@@ -214,19 +214,19 @@ export default function Book() {
           <div className="lg:col-span-8 space-y-8">
             <div className="glass-panel rounded-3xl p-6 border border-theme space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-lime-400 text-slate-950 flex items-center justify-center font-bold text-sm">1</div>
+                <div className="w-8 h-8 rounded-xl bg-brand text-white flex items-center justify-center font-bold text-sm">1</div>
                 <h3 className="font-heading text-xl font-extrabold text-theme">Select Session Category</h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 {SESSION_TYPES.map((item) => {
                   const selected = sessionType === item.value
                   return (
-                    <div key={item.value} onClick={() => setSessionType(item.value)} className={`p-5 rounded-2xl cursor-pointer border transition-all ${selected ? 'bg-lime-400/10 border-lime-400 ring-1 ring-lime-400' : 'bg-surface/60 border-theme hover:border-slate-300 dark:hover:border-slate-700'}`}>
+                    <div key={item.value} onClick={() => setSessionType(item.value)} className={`p-5 rounded-2xl cursor-pointer border transition-all ${selected ? 'bg-brand/10 border-brand-text ring-1 ring-brand-text' : 'bg-surface/60 border-theme hover:border-slate-300 dark:hover:border-slate-700'}`}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-theme text-base">{item.label}</span>
-                        {selected && <CheckCircle2 className="w-5 h-5 text-lime-400" />}
+                        {selected && <CheckCircle2 className="w-5 h-5 text-brand-text" />}
                       </div>
-                      <span className="text-xs text-lime-400 font-bold block mb-1">{item.tag}</span>
+                      <span className="text-xs text-brand-text font-bold block mb-1">{item.tag}</span>
                       <p className="text-xs text-muted">{item.sub}</p>
                     </div>
                   )
@@ -236,48 +236,48 @@ export default function Book() {
 
             <div className="glass-panel rounded-3xl p-6 border border-theme space-y-6">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-lime-400 text-slate-950 flex items-center justify-center font-bold text-sm">2</div>
+                <div className="w-8 h-8 rounded-xl bg-brand text-white flex items-center justify-center font-bold text-sm">2</div>
                 <h3 className="font-heading text-xl font-extrabold text-theme">Schedule Your Sessions</h3>
               </div>
 
               <div className="p-4 rounded-2xl bg-surface/90 border border-theme flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs gap-3">
                 <div className="flex items-center gap-3">
-                  <CalendarIcon className="w-5 h-5 text-lime-400 shrink-0" />
+                  <CalendarIcon className="w-5 h-5 text-brand-text shrink-0" />
                   <div>
                     <span className="text-theme font-bold block">Official Training Days</span>
                     <span className="text-muted">Sunday &ndash; Thursday</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-muted">
-                  <Clock className="w-4 h-4 text-lime-400" />
+                  <Clock className="w-4 h-4 text-brand-text" />
                   <span>3:00 PM &ndash; 11:00 PM</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => setMode('day')} className={`p-3.5 rounded-xl border text-xs font-bold transition-all ${mode === 'day' ? 'bg-lime-400 text-slate-950 border-lime-400 shadow-md' : 'bg-surface text-theme border-theme'}`}>
+                <button onClick={() => setMode('day')} className={`p-3.5 rounded-xl border text-xs font-bold transition-all ${mode === 'day' ? 'bg-brand text-white border-brand-text shadow-md' : 'bg-surface text-theme border-theme'}`}>
                   Per Day Booking
                 </button>
-                <button onClick={() => setMode('week')} className={`p-3.5 rounded-xl border text-xs font-bold transition-all ${mode === 'week' ? 'bg-lime-400 text-slate-950 border-lime-400 shadow-md' : 'bg-surface text-theme border-theme'}`}>
+                <button onClick={() => setMode('week')} className={`p-3.5 rounded-xl border text-xs font-bold transition-all ${mode === 'week' ? 'bg-brand text-white border-brand-text shadow-md' : 'bg-surface text-theme border-theme'}`}>
                   Per Week Schedule
                 </button>
               </div>
 
               {loadingSlots ? (
-                <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+                <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
               ) : mode === 'day' ? (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Date</label>
-                    <input type="date" value={daySelectedDate} onChange={(e) => setDaySelectedDate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                    <input type="date" value={daySelectedDate} onChange={(e) => setDaySelectedDate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
                   </div>
                   <p className="text-xs text-muted">Greyed-out slots are already booked. Tap any available time + court.</p>
                   <div className="overflow-x-auto rounded-2xl border border-theme">
                     <div className="min-w-[320px]">
                       <div className="grid grid-cols-3 bg-surface/80 text-center">
                         <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-muted text-left">Time</div>
-                        <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-lime-400 border-l border-theme">Court 1</div>
-                        <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-lime-400 border-l border-theme">Court 2</div>
+                        <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 1</div>
+                        <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 2</div>
                       </div>
                       <div className="divide-y divide-theme">
                         {ALL_TIMES.map((time) => (
@@ -291,7 +291,7 @@ export default function Book() {
                                   {booked ? (
                                     <div className="px-3 py-2 rounded-xl bg-surface/80 text-muted border border-theme text-center text-xs font-bold line-through">Booked</div>
                                   ) : (
-                                    <button onClick={() => toggleDaySelection(time, court)} className={`w-full px-3 py-2 rounded-xl border text-xs font-bold transition-all ${selected ? 'bg-lime-400 text-slate-950 border-lime-400 shadow-md shadow-lime-400/20' : 'bg-surface text-theme border-theme/80 hover:border-lime-400/60'}`}>
+                                    <button onClick={() => toggleDaySelection(time, court)} className={`w-full px-3 py-2 rounded-xl border text-xs font-bold transition-all ${selected ? 'bg-brand text-white border-brand-text shadow-md shadow-brand/20' : 'bg-surface text-theme border-theme/80 hover:border-brand-text/60'}`}>
                                       {selected ? 'Selected ✓' : 'Select'}
                                     </button>
                                   )}
@@ -308,7 +308,7 @@ export default function Book() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Start Date</label>
-                    <input type="date" value={weekStartDate} onChange={(e) => setWeekStartDate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                    <input type="date" value={weekStartDate} onChange={(e) => setWeekStartDate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Days of the Week (Sun &ndash; Thu)</label>
@@ -316,9 +316,9 @@ export default function Book() {
                       {DAY_OPTIONS.map((d) => {
                         const checked = weekDays.includes(d.key)
                         return (
-                          <button key={d.key} onClick={() => toggleWeekDay(d.key)} className={`p-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${checked ? 'bg-lime-400/20 text-lime-400 border-lime-400' : 'bg-surface text-muted border-theme'}`}>
+                          <button key={d.key} onClick={() => toggleWeekDay(d.key)} className={`p-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${checked ? 'bg-brand/20 text-brand-text border-brand-text' : 'bg-surface text-muted border-theme'}`}>
                             <span>{d.label}</span>
-                            {checked && <CheckCircle2 className="w-3.5 h-3.5 text-lime-400" />}
+                            {checked && <CheckCircle2 className="w-3.5 h-3.5 text-brand-text" />}
                           </button>
                         )
                       })}
@@ -328,7 +328,7 @@ export default function Book() {
                     <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Time Slot</label>
                     <div className="flex flex-wrap gap-2">
                       {ALL_TIMES.map((time) => (
-                        <button key={time} onClick={() => setWeekTime(time)} className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${weekTime === time ? 'bg-lime-400 text-slate-950 border-lime-400' : 'bg-surface text-theme border-theme/80 hover:border-lime-400/60'}`}>
+                        <button key={time} onClick={() => setWeekTime(time)} className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${weekTime === time ? 'bg-brand text-white border-brand-text' : 'bg-surface text-theme border-theme/80 hover:border-brand-text/60'}`}>
                           {timeLabels[time]}
                         </button>
                       ))}
@@ -337,9 +337,9 @@ export default function Book() {
                   <div>
                     <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Number of Weeks</label>
                     <div className="inline-flex rounded-xl overflow-hidden border border-theme">
-                      <button onClick={() => setWeekWeeks((w) => Math.max(1, w - 1))} className="px-4 py-2 text-lime-400 font-bold bg-surface" aria-label="Decrease weeks">−</button>
+                      <button onClick={() => setWeekWeeks((w) => Math.max(1, w - 1))} className="px-4 py-2 text-brand-text font-bold bg-surface" aria-label="Decrease weeks">−</button>
                       <span className="px-5 py-2 text-center font-bold text-theme bg-surface min-w-12">{weekWeeks}</span>
-                      <button onClick={() => setWeekWeeks((w) => Math.min(12, w + 1))} className="px-4 py-2 text-lime-400 font-bold bg-surface" aria-label="Increase weeks">+</button>
+                      <button onClick={() => setWeekWeeks((w) => Math.min(12, w + 1))} className="px-4 py-2 text-brand-text font-bold bg-surface" aria-label="Increase weeks">+</button>
                     </div>
                     <p className="text-xs text-muted mt-2">Total sessions: {weekDays.length * weekWeeks}</p>
                   </div>
@@ -352,9 +352,9 @@ export default function Book() {
             <div className="sticky top-28 glass-panel rounded-3xl p-6 border border-theme shadow-2xl space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-theme">
                 <h3 className="font-heading text-lg font-extrabold text-theme flex items-center gap-2">
-                  <Tag className="w-5 h-5 text-lime-400" /><span>Your Booking</span>
+                  <Tag className="w-5 h-5 text-brand-text" /><span>Your Booking</span>
                 </h3>
-                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/30 uppercase">Live estimate</span>
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-brand/10 text-brand-text border border-brand-text/30 uppercase">Live estimate</span>
               </div>
 
               {!sessionType ? (
@@ -365,7 +365,7 @@ export default function Book() {
                 <>
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between py-1"><span className="text-muted">Category:</span><span className="text-theme font-bold">{PRICING[sessionType].name}</span></div>
-                    <div className="flex justify-between py-1"><span className="text-muted">Sessions:</span><span className="text-lime-400 font-bold">{sessionCount}</span></div>
+                    <div className="flex justify-between py-1"><span className="text-muted">Sessions:</span><span className="text-brand-text font-bold">{sessionCount}</span></div>
                     <div className="flex justify-between py-1"><span className="text-muted">Rate / session:</span><span className="text-theme font-semibold">{perSessionRate(sessionType, sessionCount).toLocaleString()} EGP</span></div>
                   </div>
 
@@ -382,13 +382,13 @@ export default function Book() {
                         <span className="text-[10px] text-muted font-medium">Per player &bull; 1-hour sessions</span>
                       </div>
                       <div className="text-right">
-                        <span className="font-heading text-3xl font-black text-lime-400">{totalPrice.toLocaleString()}</span>
+                        <span className="font-heading text-3xl font-black text-brand-text">{totalPrice.toLocaleString()}</span>
                         <span className="text-xs font-bold text-theme ml-1">EGP</span>
                       </div>
                     </div>
                   </div>
 
-                  <button onClick={handleContinue} disabled={!canContinue || bookingFromBalance} className="w-full py-4 rounded-2xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-extrabold text-sm shadow-xl shadow-lime-400/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50">
+                  <button onClick={handleContinue} disabled={!canContinue || bookingFromBalance} className="w-full py-4 rounded-2xl bg-gold hover:bg-gold-hover text-slate-950 font-extrabold text-sm shadow-xl shadow-gold/30 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50">
                     <span>{bookingFromBalance ? 'Booking...' : user ? (balanceInfo?.hasEnough ? 'Book from Balance' : `Continue to Payment (${totalPrice.toLocaleString()} EGP)`) : 'Login to Continue'}</span>
                     <ArrowRight className="w-5 h-5" />
                   </button>

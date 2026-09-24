@@ -79,8 +79,8 @@ router.get('/balance-check', async (req, res) => {
     const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
     const n = parseInt(count) || 0
-    const hasEnough = hasEnoughBalance(user, sessionType, n)
-    res.json({ hasEnough, private_balance: user.private_balance || 0, group_balance: user.group_balance || 0, effective_group: effectiveGroup(user), sessionType, count: n })
+    const hasEnough = await hasEnoughBalance(user, sessionType, n)
+    res.json({ hasEnough, private_balance: user.private_balance || 0, group_balance: user.group_balance || 0, cycle_private: user.cycle_private || 0, cycle_group: user.cycle_group || 0, cycle_expires_at: user.cycle_expires_at || null, effective_group: effectiveGroup(user), sessionType, count: n })
   } catch (err) {
     console.error('Balance check error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -98,9 +98,9 @@ router.post('/from-balance', async (req, res) => {
     const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    // Verify sufficient balance (conversion-aware)
+    // Verify sufficient balance (conversion-aware, cycle-aware)
     const n = sessions.length
-    const hasEnough = hasEnoughBalance(user, sessionType, n)
+    const hasEnough = await hasEnoughBalance(user, sessionType, n)
     if (!hasEnough) return res.status(409).json({ error: 'Insufficient balance', code: 'INSUFFICIENT_BALANCE', routedToPayment: true })
 
     let ref = genRef()
@@ -233,7 +233,7 @@ router.post('/', async (req, res) => {
           user_id: admin.id, kind: 'new_payment',
           title: 'New Payment Pending',
           body: `${req.user?.name || 'Player'} submitted payment for ${sessionType} booking (${sessions.length} sessions).`,
-          link: '/admin/bookings', read: 0,
+          link: '/admin', read: 0,
         })
       }
     }

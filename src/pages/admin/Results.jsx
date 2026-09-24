@@ -7,7 +7,7 @@ function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
   const [players, setPlayers] = useState([])
 
   useEffect(() => {
-    api.get('/players?limit=500').then(data => setPlayers(data.players || [])).catch(() => {})
+    api.get('/users?role=player&limit=500').then(data => setPlayers(data.players || [])).catch(() => {})
   }, [])
 
   return (
@@ -129,11 +129,11 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Date *</label>
-              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Court</label>
-              <select value={form.court} onChange={e => setForm({ ...form, court: parseInt(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400">
+              <select value={form.court} onChange={e => setForm({ ...form, court: parseInt(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
                 <option value={1}>Court 1</option>
                 <option value={2}>Court 2</option>
               </select>
@@ -145,7 +145,7 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
             <div className="flex gap-2">
               {[{ v: 'short', l: 'Short Set' }, { v: 'long', l: 'Long Set' }, { v: 'tiebreak', l: 'Tiebreak' }].map(o => (
                 <button key={o.v} type="button" onClick={() => setForm({ ...form, format: o.v })}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${form.format === o.v ? 'bg-lime-400 text-slate-950 border-lime-400' : 'bg-surface border-theme text-theme hover:border-lime-400'}`}>
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${form.format === o.v ? 'bg-brand text-white border-brand-text' : 'bg-surface border-theme text-theme hover:border-brand-text'}`}>
                   {o.l}
                 </button>
               ))}
@@ -154,7 +154,7 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-lime-400 uppercase tracking-wider">Side A *</label>
+              <label className="block text-xs font-semibold text-brand-text uppercase tracking-wider">Side A *</label>
               {form.sideA.map((name, i) => (
                 <div key={i} className="flex gap-1">
                   <div className="flex-1">
@@ -163,7 +163,7 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
                   {form.sideA.length > 1 && <button type="button" onClick={() => removePlayer('sideA', i)} className="px-2 text-rose-400 hover:text-rose-300"><X className="w-4 h-4" /></button>}
                 </div>
               ))}
-              {form.sideA.length < 2 && <button type="button" onClick={() => addPlayer('sideA')} className="text-[10px] font-bold text-lime-400 hover:text-lime-300">+ Add Partner</button>}
+              {form.sideA.length < 2 && <button type="button" onClick={() => addPlayer('sideA')} className="text-[10px] font-bold text-brand-text hover:text-brand-text">+ Add Partner</button>}
             </div>
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-rose-400 uppercase tracking-wider">Side B *</label>
@@ -182,31 +182,31 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Score A *</label>
-              <input type="number" min="0" value={form.score_a} onChange={e => setForm({ ...form, score_a: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="number" min="0" value={form.score_a} onChange={e => setForm({ ...form, score_a: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Score B *</label>
-              <input type="number" min="0" value={form.score_b} onChange={e => setForm({ ...form, score_b: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="number" min="0" value={form.score_b} onChange={e => setForm({ ...form, score_b: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
           </div>
 
           {scoresFilled && (
             <div className={`p-3 rounded-xl text-center text-sm font-bold ${tie ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'}`}>
-              {tie ? 'Scores cannot be tied' : <>Winner: <span className="text-lime-400">{winnerPreview}</span></>}
+              {tie ? 'Scores cannot be tied' : <>Winner: <span className="text-brand-text">{winnerPreview}</span></>}
             </div>
           )}
 
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Competition</label>
-            <input type="text" value={form.competition} onChange={e => setForm({ ...form, competition: e.target.value })} placeholder="e.g. League, Tournament" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+            <input type="text" value={form.competition} onChange={e => setForm({ ...form, competition: e.target.value })} placeholder="e.g. League, Tournament" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Notes</label>
-            <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400 resize-none" />
+            <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text resize-none" />
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme font-semibold text-sm hover:bg-slate-200 dark:hover:bg-slate-800">Cancel</button>
-            <button type="submit" disabled={loading || !canSubmit} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm disabled:opacity-50">
+            <button type="submit" disabled={loading || !canSubmit} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">
               {loading ? <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin mx-auto" /> : result ? 'Update Result' : admin ? 'Add Result' : 'Submit for Review'}
             </button>
           </div>
@@ -270,10 +270,10 @@ function ImportModal({ kind, onClose, onDone }) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
         <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
-          <CheckCircle2 className="w-12 h-12 text-lime-400 mx-auto mb-4" />
+          <CheckCircle2 className="w-12 h-12 text-brand-text mx-auto mb-4" />
           <h3 className="text-xl font-bold text-theme mb-2">Import Complete</h3>
           <p className="text-muted text-sm mb-4">{result.inserted} results imported successfully.</p>
-          <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm">Done</button>
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Done</button>
         </div>
       </div>
     )
@@ -295,7 +295,7 @@ function ImportModal({ kind, onClose, onDone }) {
           <p className="text-muted text-sm mb-3">{file ? file.name : 'Drop your Excel file here or click to browse'}</p>
           <div className="flex gap-3 justify-center">
             <button onClick={() => fileRef.current.click()} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Choose File</button>
-            {file && <button onClick={handleUpload} disabled={loading} className="px-4 py-2 rounded-xl bg-lime-400 text-slate-950 text-sm font-bold disabled:opacity-50">{loading ? 'Processing...' : 'Upload & Preview'}</button>}
+            {file && <button onClick={handleUpload} disabled={loading} className="px-4 py-2 rounded-xl bg-brand text-white text-sm font-bold disabled:opacity-50">{loading ? 'Processing...' : 'Upload & Preview'}</button>}
           </div>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -303,7 +303,7 @@ function ImportModal({ kind, onClose, onDone }) {
           <div>
             <div className="flex items-center gap-4 mb-3 text-sm">
               <span className="text-theme font-semibold">Total: {preview.totalRows}</span>
-              <span className="text-lime-400 font-semibold">Valid: {preview.validRows}</span>
+              <span className="text-brand-text font-semibold">Valid: {preview.validRows}</span>
               {preview.errors.length > 0 && <span className="text-rose-400 font-semibold">Errors: {preview.errors.length}</span>}
             </div>
             {preview.errors.length > 0 && (
@@ -327,7 +327,7 @@ function ImportModal({ kind, onClose, onDone }) {
                 </tbody>
               </table>
             </div>
-            <button onClick={handleCommit} disabled={committing || preview.validRows === 0} className="w-full py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm disabled:opacity-50">
+            <button onClick={handleCommit} disabled={committing || preview.validRows === 0} className="w-full py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">
               {committing ? 'Importing...' : `Import ${preview.validRows} Valid Rows`}
             </button>
           </div>
@@ -386,7 +386,7 @@ export default function Results() {
               <button onClick={() => setShowImport(true)} className="px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-800">
                 <Upload className="w-4 h-4" /> Import Excel
               </button>
-              <button onClick={() => setShowAdd(true)} className="px-4 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-sm font-bold flex items-center gap-2">
+              <button onClick={() => setShowAdd(true)} className="px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-bold flex items-center gap-2">
                 <Plus className="w-4 h-4" /> Add Result
               </button>
             </>
@@ -399,7 +399,7 @@ export default function Results() {
           <div className="flex gap-1 bg-surface border border-theme rounded-xl p-1">
             {statusTabs.map(tab => (
               <button key={tab.id} onClick={() => { setStatusFilter(tab.id); setPage(1) }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statusFilter === tab.id ? 'bg-lime-400 text-slate-950' : 'text-muted hover:text-slate-900 dark:hover:text-white'}`}>
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${statusFilter === tab.id ? 'bg-brand text-white' : 'text-muted hover:text-slate-900 dark:hover:text-white'}`}>
                 {tab.label}
               </button>
             ))}
@@ -408,14 +408,14 @@ export default function Results() {
         <form onSubmit={handleSearch} className="flex gap-2 flex-1 max-w-md">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by player name..." className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by player name..." className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
           </div>
           <button type="submit" className="px-4 py-2.5 rounded-xl bg-surface text-theme text-sm font-semibold hover:bg-slate-300 dark:hover:bg-slate-700">Search</button>
         </form>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
       ) : results.length === 0 ? (
         <div className="text-center py-12 text-muted">No results found.</div>
       ) : (
@@ -447,9 +447,9 @@ export default function Results() {
                       <td className="px-6 py-4 font-semibold text-theme text-xs">{sideA.join(' & ')}</td>
                       <td className="px-6 py-4 font-semibold text-theme text-xs">{sideB.join(' & ')}</td>
                       <td className="px-6 py-4 text-center">
-                        <span className="text-lime-400 font-bold">{r.score_a}</span>
+                        <span className="text-brand-text font-bold">{r.score_a}</span>
                         <span className="text-muted mx-1">-</span>
-                        <span className="text-lime-400 font-bold">{r.score_b}</span>
+                        <span className="text-brand-text font-bold">{r.score_b}</span>
                       </td>
                       <td className="px-6 py-4 text-theme text-xs">{r.winner || '-'}</td>
                       <td className="px-6 py-4">

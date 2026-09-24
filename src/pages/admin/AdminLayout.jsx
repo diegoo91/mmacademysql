@@ -1,15 +1,14 @@
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, ChevronLeft, ClipboardList, DollarSign, FileUp, LayoutDashboard, LogOut, Menu, MessageSquare, PieChart, Shield, Users, UserX, X, CalendarClock, ShieldCheck } from 'lucide-react'
+import { BarChart3, ChevronLeft, DollarSign, FileUp, LayoutDashboard, LogOut, Menu, MessageSquare, PieChart, Shield, Users, X, CalendarClock, ShieldCheck, Trophy } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const ALL_SIDEBAR_LINKS = [
   { name: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true, roles: ['superadmin', 'admin'] },
-  { name: 'Bookings', path: '/admin/bookings', icon: ClipboardList, roles: ['superadmin', 'admin'] },
   { name: 'Schedule Manager', path: '/admin/schedule', icon: CalendarClock, roles: ['superadmin', 'admin', 'coach'] },
-  { name: 'Players', path: '/admin/players', icon: Users, roles: ['superadmin', 'admin', 'coach'] },
   { name: 'Results', path: '/admin/results', icon: BarChart3, roles: ['superadmin', 'admin'] },
-  { name: 'Users', path: '/admin/users', icon: UserX, roles: ['superadmin'] },
+  { name: 'Tournament', path: '/admin/tournament', icon: Trophy, roles: ['superadmin', 'admin'] },
+  { name: 'Users', path: '/admin/users', icon: Users, roles: ['superadmin', 'admin', 'coach'] },
   { name: 'Roles', path: '/admin/roles', icon: ShieldCheck, roles: ['superadmin'] },
   { name: 'Imports', path: '/admin/imports', icon: FileUp, roles: ['superadmin', 'admin'] },
   { name: 'Comments', path: '/admin/comments', icon: MessageSquare, roles: ['superadmin', 'admin'] },
@@ -36,7 +35,7 @@ export default function AdminLayout() {
       <div className="p-4 flex items-center justify-between border-b border-theme">
         {(!collapsed || mobileOpen) && (
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-lime-400" />
+            <Shield className="w-5 h-5 text-brand-text" />
             <span className="font-bold text-theme text-sm">
               {user?.role === 'coach' ? 'Coach Panel' : 'Admin Panel'}
             </span>
@@ -58,7 +57,7 @@ export default function AdminLayout() {
               onClick={() => setMobileOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                 active
-                  ? 'bg-lime-400/10 text-lime-400 border border-lime-400/20'
+                  ? 'bg-brand/10 text-brand-text border border-brand-text/20'
                   : 'text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
               }`}
               title={collapsed ? link.name : undefined}

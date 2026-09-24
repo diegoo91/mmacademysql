@@ -3,7 +3,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate } from '../middleware/audit.js'
-import { updateUserBalance } from '../utils/balance.js'
+import { updateUserBalance, ensureCycleFresh, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
 
 const router = Router()
 router.use(authenticate)
@@ -22,11 +22,11 @@ router.post('/', async (req, res) => {
     if (!from || !to || !count || count <= 0) return res.status(400).json({ error: 'Invalid request params' })
     if (from === to) return res.status(400).json({ error: 'Cannot convert same type' })
 
-    const user = await db.get('users', req.user.id)
+    const user = await ensureCycleFresh(await db.get('users', req.user.id), { notify: true }) || await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    const privBalance = user.private_balance || 0
-    const grpBalance = user.group_balance || 0
+    const privBalance = effectivePrivate(user)
+    const grpBalance = effectiveGroupBalance(user)
 
     if (from === 'private' && count > privBalance) return res.status(400).json({ error: `Insufficient private balance (${privBalance} available)` })
     if (from === 'group' && count * 2 > grpBalance) return res.status(400).json({ error: `Insufficient group balance (${grpBalance} available, need ${count * 2})` })
@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
     })
 
     for (const admin of admins) {
-      await notify(admin.id, 'conversion_request', 'Conversion Request', `${req.user.name} requests to convert ${count} ${from} → ${to}.`, '/admin/bookings')
+      await notify(admin.id, 'conversion_request', 'Conversion Request', `${req.user.name} requests to convert ${count} ${from} → ${to}.`, '/admin')
     }
 
     await auditCreate(req, 'conversion_request', request.id, { user_name: req.user.name, from, to, count: parseInt(count) })
@@ -73,18 +73,30 @@ router.put('/:id/approve', requireRole('superadmin', 'admin'), async (req, res) 
     if (!request) return res.status(404).json({ error: 'Request not found' })
     if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' })
 
-    const user = request.user_id ? await db.get('users', request.user_id) : null
+    const user = request.user_id ? await ensureCycleFresh(await db.get('users', request.user_id), { notify: true }) || await db.get('users', request.user_id) : null
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    const privBalance = user.private_balance || 0
-    const grpBalance = user.group_balance || 0
+    const privBalance = effectivePrivate(user)
+    const grpBalance = effectiveGroupBalance(user)
+
+    // Conversion operates on legacy balance columns (admin-adjustable surface).
+    // Cycle credits stay in their bucket — only convert what's in legacy to
+    // avoid double-counting effective totals after the write.
+    const legP = Math.max(0, user.private_balance || 0)
+    const legG = Math.max(0, user.group_balance || 0)
 
     if (request.from === 'private' && request.to === 'group') {
       if (privBalance < request.count) return res.status(400).json({ error: 'Insufficient credits' })
-      await updateUserBalance(user.id, privBalance - request.count, grpBalance + request.count * 2)
+      // Prefer consuming legacy private; if short, leave cycle untouched and only convert legacy portion
+      const convert = Math.min(request.count, legP)
+      if (convert > 0) await updateUserBalance(user.id, legP - convert, legG + convert * 2)
+      else return res.status(400).json({ error: 'No convertible legacy private balance (cycle package stays as-is)' })
     } else if (request.from === 'group' && request.to === 'private') {
       if (grpBalance < request.count * 2) return res.status(400).json({ error: 'Insufficient credits' })
-      await updateUserBalance(user.id, privBalance + request.count, grpBalance - request.count * 2)
+      const convertUnits = Math.floor(legG / 2)
+      const convert = Math.min(request.count, convertUnits)
+      if (convert > 0) await updateUserBalance(user.id, legP + convert, legG - convert * 2)
+      else return res.status(400).json({ error: 'No convertible legacy group balance (cycle package stays as-is)' })
     }
 
     await db.update('conversion_requests', parseInt(req.params.id), { status: 'approved' })

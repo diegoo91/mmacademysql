@@ -95,7 +95,7 @@ router.post('/', async (req, res) => {
       await notify(admin.id, `request_${kind}`,
         kind === 'cancel' ? 'Cancellation Requested' : 'Modification Requested',
         `${req.user.name} requested to ${kind} their slot on ${slot.date} at ${slot.time}.`,
-        '/admin/bookings')
+        '/admin')
     }
 
     await auditCreate(req, 'booking_request', request.id, { kind, slot_id: request.slot_id, player_name: req.user.name })

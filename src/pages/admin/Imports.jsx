@@ -82,7 +82,7 @@ export default function Imports() {
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id); reset() }}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === tab.id ? 'bg-lime-400 text-slate-950' : 'bg-surface border border-theme text-theme hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === tab.id ? 'bg-brand text-white' : 'bg-surface border border-theme text-theme hover:bg-slate-200 dark:hover:bg-slate-800'}`}
           >
             {tab.name}
           </button>
@@ -103,7 +103,7 @@ export default function Imports() {
           <div className="flex gap-3 justify-center">
             <button onClick={() => fileRef.current.click()} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Choose File</button>
             {file && !preview && (
-              <button onClick={handleUpload} disabled={uploading} className="px-4 py-2 rounded-xl bg-lime-400 text-slate-950 text-sm font-bold disabled:opacity-50 flex items-center gap-2">
+              <button onClick={handleUpload} disabled={uploading} className="px-4 py-2 rounded-xl bg-brand text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">
                 {uploading ? <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
                 {uploading ? 'Processing...' : 'Upload & Preview'}
               </button>
@@ -114,9 +114,9 @@ export default function Imports() {
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
 
         {result && (
-          <div className="p-4 rounded-xl bg-lime-400/5 border border-lime-400/20 mb-4">
+          <div className="p-4 rounded-xl bg-brand/5 border border-brand-text/20 mb-4">
             <div className="flex items-center gap-2 mb-1">
-              <CheckCircle2 className="w-5 h-5 text-lime-400" />
+              <CheckCircle2 className="w-5 h-5 text-brand-text" />
               <span className="text-theme font-bold text-sm">Import Successful</span>
             </div>
             <p className="text-muted text-xs">{result.inserted} {activeTab} imported from {result.totalRows} rows.</p>
@@ -127,7 +127,7 @@ export default function Imports() {
           <div>
             <div className="flex items-center gap-4 mb-3 text-sm">
               <span className="text-theme font-semibold">Total: {preview.totalRows}</span>
-              <span className="text-lime-400 font-semibold">Valid: {preview.validRows}</span>
+              <span className="text-brand-text font-semibold">Valid: {preview.validRows}</span>
               {preview.errors.length > 0 && <span className="text-rose-400 font-semibold">Errors: {preview.errors.length}</span>}
             </div>
 
@@ -156,7 +156,7 @@ export default function Imports() {
 
             <div className="flex gap-3">
               <button onClick={reset} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={handleCommit} disabled={committing || preview.validRows === 0} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm disabled:opacity-50">
+              <button onClick={handleCommit} disabled={committing || preview.validRows === 0} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">
                 {committing ? 'Importing...' : `Import ${preview.validRows} Valid Rows`}
               </button>
             </div>
@@ -167,7 +167,7 @@ export default function Imports() {
       <div className="glass-panel rounded-2xl border border-theme p-6">
         <h3 className="text-lg font-bold text-theme mb-4">Import History</h3>
         {loading ? (
-          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
         ) : batches.length === 0 ? (
           <p className="text-muted text-sm">No imports yet.</p>
         ) : (
@@ -193,7 +193,7 @@ export default function Imports() {
                     <td className="py-3 text-theme">{b.error_count}</td>
                     <td className="py-3 text-theme">{b.user_name || 'Unknown'}</td>
                     <td className="py-3">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-lime-400/10 text-lime-400">{b.status}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand/10 text-brand-text">{b.status}</span>
                     </td>
                     <td className="py-3 text-muted text-xs">{new Date(b.created_at).toLocaleString()}</td>
                   </tr>

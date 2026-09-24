@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, Clock, Download, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key, BarChart3 } from 'lucide-react'
+import { Camera, Clock, Download, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key, BarChart3, Eye, EyeOff } from 'lucide-react'
 import { api, fileUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import DeclineChoiceModal from '../components/DeclineChoiceModal'
 
 function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
   const [players, setPlayers] = useState([])
 
   useEffect(() => {
-    api.get('/players?limit=500').then(data => setPlayers(data.players || [])).catch(() => {})
+    api.get('/users?role=player&limit=500').then(data => setPlayers(data.players || [])).catch(() => {})
   }, [])
 
   return (
@@ -49,12 +50,16 @@ export default function Profile() {
   const [mySlots, setMySlots] = useState([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [showPasswordChange, setShowPasswordChange] = useState(false)
+  const [showPw, setShowPw] = useState(false)
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [pwSaving, setPwSaving] = useState(false)
   const [pwMsg, setPwMsg] = useState('')
   const [coachHours, setCoachHours] = useState(null)
   const [coachBalance, setCoachBalance] = useState(null)
   const [coachHoursLoading, setCoachHoursLoading] = useState(false)
+  const [declineSlot, setDeclineSlot] = useState(null)
+  const [declineLoading, setDeclineLoading] = useState('')
+  const [declineError, setDeclineError] = useState('')
 
   const fetchMySlots = () => {
     if (!user) return
@@ -104,6 +109,30 @@ export default function Profile() {
     }
   }, [user])
 
+  // One-shot: refresh cycle balance fields after mount (lazy expiry / latest payment)
+  const balanceRefreshedRef = useRef(false)
+  useEffect(() => {
+    if (!user || balanceRefreshedRef.current) return
+    balanceRefreshedRef.current = true
+    api.get('/auth/me')
+      .then(data => {
+        if (!data?.user) return
+        setUser(prev => {
+          const next = { ...(prev || {}), ...data.user }
+          if (
+            prev &&
+            prev.cycle_private === next.cycle_private &&
+            prev.cycle_group === next.cycle_group &&
+            prev.cycle_expires_at === next.cycle_expires_at &&
+            prev.private_balance === next.private_balance &&
+            prev.group_balance === next.group_balance
+          ) return prev
+          return next
+        })
+      })
+      .catch(() => { balanceRefreshedRef.current = false })
+  }, [user, setUser])
+
   const handleConfirmSlot = async (slotId) => {
     try {
       await api.put(`/slots/${slotId}/confirm`)
@@ -114,12 +143,31 @@ export default function Profile() {
   }
 
   const handleDeclineSlot = async (slotId) => {
+    const slot = mySlots.find(s => s.id === slotId)
+    setDeclineError('')
+    setDeclineSlot(slot || { id: slotId })
+  }
+
+  const handleDeclineChoice = async (choice) => {
+    if (!declineSlot) return
+    setDeclineLoading(choice)
+    setDeclineError('')
     try {
-      await api.put(`/slots/${slotId}/decline`)
+      if (choice === 'modify') {
+        await api.post('/booking-requests', {
+          kind: 'modify',
+          slot_id: declineSlot.id,
+          payload: { date: declineSlot.date, time: declineSlot.time, court: declineSlot.court, reason: 'player_requested_different_slot' },
+        })
+      } else {
+        await api.put(`/slots/${declineSlot.id}/decline`)
+      }
+      setDeclineSlot(null)
       fetchMySlots()
     } catch (err) {
-      alert(err.message || 'Failed to submit decline request')
+      setDeclineError(err.message || 'Failed to submit request')
     }
+    setDeclineLoading('')
   }
 
   const handleSave = async () => {
@@ -176,8 +224,14 @@ export default function Profile() {
     setPwSaving(false)
   }
 
-  const totalPrivateRemaining = user.private_balance || 0
-  const totalGroupRemaining = user.group_balance || 0
+  const totalPrivateRemaining = Math.max(0, user.private_balance || 0) + Math.max(0, user.cycle_private || 0)
+  const totalGroupRemaining = Math.max(0, user.group_balance || 0) + Math.max(0, user.cycle_group || 0)
+  const legacyPrivate = Math.max(0, user.private_balance || 0)
+  const legacyGroup = Math.max(0, user.group_balance || 0)
+  const cyclePrivate = Math.max(0, user.cycle_private || 0)
+  const cycleGroup = Math.max(0, user.cycle_group || 0)
+  const cycleExpires = user.cycle_expires_at || null
+  const paidThisCycle = !!user.cycle_key && (cyclePrivate > 0 || cycleGroup > 0 || legacyPrivate > 0 || legacyGroup > 0)
   const hasCredits = totalPrivateRemaining > 0 || totalGroupRemaining > 0
 
   const visibleBookings = user?.role === 'player'
@@ -211,17 +265,17 @@ export default function Profile() {
         <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8 space-y-6">
           <div className="flex flex-col sm:flex-row items-center gap-6">
             <div className="relative group">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-lime-400/60 bg-surface">
+              <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-brand-text/60 bg-surface">
                 {user.avatar ? (
                   <img src={fileUrl(user.avatar)} alt={user.name} className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-lime-400 text-3xl font-bold">
+                  <div className="w-full h-full flex items-center justify-center text-brand-text text-3xl font-bold">
                     {user.name?.charAt(0)}
                   </div>
                 )}
               </div>
               <label className="absolute inset-0 flex items-center justify-center bg-slate-50/60 dark:bg-slate-950/60 rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-                <Camera className="w-6 h-6 text-lime-400" />
+                <Camera className="w-6 h-6 text-brand-text" />
                 <input type="file" accept="image/*" onChange={handleAvatar} className="hidden" />
               </label>
             </div>
@@ -229,12 +283,12 @@ export default function Profile() {
             <div className="flex-1 text-center sm:text-left">
               <h1 className="font-heading text-2xl font-black text-theme">{user.name}</h1>
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mt-2 text-sm text-muted">
-                <span className="flex items-center gap-1"><Mail className="w-4 h-4 text-lime-400" />{user.email}</span>
-                {user.phone && <span className="flex items-center gap-1"><Phone className="w-4 h-4 text-lime-400" />{user.phone}</span>}
-                <span className="flex items-center gap-1"><Shield className="w-4 h-4 text-lime-400" />{user.role}</span>
+                <span className="flex items-center gap-1"><Mail className="w-4 h-4 text-brand-text" />{user.email}</span>
+                {user.phone && <span className="flex items-center gap-1"><Phone className="w-4 h-4 text-brand-text" />{user.phone}</span>}
+                <span className="flex items-center gap-1"><Shield className="w-4 h-4 text-brand-text" />{user.role}</span>
               </div>
               <div className="flex items-center justify-center sm:justify-start gap-2 mt-2">
-                <span className="px-2.5 py-1 rounded-full bg-lime-400/10 border border-lime-400/30 text-lime-400 text-xs font-bold">
+                <span className="px-2.5 py-1 rounded-full bg-brand/10 border border-brand-text/30 text-brand-text text-xs font-bold">
                   {user.skill_level || 'Intermediate'}
                 </span>
                 <span className="text-xs text-muted">Member since {user.member_since || new Date().getFullYear()}</span>
@@ -250,22 +304,22 @@ export default function Profile() {
             <div className="space-y-4 pt-4 border-t border-theme max-w-md">
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Name</label>
-                <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Phone</label>
-                <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Skill Level</label>
-                <select value={form.skill_level} onChange={e => setForm({ ...form, skill_level: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400">
+                <select value={form.skill_level} onChange={e => setForm({ ...form, skill_level: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
                   <option value="Beginner">Beginner</option>
                   <option value="Intermediate">Intermediate</option>
                   <option value="Advanced">Advanced</option>
                 </select>
               </div>
               {msg && <p className={`text-xs ${msg.includes('updated') ? 'text-emerald-400' : 'text-rose-400'}`}>{msg}</p>}
-              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm transition-all disabled:opacity-50">
+              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm transition-all disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
@@ -288,20 +342,35 @@ export default function Profile() {
             <div className="space-y-4 max-w-sm">
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Current Password</label>
-                <input type="password" value={pwForm.currentPassword} onChange={e => setPwForm({ ...pwForm, currentPassword: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                <div className="relative">
+                  <input type={showPw ? 'text' : 'password'} value={pwForm.currentPassword} onChange={e => setPwForm({ ...pwForm, currentPassword: e.target.value })} className="w-full px-4 pr-11 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+                  <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme" aria-label={showPw ? 'Hide password' : 'Show password'}>
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">New Password (min 8 characters)</label>
-                <input type="password" value={pwForm.newPassword} onChange={e => setPwForm({ ...pwForm, newPassword: e.target.value })} minLength={8} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                <div className="relative">
+                  <input type={showPw ? 'text' : 'password'} value={pwForm.newPassword} onChange={e => setPwForm({ ...pwForm, newPassword: e.target.value })} minLength={8} className="w-full px-4 pr-11 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+                  <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme" aria-label={showPw ? 'Hide password' : 'Show password'}>
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Confirm New Password</label>
-                <input type="password" value={pwForm.confirmPassword} onChange={e => setPwForm({ ...pwForm, confirmPassword: e.target.value })} minLength={8} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+                <div className="relative">
+                  <input type={showPw ? 'text' : 'password'} value={pwForm.confirmPassword} onChange={e => setPwForm({ ...pwForm, confirmPassword: e.target.value })} minLength={8} className="w-full px-4 pr-11 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+                  <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme" aria-label={showPw ? 'Hide password' : 'Show password'}>
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               {pwMsg && <p className={`text-xs ${pwMsg.includes('success') ? 'text-emerald-400' : 'text-rose-400'}`}>{pwMsg}</p>}
               <div className="flex gap-2">
                 <button onClick={() => { setShowPasswordChange(false); setPwMsg('') }} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-                <button onClick={handlePasswordChange} disabled={pwSaving} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm transition-all disabled:opacity-50">
+                <button onClick={handlePasswordChange} disabled={pwSaving} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm transition-all disabled:opacity-50">
                   {pwSaving ? 'Saving...' : 'Save'}
                 </button>
               </div>
@@ -320,7 +389,7 @@ export default function Profile() {
             { label: 'Pending', value: mySlots.filter(s => ['payment_pending', 'payment_approved'].includes(s.status)).length },
           ].map((stat, i) => (
             <div key={i} className="glass-card rounded-2xl p-5 text-center bg-white/60 dark:bg-slate-900/60">
-              <div className="font-heading text-3xl font-black text-lime-400">{stat.value}</div>
+              <div className="font-heading text-3xl font-black text-brand-text">{stat.value}</div>
               <div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">{stat.label}</div>
             </div>
           ))}
@@ -330,7 +399,7 @@ export default function Profile() {
         <button
           onClick={async () => {
             try {
-              const data = await api.get(`/players/${user.id}/report`)
+              const data = await api.get(`/users/${user.id}/report`)
               const { generateReceiptPDF } = await import('../lib/receiptPDF')
               const doc = generateReceiptPDF(data)
               doc.save(`my_report_${new Date().toISOString().slice(0,10)}.pdf`)
@@ -347,16 +416,16 @@ export default function Profile() {
         {user?.role === 'coach' && (
           <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
             <h2 className="font-heading text-xl font-extrabold text-theme mb-4 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-lime-400" /> My Hours
+              <BarChart3 className="w-5 h-5 text-brand-text" /> My Hours
             </h2>
             {coachHoursLoading ? (
-              <div className="flex justify-center py-6"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+              <div className="flex justify-center py-6"><div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
             ) : (
               <>
                 {coachBalance && (
                   <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="p-4 rounded-2xl bg-lime-400/10 border border-lime-400/30 text-center">
-                      <div className="font-heading text-2xl font-black text-lime-400">{coachBalance.total_earned}</div>
+                    <div className="p-4 rounded-2xl bg-brand/10 border border-brand-text/30 text-center">
+                      <div className="font-heading text-2xl font-black text-brand-text">{coachBalance.total_earned}</div>
                       <div className="text-[10px] font-semibold text-muted uppercase tracking-wider">Earned (h)</div>
                     </div>
                     <div className="p-4 rounded-2xl bg-emerald-400/10 border border-emerald-400/30 text-center">
@@ -407,34 +476,65 @@ export default function Profile() {
           />
         )}
 
-        {/* Session Credits */}
-        <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
-            <h2 className="font-heading text-xl font-extrabold text-theme mb-4 flex items-center gap-2">
-              <ArrowRightLeft className="w-5 h-5 text-purple-400" /> Remaining Session Credits
+        <DeclineChoiceModal
+          open={!!declineSlot}
+          slot={declineSlot}
+          loading={declineLoading}
+          error={declineError}
+          onChoose={handleDeclineChoice}
+          onClose={() => { setDeclineSlot(null); setDeclineError('') }}
+        />
+
+        {/* Session Credits — monthly cycle view (never negative; hidden if unpaid & empty) */}
+        {(paidThisCycle || hasCredits) ? (
+          <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
+            <h2 className="font-heading text-xl font-extrabold text-theme mb-1 flex items-center gap-2">
+              <ArrowRightLeft className="w-5 h-5 text-purple-400" /> This Month's Sessions
             </h2>
+            {cycleExpires && (
+              <p className="text-[11px] text-muted mb-4">
+                Expires {String(cycleExpires).slice(0, 10)} · unused balance expires after that date
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-2xl bg-surface/80 border border-theme text-center">
-                <div className="font-heading text-3xl font-black text-lime-400">{totalPrivateRemaining}</div>
+                <div className="font-heading text-3xl font-black text-brand-text">{Math.max(0, cyclePrivate + legacyPrivate)}</div>
                 <div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">Private Sessions</div>
+                {cyclePrivate > 0 && <div className="text-[10px] text-brand-text/80 mt-1">{cyclePrivate} this cycle{legacyPrivate > 0 ? ` + ${legacyPrivate} carryover` : ''}</div>}
+                {cyclePrivate === 0 && legacyPrivate > 0 && <div className="text-[10px] text-muted mt-1">{legacyPrivate} carryover</div>}
               </div>
               <div className="p-4 rounded-2xl bg-surface/80 border border-theme text-center">
-                <div className="font-heading text-3xl font-black text-purple-400">{totalGroupRemaining}</div>
+                <div className="font-heading text-3xl font-black text-purple-400">{Math.max(0, cycleGroup + legacyGroup)}</div>
                 <div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">Group Sessions</div>
+                {cycleGroup > 0 && <div className="text-[10px] text-purple-400/80 mt-1">{cycleGroup} this cycle{legacyGroup > 0 ? ` + ${legacyGroup} carryover` : ''}</div>}
+                {cycleGroup === 0 && legacyGroup > 0 && <div className="text-[10px] text-muted mt-1">{legacyGroup} carryover</div>}
               </div>
             </div>
             <p className="text-[11px] text-muted mt-3 text-center">1 Private session = 2 Group sessions.</p>
             <ConversionRequestButton privateRemaining={totalPrivateRemaining} groupRemaining={totalGroupRemaining} />
           </div>
+        ) : (
+          <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8 text-center space-y-3">
+            <h2 className="font-heading text-xl font-extrabold text-theme">No active package this month</h2>
+            <p className="text-sm text-muted">Buy a session package to book courts this month. Unused sessions expire on the 14th of the following month.</p>
+            <Link
+              to="/book"
+              className="inline-flex px-5 py-3 rounded-xl bg-gold hover:bg-gold-hover text-slate-950 font-extrabold text-sm transition-all"
+            >
+              Get a package
+            </Link>
+          </div>
+        )}
 
         {/* Booking History */}
         <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
           <h2 className="font-heading text-xl font-extrabold text-theme mb-6 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-lime-400" /> Booking History
+            <Clock className="w-5 h-5 text-brand-text" /> Booking History
           </h2>
           {loading ? (
-            <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
           ) : visibleBookings.length === 0 ? (
-            <p className="text-muted text-sm text-center py-8">No bookings yet. <Link to="/book" className="text-lime-400 font-bold hover:underline">Book a session</Link></p>
+            <p className="text-muted text-sm text-center py-8">No bookings yet. <Link to="/book" className="text-brand-text font-bold hover:underline">Book a session</Link></p>
           ) : (
             <div className="space-y-3">
               {visibleBookings.map(b => {
@@ -444,7 +544,7 @@ export default function Profile() {
                   <div key={b.id} className="p-4 rounded-2xl bg-surface/80 border border-theme flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
-                        <span className="font-mono text-sm font-bold text-lime-400">{b.ref}</span>
+                        <span className="font-mono text-sm font-bold text-brand-text">{b.ref}</span>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${statusColors[b.status] || ''}`}>
                           {statusLabels[b.status] || b.status}
                         </span>
@@ -465,13 +565,13 @@ export default function Profile() {
                   You have {pendingResultsCount} pending result{pendingResultsCount === 1 ? '' : 's'} awaiting confirmation
                 </div>
               )}
-              <button onClick={() => setShowResultModal(true)} className="w-full py-3.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-extrabold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-lime-400/20">
+              <button onClick={() => setShowResultModal(true)} className="w-full py-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-extrabold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand/20">
                 <Trophy className="w-4 h-4" />
                 Submit Match Result
               </button>
               <Link
                 to={hasCredits ? '/schedule' : '/book'}
-                className="w-full py-3.5 rounded-xl bg-surface border border-theme text-theme font-extrabold text-sm transition-all flex items-center justify-center gap-2"
+                className="w-full py-3.5 rounded-xl bg-gold hover:bg-gold-hover text-slate-950 font-extrabold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-gold/30"
               >
                 <Calendar className="w-4 h-4" />
                 {hasCredits ? 'Book Session from Schedule' : 'Book a New Session'}
@@ -634,11 +734,11 @@ function PlayerResultModal({ user, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Date *</label>
-              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Court</label>
-              <select value={form.court} onChange={e => setForm({ ...form, court: parseInt(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400">
+              <select value={form.court} onChange={e => setForm({ ...form, court: parseInt(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
                 <option value={1}>Court 1</option>
                 <option value={2}>Court 2</option>
               </select>
@@ -649,7 +749,7 @@ function PlayerResultModal({ user, onClose, onSaved }) {
             <div className="flex gap-2">
               {[{ v: 'short', l: 'Short Set' }, { v: 'long', l: 'Long Set' }, { v: 'tiebreak', l: 'Tiebreak' }].map(o => (
                 <button key={o.v} type="button" onClick={() => setForm({ ...form, format: o.v })}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${form.format === o.v ? 'bg-lime-400 text-slate-950 border-lime-400' : 'bg-surface border-theme text-theme hover:border-lime-400'}`}>
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${form.format === o.v ? 'bg-brand text-white border-brand-text' : 'bg-surface border-theme text-theme hover:border-brand-text'}`}>
                   {o.l}
                 </button>
               ))}
@@ -657,7 +757,7 @@ function PlayerResultModal({ user, onClose, onSaved }) {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-lime-400 uppercase tracking-wider">Side A *</label>
+              <label className="block text-xs font-semibold text-brand-text uppercase tracking-wider">Side A *</label>
               {form.sideA.map((name, i) => (
                 <div key={i} className="flex gap-1">
                   <div className="flex-1">
@@ -666,7 +766,7 @@ function PlayerResultModal({ user, onClose, onSaved }) {
                   {form.sideA.length > 1 && <button type="button" onClick={() => removePlayer('sideA', i)} className="px-2 text-rose-400 hover:text-rose-300">&times;</button>}
                 </div>
               ))}
-              {form.sideA.length < 2 && <button type="button" onClick={() => addPlayer('sideA')} className="text-[10px] font-bold text-lime-400 hover:text-lime-300">+ Add Partner</button>}
+              {form.sideA.length < 2 && <button type="button" onClick={() => addPlayer('sideA')} className="text-[10px] font-bold text-brand-text hover:text-brand-text">+ Add Partner</button>}
             </div>
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-rose-400 uppercase tracking-wider">Side B *</label>
@@ -684,32 +784,32 @@ function PlayerResultModal({ user, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Score A *</label>
-              <input type="number" min="0" value={form.score_a} onChange={e => setForm({ ...form, score_a: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="number" min="0" value={form.score_a} onChange={e => setForm({ ...form, score_a: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Score B *</label>
-              <input type="number" min="0" value={form.score_b} onChange={e => setForm({ ...form, score_b: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="number" min="0" value={form.score_b} onChange={e => setForm({ ...form, score_b: e.target.value === '' ? '' : parseInt(e.target.value) })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
           </div>
           {scoresFilled && (
             <div className={`p-3 rounded-xl text-center text-sm font-bold ${tie ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'}`}>
-              {tie ? 'Scores cannot be tied' : <>Winner: <span className="text-lime-400">{scoreA > scoreB ? form.sideA[0] : form.sideB[0]}</span></>}
+              {tie ? 'Scores cannot be tied' : <>Winner: <span className="text-brand-text">{scoreA > scoreB ? form.sideA[0] : form.sideB[0]}</span></>}
             </div>
           )}
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Competition</label>
-            <input type="text" value={form.competition} onChange={e => setForm({ ...form, competition: e.target.value })} placeholder="e.g. League, Tournament" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+            <input type="text" value={form.competition} onChange={e => setForm({ ...form, competition: e.target.value })} placeholder="e.g. League, Tournament" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Notes</label>
-            <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400 resize-none" />
+            <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text resize-none" />
           </div>
           <div className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold text-center">
             Player submissions require admin confirmation before appearing in reports.
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme font-semibold text-sm hover:bg-slate-200 dark:hover:bg-slate-800">Cancel</button>
-            <button type="submit" disabled={loading || !canSubmit} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm disabled:opacity-50">
+            <button type="submit" disabled={loading || !canSubmit} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">
               {loading ? <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin mx-auto" /> : 'Submit for Review'}
             </button>
           </div>
@@ -732,7 +832,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
   return (
     <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
       <h2 className="font-heading text-xl font-extrabold text-theme mb-4 flex items-center gap-2">
-        <Calendar className="w-5 h-5 text-lime-400" /> My Schedule
+        <Calendar className="w-5 h-5 text-brand-text" /> My Schedule
       </h2>
 
       {scheduleApproved.length > 0 && (
@@ -807,7 +907,7 @@ const SESSION_HISTORY_STATUS = {
   schedule_approved: { label: 'Awaiting Confirmation', color: 'bg-purple-400/20 text-purple-400' },
   payment_approved: { label: 'Payment Approved', color: 'bg-blue-400/20 text-blue-400' },
   payment_pending: { label: 'Payment Pending', color: 'bg-amber-400/20 text-amber-400' },
-  available: { label: 'Available', color: 'bg-lime-400/20 text-lime-400' },
+  available: { label: 'Available', color: 'bg-brand/20 text-brand-text' },
   cancelled: { label: 'Cancelled', color: 'bg-rose-400/20 text-rose-400' },
   denied: { label: 'Denied', color: 'bg-rose-400/20 text-rose-400' },
 }
@@ -822,7 +922,7 @@ function SessionHistoryPanel({ slots, loading }) {
   return (
     <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
       <h2 className="font-heading text-xl font-extrabold text-theme mb-4 flex items-center gap-2">
-        <Clock className="w-5 h-5 text-lime-400" /> Session History
+        <Clock className="w-5 h-5 text-brand-text" /> Session History
       </h2>
       <div className="space-y-2">
         {pastSlots.map(slot => {
@@ -833,7 +933,7 @@ function SessionHistoryPanel({ slots, loading }) {
                 <span className="font-bold text-theme">{slot.date}</span>
                 <span className="text-muted">{slot.time}</span>
                 <span className="text-muted">Court {slot.court}</span>
-                <span className="text-lime-400 font-bold capitalize">{slot.session_type || 'Session'}</span>
+                <span className="text-brand-text font-bold capitalize">{slot.session_type || 'Session'}</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${st.color}`}>{st.label}</span>
             </div>

@@ -31,26 +31,26 @@ function ExpenseModal({ onClose, onSave }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Date *</label>
-              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Category *</label>
-              <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400">
+              <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Description *</label>
-            <input type="text" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required placeholder="e.g. Replaced net on Court 1" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+            <input type="text" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required placeholder="e.g. Replaced net on Court 1" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Amount (EGP) *</label>
-            <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+            <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme font-semibold text-sm">Cancel</button>
-            <button type="submit" disabled={loading} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm disabled:opacity-50">
+            <button type="submit" disabled={loading} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">
               {loading ? <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin mx-auto" /> : 'Add Expense'}
             </button>
           </div>
@@ -103,7 +103,7 @@ export default function Expenses() {
           <h1 className="font-heading text-3xl font-black text-theme">Expenses</h1>
           <p className="text-muted text-sm mt-1">{total} expenses · Total: <strong className="text-theme">EGP {totalAmount.toLocaleString()}</strong></p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="px-4 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-sm font-bold flex items-center gap-2">
+        <button onClick={() => setShowAdd(true)} className="px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-bold flex items-center gap-2">
           <Plus className="w-4 h-4" /> Add Expense
         </button>
       </div>
@@ -111,20 +111,20 @@ export default function Expenses() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-2 items-center">
           <label className="text-xs font-bold text-muted">From:</label>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-lime-400" />
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-brand-text" />
         </div>
         <div className="flex gap-2 items-center">
           <label className="text-xs font-bold text-muted">To:</label>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} className="px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-lime-400" />
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} className="px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-brand-text" />
         </div>
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400">
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
           <option value="">All Categories</option>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
       ) : expenses.length === 0 ? (
         <div className="text-center py-12 text-muted">No expenses recorded.</div>
       ) : (

@@ -3,7 +3,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
-import { hasEnoughBalance, effectiveGroup } from '../utils/balance.js'
+import { creditBalanceBoth, ensureCycleFresh } from '../utils/balance.js'
 
 const router = Router()
 router.use(authenticate)
@@ -52,34 +52,24 @@ router.post('/', async (req, res) => {
 
   let payment
   if (isCash && player_id) {
-    payment = await db.transaction(async (tx) => {
-      const p = await tx.insert('payments', {
-        ref,
-        date,
-        player_name: player_name.trim(),
-        player_id: player_id || null,
-        method,
-        amount: parseFloat(amount) || 0,
-        private_sessions: parseInt(private_sessions) || 0,
-        group_sessions: parseInt(group_sessions) || 0,
-        notes: notes || '',
-        status: STATUS.PAYMENT_APPROVED,
-        booking_id: booking_id || null,
-        created_by: req.user?.id || null,
-      })
-      const user = await tx.get('users', player_id)
-      if (user) {
-        const privateAdd = parseInt(private_sessions) || 0
-        const groupAdd = parseInt(group_sessions) || 0
-        await tx.update('users', player_id, {
-          private_balance: (user.private_balance || 0) + privateAdd,
-          group_balance: (user.group_balance || 0) + groupAdd,
-        })
-      }
-      return p
+    payment = await db.insert('payments', {
+      ref,
+      date,
+      player_name: player_name.trim(),
+      player_id: player_id || null,
+      method,
+      amount: parseFloat(amount) || 0,
+      private_sessions: parseInt(private_sessions) || 0,
+      group_sessions: parseInt(group_sessions) || 0,
+      notes: notes || '',
+      status: STATUS.PAYMENT_APPROVED,
+      booking_id: booking_id || null,
+      created_by: req.user?.id || null,
     })
+    // Credit into monthly cycle (outside nested tx — creditCycle opens its own)
+    await creditBalanceBoth(player_id, parseInt(private_sessions) || 0, parseInt(group_sessions) || 0)
     await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id, private_sessions, group_sessions })
-    await auditBalanceChange(req, 'user', player_id, null, null, 'balance.credit')
+    await auditBalanceChange(req, 'user', player_id, null, null, 'payment.credit.cycle')
   } else {
     payment = await db.insert('payments', {
       ref,
@@ -111,20 +101,6 @@ router.put('/:id/approve', async (req, res) => {
     const userBefore = payment.player_id ? await db.get('users', payment.player_id) : null
 
     await db.transaction(async (tx) => {
-      if (payment.player_id) {
-        const user = userBefore
-        if (user) {
-          const privateAdd = parseInt(payment.private_sessions) || 0
-          const groupAdd = parseInt(payment.group_sessions || 0)
-          const newPriv = (user.private_balance || 0) + privateAdd
-          const newGrp = (user.group_balance || 0) + groupAdd
-          const updates = { private_balance: newPriv, group_balance: newGrp }
-          if (newPriv === 0 && newGrp === 0) updates.balance_zero_since = new Date().toISOString()
-          else updates.balance_zero_since = null
-          await tx.update('users', user.id, updates)
-        }
-      }
-
       await tx.update('payments', payment.id, { status: STATUS.PAYMENT_APPROVED })
 
       if (payment.booking_id) {
@@ -144,12 +120,19 @@ router.put('/:id/approve', async (req, res) => {
       }
     })
 
+    // Credit into monthly cycle after tx commit (does not stack on legacy)
+    if (payment.player_id) {
+      const privateAdd = parseInt(payment.private_sessions) || 0
+      const groupAdd = parseInt(payment.group_sessions || 0)
+      await creditBalanceBoth(payment.player_id, privateAdd, groupAdd)
+    }
+
     await auditUpdate(req, 'payment', payment.id, { status: payment.status }, { status: STATUS.PAYMENT_APPROVED, ref: payment.ref })
     if (payment.player_id) {
       const userAfter = await db.get('users', payment.player_id)
       await auditBalanceChange(req, 'user', payment.player_id,
-        { private_balance: userBefore?.private_balance, group_balance: userBefore?.group_balance },
-        { private_balance: userAfter?.private_balance, group_balance: userAfter?.group_balance },
+        { private_balance: userBefore?.private_balance, group_balance: userBefore?.group_balance, cycle_private: userBefore?.cycle_private, cycle_group: userBefore?.cycle_group },
+        { private_balance: userAfter?.private_balance, group_balance: userAfter?.group_balance, cycle_private: userAfter?.cycle_private, cycle_group: userAfter?.cycle_group },
         'payment.approve')
     }
 
@@ -212,28 +195,36 @@ router.delete('/:id', async (req, res) => {
     if (!payment) return res.status(404).json({ error: 'Payment not found' })
 
     if (payment.status === STATUS.PAYMENT_APPROVED && payment.player_id) {
-      const user = await db.get('users', payment.player_id)
+      const user = await ensureCycleFresh(payment.player_id, { notify: false }) || await db.get('users', payment.player_id)
       if (user) {
         const privSessions = payment.private_sessions || 0
         const grpSessions = payment.group_sessions || 0
-        const newPriv = Math.max(0, (user.private_balance || 0) - privSessions)
-        const newGrp = Math.max(0, (user.group_balance || 0) - grpSessions)
-        // Reject if reversal would reduce balance below zero
-        if (newPriv !== (user.private_balance || 0) - privSessions || newGrp !== (user.group_balance || 0) - grpSessions) {
-          return res.status(409).json({
-            error: 'Cannot reverse: balance would go negative',
-            current: { private_balance: user.private_balance, group_balance: user.group_balance },
-            trying_to_reverse: { private_sessions: privSessions, group_sessions: grpSessions },
-          })
-        }
+        // Reverse from cycle first (where credit landed), floor at 0; then legacy
+        let cycP = Math.max(0, user.cycle_private || 0)
+        let cycG = Math.max(0, user.cycle_group || 0)
+        let legP = Math.max(0, user.private_balance || 0)
+        let legG = Math.max(0, user.group_balance || 0)
+        const takeP = Math.min(privSessions, cycP)
+        cycP -= takeP
+        const leftP = privSessions - takeP
+        legP = Math.max(0, legP - leftP)
+        const takeG = Math.min(grpSessions, cycG)
+        cycG -= takeG
+        const leftG = grpSessions - takeG
+        legG = Math.max(0, legG - leftG)
+        const newPriv = legP
+        const newGrp = legG
         await db.transaction(async (tx) => {
-          await tx.update('users', user.id, { private_balance: newPriv, group_balance: newGrp })
+          await tx.update('users', user.id, {
+            private_balance: newPriv, group_balance: newGrp,
+            cycle_private: cycP, cycle_group: cycG,
+          })
           await tx.remove('payments', id)
         })
         await auditDelete(req, 'payment', id, { ref: payment.ref, status: payment.status, player_id: payment.player_id, amount: payment.amount })
         await auditBalanceChange(req, 'user', payment.player_id,
-          { private_balance: user.private_balance, group_balance: user.group_balance },
-          { private_balance: newPriv, group_balance: newGrp },
+          { private_balance: user.private_balance, group_balance: user.group_balance, cycle_private: user.cycle_private, cycle_group: user.cycle_group },
+          { private_balance: newPriv, group_balance: newGrp, cycle_private: cycP, cycle_group: cycG },
           'payment.delete.reverse')
       } else {
         await db.remove('payments', id)

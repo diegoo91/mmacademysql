@@ -51,14 +51,14 @@ export default function Comments() {
 
       <div className="flex gap-2 flex-wrap">
         {['all', 'pending', 'approved', 'rejected'].map(s => (
-          <button key={s} onClick={() => setFilter(s)} className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all ${filter === s ? 'bg-lime-400 text-slate-950' : 'bg-surface border border-theme text-theme hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
+          <button key={s} onClick={() => setFilter(s)} className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all ${filter === s ? 'bg-brand text-white' : 'bg-surface border border-theme text-theme hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
             {s}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
       ) : comments.length === 0 ? (
         <div className="text-center py-12 text-muted text-sm">No comments found.</div>
       ) : (
@@ -68,7 +68,7 @@ export default function Comments() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 rounded-full bg-lime-400/20 text-lime-400 flex items-center justify-center font-bold text-xs border border-lime-400/40 shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-xs border border-brand-text/40 shrink-0">
                       {(c.user_name || 'U').charAt(0)}
                     </div>
                     <div>

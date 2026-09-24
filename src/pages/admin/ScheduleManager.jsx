@@ -14,7 +14,7 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 const ALL_TIMES = ['14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00']
 
 const STATUS_COLORS = {
-  available: 'bg-lime-400/5 text-lime-400',
+  available: 'bg-brand/5 text-brand-text',
   payment_pending: 'bg-amber-500/10 text-amber-400',
   payment_approved: 'bg-blue-500/10 text-blue-400',
   schedule_approved: 'bg-purple-500/10 text-purple-400',
@@ -353,7 +353,7 @@ export default function ScheduleManager() {
     setCreatePlayerLoading(true)
     setCreatePlayerError('')
     try {
-      await api.post('/players', { full_name: unknown.name, email: newPlayerEmail.trim(), phone: newPlayerPhone.trim() || undefined })
+      await api.post('/users', { full_name: unknown.name, email: newPlayerEmail.trim(), phone: newPlayerPhone.trim() || undefined, role: 'player' })
       const updated = scheduleUnknowns.filter(u => !(u.row === unknown.row && u.name === unknown.name))
       setScheduleUnknowns(updated)
       setCreatingPlayer(null)
@@ -416,7 +416,7 @@ export default function ScheduleManager() {
           { id: 'upload', label: 'Upload', icon: Upload },
           { id: 'conversions', label: `Conversions${pendingConversions.length > 0 ? ` (${pendingConversions.length})` : ''}`, icon: FileSpreadsheet },
         ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-lime-400 text-slate-950 shadow-md' : 'text-muted hover:text-theme'}`}>
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-brand text-white shadow-md' : 'text-muted hover:text-theme'}`}>
             <tab.icon className="w-4 h-4" /><span>{tab.label}</span>
           </button>
         ))}
@@ -425,7 +425,7 @@ export default function ScheduleManager() {
       {isSuperAdmin && coaches.length > 0 && (
         <div className="glass-panel rounded-2xl border border-theme p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Settings className="w-4 h-4 text-lime-400" />
+            <Settings className="w-4 h-4 text-brand-text" />
             <h3 className="text-sm font-bold text-theme">Court Coach Defaults</h3>
           </div>
           <p className="text-[11px] text-muted mb-3">Default coach auto-fills when adding a slot to that court (overridable per slot).</p>
@@ -447,7 +447,7 @@ export default function ScheduleManager() {
           <button
             onClick={saveCourtDefaults}
             disabled={courtDefaultsSaving}
-            className="mt-3 px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold disabled:opacity-50"
+            className="mt-3 px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold disabled:opacity-50"
           >
             {courtDefaultsSaving ? 'Saving...' : 'Save Defaults'}
           </button>
@@ -458,23 +458,23 @@ export default function ScheduleManager() {
         <>
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
             <div className="flex items-center gap-2 bg-surface p-1.5 rounded-2xl border border-theme">
-              <button onClick={() => setView('day')} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${view === 'day' ? 'bg-lime-400 text-slate-950 shadow-md' : 'text-muted hover:text-theme'}`}>
+              <button onClick={() => setView('day')} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${view === 'day' ? 'bg-brand text-white shadow-md' : 'text-muted hover:text-theme'}`}>
                 <CalendarIcon className="w-4 h-4" /><span>Day View</span>
               </button>
-              <button onClick={() => setView('week')} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${view === 'week' ? 'bg-lime-400 text-slate-950 shadow-md' : 'text-muted hover:text-theme'}`}>
+              <button onClick={() => setView('week')} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${view === 'week' ? 'bg-brand text-white shadow-md' : 'text-muted hover:text-theme'}`}>
                 <CalendarIcon className="w-4 h-4" /><span>Week View</span>
               </button>
             </div>
             <div className="flex gap-2 items-center">
-              <button onClick={() => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() - (view === 'day' ? 1 : 7)); setDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title={view === 'day' ? 'Previous day' : 'Previous week'}>
+              <button onClick={() => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() - (view === 'day' ? 1 : 7)); setDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-brand-text transition-all" title={view === 'day' ? 'Previous day' : 'Previous week'}>
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-lime-400" />
-              <button onClick={() => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (view === 'day' ? 1 : 7)); setDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-lime-400 transition-all" title={view === 'day' ? 'Next day' : 'Next week'}>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-xs font-bold focus:outline-none focus:border-brand-text" />
+              <button onClick={() => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (view === 'day' ? 1 : 7)); setDate(toLocalDateStr(d)) }} className="p-2 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:border-brand-text transition-all" title={view === 'day' ? 'Next day' : 'Next week'}>
                 <ChevronRight className="w-4 h-4" />
               </button>
               {canEdit && (
-                <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date }) }} className="px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold flex items-center gap-1">
+                <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date }) }} className="px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1">
                   <Plus className="w-4 h-4" /> Add Slot
                 </button>
               )}
@@ -518,12 +518,12 @@ export default function ScheduleManager() {
           )}
 
           {loading ? (
-            <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
           ) : view === 'day' ? (
             <div className="glass-panel rounded-3xl p-6 border border-theme">
               <div className="flex items-center justify-between pb-3 border-b border-theme mb-4">
                 <h3 className="font-heading font-extrabold text-theme text-lg">{getDayName(date)} {formatDateShort(date)}</h3>
-                <span className="text-xs text-lime-400 font-bold bg-lime-400/10 px-3 py-1 rounded-full border border-lime-400/30">3 Courts</span>
+                <span className="text-xs text-brand-text font-bold bg-brand/10 px-3 py-1 rounded-full border border-brand-text/30">3 Courts</span>
               </div>
               {currentDaySlots.length === 0 ? (
                 <p className="text-sm text-muted py-8 text-center">No slots for this date.</p>
@@ -532,16 +532,16 @@ export default function ScheduleManager() {
                   <div className="min-w-[320px]">
                     <div className="grid grid-cols-5 bg-slate-100/80 dark:bg-slate-900/80 text-center">
                       <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-muted text-left">Time</div>
-                      <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-lime-400 border-l border-theme">Court 1</div>
-                      <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-lime-400 border-l border-theme">Court 2</div>
-                      <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-lime-400 border-l border-theme">Court 3</div>
+                      <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 1</div>
+                      <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 2</div>
+                      <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 3</div>
                       <div className="px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-muted border-l border-theme">Actions</div>
                     </div>
                     <div className="divide-y divide-theme">
                       {currentDaySlots.map((row) => (
                         <div key={row.time} className="grid grid-cols-5 items-stretch text-sm">
                           <div className="px-4 py-3 text-theme font-mono text-xs flex items-center gap-1.5 bg-surface/80">
-                            <Clock className="w-3.5 h-3.5 text-lime-400 shrink-0" />
+                            <Clock className="w-3.5 h-3.5 text-brand-text shrink-0" />
                             {row.label}
                           </div>
                            {[row.slot1, row.slot2, row.slot3].map((slot, i) => {
@@ -571,7 +571,7 @@ export default function ScheduleManager() {
                               if (exists) return null
                               if (!canEdit) return null
                               return (
-                                <button key={court} onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date, time: row.time, court }) }} className="px-2 py-1 text-[10px] font-bold rounded bg-lime-400/10 text-lime-400 hover:bg-lime-400/20 border border-lime-400/30">
+                                <button key={court} onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date, time: row.time, court }) }} className="px-2 py-1 text-[10px] font-bold rounded bg-brand/10 text-brand-text hover:bg-brand/20 border border-brand-text/30">
                                   +C{court}
                                 </button>
                               )
@@ -590,14 +590,14 @@ export default function ScheduleManager() {
                 <div className="grid grid-cols-8 gap-3 pb-4 border-b border-theme text-center font-heading text-sm font-extrabold text-theme">
                   <div className="text-left text-muted text-xs uppercase">Time</div>
                   {weekDates.map(d => (
-                    <div key={d} className="text-lime-400 text-xs">{getDayName(d)} ({formatDateShort(d)})</div>
+                    <button key={d} type="button" onClick={() => { setDate(d); setView('day') }} className="text-brand-text text-xs hover:underline cursor-pointer transition-all">{getDayName(d)} ({formatDateShort(d)})</button>
                   ))}
                 </div>
                 <div className="divide-y divide-theme pt-2 space-y-2">
                   {weekTimes.map(time => (
                     <div key={time} className="grid grid-cols-8 gap-3 py-2 items-center text-xs">
                         <div className="font-bold text-theme font-mono flex items-center gap-1.5 text-[11px]">
-                        <Clock className="w-3.5 h-3.5 text-lime-400" />
+                        <Clock className="w-3.5 h-3.5 text-brand-text" />
                         <span>{TIME_LABELS[time] || time}</span>
                       </div>
                        {weekDates.map(d => {
@@ -619,7 +619,7 @@ export default function ScheduleManager() {
                         return (
                            <div key={d} className={`p-2.5 rounded-xl border text-[11px] font-bold text-center leading-snug ${weekColor}`}>
                             {empty ? (
-                              canEdit ? <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date: d, time }) }} className="text-lime-400 hover:underline">+ Add</button> : 'Available'
+                              canEdit ? <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date: d, time }) }} className="text-brand-text hover:underline">+ Add</button> : 'Available'
                             ) : (
                               <>
                                 <span className="block">{[s1 && `C1: ${s1.player_text}`, s2 && `C2: ${s2.player_text}`, s3 && `C3: ${s3.player_text}`].filter(Boolean).join(' / ')}</span>
@@ -674,8 +674,8 @@ export default function ScheduleManager() {
               <Download className="w-4 h-4" /> Download Template
             </button>
             <div className="flex items-center gap-3">
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setImportFile(e.target.files?.[0])} className="text-xs text-muted file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-lime-400 file:text-slate-950 file:cursor-pointer" />
-              <button onClick={handleUploadFile} disabled={!importFile || importing} className="px-4 py-2 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold disabled:opacity-50">
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setImportFile(e.target.files?.[0])} className="text-xs text-muted file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-brand file:text-white file:cursor-pointer" />
+              <button onClick={handleUploadFile} disabled={!importFile || importing} className="px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold disabled:opacity-50">
                 {importing ? 'Uploading...' : 'Preview'}
               </button>
             </div>
@@ -728,7 +728,7 @@ export default function ScheduleManager() {
                     ))}
                   </div>
                 )}
-                <button onClick={handleCommitImport} disabled={importPreview.validRows === 0 || scheduleUnknowns.length > 0} className="px-6 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold disabled:opacity-50">
+                <button onClick={handleCommitImport} disabled={importPreview.validRows === 0 || scheduleUnknowns.length > 0} className="px-6 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold disabled:opacity-50">
                   {scheduleUnknowns.length > 0 ? `Resolve ${scheduleUnknowns.length} unknown player(s) first` : `Import ${importPreview.validRows} Slots`}
                 </button>
               </div>
@@ -741,7 +741,7 @@ export default function ScheduleManager() {
         <div className="glass-panel rounded-3xl p-6 border border-theme">
           <h3 className="font-heading font-extrabold text-theme text-lg mb-4">Conversion Requests</h3>
           {convLoading ? (
-            <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
           ) : conversionRequests.length === 0 ? (
             <p className="text-sm text-muted text-center py-8">No conversion requests.</p>
           ) : (
@@ -845,7 +845,7 @@ export default function ScheduleManager() {
                     </div>
                   ))}
                   {addPlayers.length < 4 && (
-                    <button type="button" onClick={() => setAddPlayers([...addPlayers, ''])} className="text-[10px] font-bold text-lime-400 hover:text-lime-300">+ Add Player ({addPlayers.length}/4)</button>
+                    <button type="button" onClick={() => setAddPlayers([...addPlayers, ''])} className="text-[10px] font-bold text-brand-text hover:text-brand-text">+ Add Player ({addPlayers.length}/4)</button>
                   )}
                 </div>
               )}
@@ -861,7 +861,7 @@ export default function ScheduleManager() {
             </div>
             <div className="flex gap-3 mt-4">
               <button onClick={() => setAddSlot(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={handleAddSlot} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm">Add</button>
+              <button onClick={handleAddSlot} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Add</button>
             </div>
           </div>
         </div>
@@ -914,11 +914,11 @@ export default function ScheduleManager() {
                 ? <>{pendingOverride.players[0].name} has {pendingOverride.players[0].remaining} remaining {pendingOverride.sessionType} session(s), needs 1.</>
                 : <>{pendingOverride.players.map(p => `${p.name} (${p.remaining})`).join(', ')} need {pendingOverride.sessionType} sessions.</>
               }
-              {' '}Add this slot anyway as a <span className="text-lime-400 font-bold">free/bonus session</span>?
+              {' '}Add this slot anyway as a <span className="text-brand-text font-bold">free/bonus session</span>?
             </p>
             <div className="flex gap-2">
               <button onClick={() => setPendingOverride(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={() => handleOverrideConfirm('free')} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm">Add Free</button>
+              <button onClick={() => handleOverrideConfirm('free')} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Add Free</button>
               <button onClick={() => handleOverrideConfirm('deduct')} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm">Deduct Anyway</button>
             </div>
           </div>
@@ -1001,7 +1001,7 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
                 </div>
               ))}
               {players.length < 4 && (
-                <button type="button" onClick={() => setPlayers([...players, ''])} className="text-[10px] font-bold text-lime-400 hover:text-lime-300">+ Add Player ({players.length}/4)</button>
+                <button type="button" onClick={() => setPlayers([...players, ''])} className="text-[10px] font-bold text-brand-text hover:text-brand-text">+ Add Player ({players.length}/4)</button>
               )}
             </div>
           )}
@@ -1053,7 +1053,7 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
         </div>
         <div className="flex gap-3 mt-4">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-          <button onClick={() => handleSave()} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm disabled:opacity-50">
+          <button onClick={() => handleSave()} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">
             {loading ? 'Saving...' : 'Save'}
           </button>
         </div>
@@ -1068,11 +1068,11 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
             <h3 className="text-lg font-bold text-theme mb-2">Insufficient Balance</h3>
             <p className="text-muted text-sm mb-4">
               {pendingOverride.player} has {pendingOverride.remaining} remaining {pendingOverride.sessionType} session(s), needs 1.
-              Add this slot anyway as a <span className="text-lime-400 font-bold">free/bonus session</span>?
+              Add this slot anyway as a <span className="text-brand-text font-bold">free/bonus session</span>?
             </p>
             <div className="flex gap-2">
               <button onClick={() => setPendingOverride(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={() => handleOverrideConfirm('free')} className="flex-1 py-2.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-sm">Add Free</button>
+              <button onClick={() => handleOverrideConfirm('free')} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Add Free</button>
               <button onClick={() => handleOverrideConfirm('deduct')} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm">Deduct Anyway</button>
             </div>
           </div>

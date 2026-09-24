@@ -92,20 +92,20 @@ export default function SignUp() {
     `w-full pl-11 pr-4 py-3 rounded-xl bg-surface/90 border text-theme placeholder-muted text-sm focus:outline-none transition-all ${
       hasError
         ? 'border-rose-500 focus:ring-1 focus:ring-rose-500'
-        : 'border-theme focus:border-lime-400 focus:ring-1 focus:ring-lime-400'
+        : 'border-theme focus:border-brand-text focus:ring-1 focus:ring-brand-text'
     }`
 
   if (isSubmitted) {
     return (
       <div className="min-h-screen bg-theme flex items-center justify-center p-4">
         <div className="max-w-md w-full glass-panel rounded-3xl p-8 text-center border border-theme shadow-2xl relative overflow-hidden animate-fadeIn">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-lime-500/20 rounded-full blur-3xl" />
-          <div className="w-16 h-16 bg-lime-400 text-slate-950 rounded-2xl mx-auto flex items-center justify-center font-bold mb-6 shadow-xl shadow-lime-400/30">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-brand/20 rounded-full blur-3xl" />
+          <div className="w-16 h-16 bg-brand text-white rounded-2xl mx-auto flex items-center justify-center font-bold mb-6 shadow-xl shadow-brand/30">
             <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
           </div>
           <h2 className="font-heading text-3xl font-extrabold text-theme mb-2">Welcome to MM Padel Academy!</h2>
           <p className="text-theme text-sm mb-6 leading-relaxed">
-            Your player account for <span className="text-lime-400 font-bold">{formData.fullName}</span> has been
+            Your player account for <span className="text-brand-text font-bold">{formData.fullName}</span> has been
             successfully created.
           </p>
           <div className="bg-surface/90 rounded-2xl p-4 mb-6 text-left border border-theme text-xs space-y-2">
@@ -115,13 +115,13 @@ export default function SignUp() {
             </div>
             <div className="flex justify-between">
               <span className="text-muted">Selected Skill Level:</span>
-              <span className="text-lime-400 font-semibold">{formData.skillLevel}</span>
+              <span className="text-brand-text font-semibold">{formData.skillLevel}</span>
             </div>
           </div>
           <div className="space-y-3">
             <button
               onClick={() => navigate('/book')}
-              className="w-full py-3.5 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-extrabold text-sm shadow-lg shadow-lime-400/20 flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-extrabold text-sm shadow-lg shadow-brand/20 flex items-center justify-center gap-2 transition-all"
             >
               <Calendar className="w-4 h-4" />
               <span>Book Your First Session Now</span>
@@ -140,12 +140,12 @@ export default function SignUp() {
 
   return (
     <div className="min-h-screen bg-theme text-theme py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      <div className="absolute top-20 right-10 w-96 h-96 bg-lime-500/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-20 right-10 w-96 h-96 bg-brand/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-20 left-10 w-96 h-96 bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none" />
 
       <div className="max-w-3xl mx-auto relative z-10">
         <div className="text-center space-y-3 mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-lime-400/10 border border-lime-400/30 text-lime-400 text-xs font-bold uppercase tracking-widest">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand/10 border border-brand-text/30 text-brand-text text-xs font-bold uppercase tracking-widest">
             <Trophy className="w-4 h-4" />
             <span>Join the Community</span>
           </div>
@@ -163,7 +163,7 @@ export default function SignUp() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
-                  Full Name <span className="text-lime-400">*</span>
+                  Full Name <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
@@ -176,7 +176,7 @@ export default function SignUp() {
 
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
-                  Email Address <span className="text-lime-400">*</span>
+                  Email Address <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
@@ -191,7 +191,7 @@ export default function SignUp() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
-                  Phone Number <span className="text-lime-400">*</span>
+                  Phone Number <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
@@ -204,7 +204,7 @@ export default function SignUp() {
 
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
-                  Date of Birth <span className="text-lime-400">*</span>
+                  Date of Birth <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
@@ -219,7 +219,7 @@ export default function SignUp() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
-                  Password <span className="text-lime-400">*</span>
+                  Password <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
@@ -242,7 +242,7 @@ export default function SignUp() {
 
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
-                  Confirm Password <span className="text-lime-400">*</span>
+                  Confirm Password <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
@@ -266,7 +266,7 @@ export default function SignUp() {
 
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-3">
-                Skill Level <span className="text-lime-400">*</span>
+                Skill Level <span className="text-brand-text">*</span>
               </label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {skillOptions.map((opt) => {
@@ -277,13 +277,13 @@ export default function SignUp() {
                       onClick={() => setFormData({ ...formData, skillLevel: opt.id })}
                       className={`p-4 rounded-2xl cursor-pointer transition-all border ${
                         selected
-                          ? 'bg-lime-400/10 border-lime-400 ring-1 ring-lime-400'
+                          ? 'bg-brand/10 border-brand-text ring-1 ring-brand-text'
                           : 'bg-surface/60 border-theme hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="font-extrabold text-theme text-sm">{opt.name}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface text-lime-400 border border-theme">{opt.rating}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface text-brand-text border border-theme">{opt.rating}</span>
                       </div>
                       <p className="text-xs text-muted leading-relaxed">{opt.desc}</p>
                     </div>
@@ -295,7 +295,7 @@ export default function SignUp() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-4 px-6 rounded-2xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-extrabold text-base transition-all shadow-xl shadow-lime-400/20 flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              className="w-full py-4 px-6 rounded-2xl bg-brand hover:bg-brand-hover text-white font-extrabold text-base transition-all shadow-xl shadow-brand/20 flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
             >
               {isSubmitting ? (
                 <div className="w-6 h-6 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
@@ -309,7 +309,7 @@ export default function SignUp() {
 
             <div className="text-center pt-2 text-sm text-muted">
               Already have an account?{' '}
-              <button type="button" onClick={openLoginModal} className="text-lime-400 font-bold hover:underline">
+              <button type="button" onClick={openLoginModal} className="text-brand-text font-bold hover:underline">
                 Log In
               </button>
             </div>

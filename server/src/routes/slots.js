@@ -4,7 +4,7 @@ import { authenticate, optionalAuth } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { validateLength, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
-import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, creditBalance, reverseBalance } from '../utils/balance.js'
+import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
 
 const router = Router()
 
@@ -177,8 +177,11 @@ function getBalanceInfo(player) {
   if (!player) return null
   return {
     name: player.name,
-    private_balance: player.private_balance || 0,
+    private_balance: effectivePrivate(player),
     group_balance: player.group_balance || 0,
+    cycle_private: player.cycle_private || 0,
+    cycle_group: player.cycle_group || 0,
+    cycle_expires_at: player.cycle_expires_at || null,
   }
 }
 
@@ -239,7 +242,8 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
         // Check all players' balances (conversion-aware)
         const insufficientPlayers = []
         for (const p of resolved.players) {
-          if (!hasEnoughBalance(p, stype)) insufficientPlayers.push(p)
+          const ok = await hasEnoughBalance(p, stype)
+          if (!ok) insufficientPlayers.push(p)
         }
 
         if (insufficientPlayers.length > 0 && !isFuture) {
@@ -257,7 +261,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
               code: 'INSUFFICIENT_BALANCE',
               players: insufficientPlayers.map(p => ({
                 name: p.name,
-                remaining: stype === 'private' ? (p.private_balance || 0) : ((p.group_balance || 0) + (p.private_balance || 0) * 2),
+                remaining: stype === 'private' ? effectivePrivate(p) : effectiveGroupBalance(p),
               })),
               sessionType: stype,
               needed: insufficientPlayers.length,
@@ -275,7 +279,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
               code: 'INSUFFICIENT_BALANCE',
               players: insufficientPlayers.map(p => ({
                 name: p.name,
-                remaining: stype === 'private' ? (p.private_balance || 0) : ((p.group_balance || 0) + (p.private_balance || 0) * 2),
+                remaining: stype === 'private' ? effectivePrivate(p) : effectiveGroupBalance(p),
               })),
               sessionType: stype,
               needed: insufficientPlayers.length,
@@ -351,7 +355,8 @@ router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, r
       // Check all players' balances (conversion-aware)
       const insufficientPlayers = []
       for (const p of resolved.players) {
-        if (!hasEnoughBalance(p, slotSessionType)) insufficientPlayers.push(p)
+        const ok = await hasEnoughBalance(p, slotSessionType)
+        if (!ok) insufficientPlayers.push(p)
       }
 
       let balanceStatus = null
@@ -369,7 +374,7 @@ router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, r
             code: 'INSUFFICIENT_BALANCE',
             players: insufficientPlayers.map(p => ({
               name: p.name,
-              remaining: slotSessionType === 'private' ? (p.private_balance || 0) : ((p.group_balance || 0) + (p.private_balance || 0) * 2),
+              remaining: slotSessionType === 'private' ? effectivePrivate(p) : effectiveGroupBalance(p),
             })),
             sessionType: slotSessionType,
             needed: insufficientPlayers.length,
@@ -435,6 +440,8 @@ router.put('/:id/approve', authenticate, requireRole('superadmin', 'admin'), asy
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
+    // Idempotent: already approved (stale UI / double-click race) — succeed without re-notifying
+    if (slot.status === STATUS.SCHEDULE_APPROVED) return res.json(slot)
     if (slot.status !== STATUS.PAYMENT_APPROVED) return res.status(400).json({ error: 'Slot must be payment_approved to approve' })
 
     const updated = await db.update('slots', slot.id, { status: STATUS.SCHEDULE_APPROVED })
@@ -575,7 +582,7 @@ router.put('/:id/decline', async (req, res) => {
       await notifyUser(admin.id, 'request_cancel',
         'Cancellation Requested',
         `${req.user.name} wants to cancel their slot on ${slot.date} at ${slot.time} (Court ${slot.court}).`,
-        '/admin/bookings')
+        '/admin')
     }
 
     res.json({ ok: true, message: 'Cancellation request submitted to admin', request })

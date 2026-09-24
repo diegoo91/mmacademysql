@@ -13,6 +13,29 @@ import { checkLoginLockout, recordLoginFailure, clearLoginAttempts } from '../mi
 import { validateLength, LIMITS } from '../middleware/validation.js'
 import { createSession, findActiveSession, rotateSession, deactivateSession } from '../utils/token-revocation.js'
 import { auditLogin, auditLogout, auditUpdate, auditCreate } from '../middleware/audit.js'
+import { ensureCycleFresh, effectivePrivate, effectiveGroupBalance, monthlyDisplay } from '../utils/balance.js'
+
+async function safeUserPayload(user) {
+  const fresh = await ensureCycleFresh(user, { notify: true })
+  const u = fresh || user
+  const monthly = monthlyDisplay(u)
+  return {
+    id: u.id, name: u.name, email: u.email, role: u.role, skill_level: u.skill_level,
+    force_password_change: u.force_password_change, account_status: u.account_status || 'active',
+    private_balance: Math.max(0, u.private_balance || 0),
+    group_balance: Math.max(0, u.group_balance || 0),
+    effective_private: effectivePrivate(u),
+    effective_group: effectiveGroupBalance(u),
+    cycle_private: monthly.private,
+    cycle_group: monthly.group,
+    cycle_key: monthly.cycle_key,
+    cycle_expires_at: monthly.expires_at,
+    legacy_private: monthly.legacy_private,
+    legacy_group: monthly.legacy_group,
+    paid_this_cycle: monthly.paid_this_cycle,
+    member_code: u.member_code || '',
+  }
+}
 
 const REFRESH_MAX_AGE = parseDuration(REFRESH_EXPIRES)
 
@@ -51,7 +74,8 @@ router.post('/signup', async (req, res) => {
     const hash = await bcrypt.hash(password, 12)
     const memberSince = new Date().getFullYear().toString()
     const user = await db.insert('users', { name, email, phone: phone || '', dob: dob || '', password_hash: hash, role: 'player', skill_level: skillLevel || 'Intermediate', member_since: memberSince, force_password_change: 0, notes: '', private_balance: 0, group_balance: 0, is_claimed: true, member_code: await nextMemberCode() })
-    const safe = { id: user.id, name: user.name, email: user.email, role: user.role, skill_level: user.skill_level, force_password_change: 0, private_balance: 0, group_balance: 0, member_code: user.member_code }
+    const safe = await safeUserPayload(user)
+    safe.force_password_change = 0
     const accessToken = signAccessToken(safe)
     const { token: refreshToken, expiresAt } = signRefreshToken(safe)
     await createSession(user.id, refreshToken, expiresAt)
@@ -82,7 +106,8 @@ router.post('/login', checkLoginLockout, async (req, res) => {
     clearLoginAttempts(email, req.ip || req.connection?.remoteAddress || 'unknown')
     await auditLogin(req, true, email)
     const permissions = await getUserPermissions(user)
-    const safe = { id: user.id, name: user.name, email: user.email, role: user.role, skill_level: user.skill_level, force_password_change: user.force_password_change, account_status: user.account_status || 'active', permissions, private_balance: user.private_balance || 0, group_balance: user.group_balance || 0, member_code: user.member_code || '' }
+    const safe = await safeUserPayload(user)
+    safe.permissions = permissions
     const accessToken = signAccessToken(safe)
     const { token: refreshToken, expiresAt } = signRefreshToken(safe)
     await createSession(user.id, refreshToken, expiresAt)
@@ -123,7 +148,8 @@ router.post('/refresh', async (req, res) => {
       return res.status(403).json({ error: 'Account is locked. Contact an administrator.' })
     }
     const permissions = await getUserPermissions(user)
-    const safe = { id: user.id, name: user.name, email: user.email, role: user.role, skill_level: user.skill_level, force_password_change: user.force_password_change, account_status: user.account_status || 'active', permissions, private_balance: user.private_balance || 0, group_balance: user.group_balance || 0, member_code: user.member_code || '' }
+    const safe = await safeUserPayload(user)
+    safe.permissions = permissions
     const accessToken = signAccessToken(safe)
     const { token: newRefresh, expiresAt } = signRefreshToken(safe)
     await createSession(user.id, newRefresh, expiresAt)
@@ -152,7 +178,8 @@ router.get('/me', authenticate, async (req, res) => {
     return res.status(403).json({ error: 'Account is locked. Contact an administrator.' })
   }
   const permissions = user ? await getUserPermissions(user) : []
-  res.json({ user: { ...req.user, permissions, member_code: user?.member_code || '' } })
+  const base = user ? await safeUserPayload(user) : { ...req.user }
+  res.json({ user: { ...base, permissions, member_code: user?.member_code || '' } })
 })
 
 router.post('/change-password', authenticate, async (req, res) => {

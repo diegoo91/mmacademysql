@@ -312,28 +312,30 @@ async function run() {
   const exportCred = await req('GET', '/users/export-credentials', null, adminToken)
   mark('GET /users/export-credentials (superadmin, xlsx)', exportCred.ok && exportCred.data?._binary)
 
-  // ── PLAYERS ──
-  console.log('\n[players]')
-  const playersList = await req('GET', '/players', null, adminToken)
-  mark('GET /players (admin)', playersList.ok && playersList.data?.players !== undefined)
+  // ── PLAYERS (merged into /users) ──
+  console.log('\n[players -> users]')
+  const playersList = await req('GET', '/users?role=player', null, adminToken)
+  mark('GET /users?role=player (admin)', playersList.ok && playersList.data?.players !== undefined)
 
-  const playerSearch = await req('GET', `/players?search=test&limit=5`, null, adminToken)
-  mark('GET /players?search&limit (admin)', playerSearch.ok)
+  const playerSearch = await req('GET', `/users?search=test&limit=5`, null, adminToken)
+  mark('GET /users?search&limit (admin)', playerSearch.ok && playerSearch.data?.users !== undefined)
 
   const e2ePlayerEmail = `e2eplayer+${TS}@test.com`
-  const createPlayer = await req('POST', '/players', { full_name: `E2E Player ${TS}`, email: e2ePlayerEmail, phone: '01000000000', skill_level: 'Beginner' }, adminToken)
-  mark('POST /players (admin, E2E)', createPlayer.ok && createPlayer.status === 201, JSON.stringify(createPlayer.data))
+  const createPlayer = await req('POST', '/users', { full_name: `E2E Player ${TS}`, email: e2ePlayerEmail, phone: '01000000000', role: 'player', skill_level: 'Beginner' }, adminToken)
+  mark('POST /users (admin, E2E player)', createPlayer.ok && createPlayer.status === 201, JSON.stringify(createPlayer.data))
   const tempPlayerId = createPlayer.data?.id
 
   if (tempPlayerId) {
-    const playerGet = await req('GET', `/players/${tempPlayerId}`, null, adminToken)
-    mark('GET /players/:id (admin)', playerGet.ok)
-    const playerSessions = await req('GET', `/players/${tempPlayerId}/sessions`, null, adminToken)
-    mark('GET /players/:id/sessions (admin)', playerSessions.ok)
-    const updPlayer = await req('PUT', `/players/${tempPlayerId}`, { name: `E2E Updated Player ${TS}`, skill_level: 'Advanced' }, adminToken)
-    mark('PUT /players/:id (admin)', updPlayer.ok)
-    await req('DELETE', `/players/${tempPlayerId}`, null, adminToken)
-    mark('DELETE /players/:id (admin)', true, 'cleaned')
+    const playerGet = await req('GET', `/users/${tempPlayerId}`, null, adminToken)
+    mark('GET /users/:id (admin)', playerGet.ok)
+    const playerSessions = await req('GET', `/users/${tempPlayerId}/sessions`, null, adminToken)
+    mark('GET /users/:id/sessions (admin)', playerSessions.ok)
+    const playerReport = await req('GET', `/users/${tempPlayerId}/report`, null, adminToken)
+    mark('GET /users/:id/report (admin)', playerReport.ok)
+    const updPlayer = await req('PUT', `/users/${tempPlayerId}`, { name: `E2E Updated Player ${TS}`, skill_level: 'Advanced' }, adminToken)
+    mark('PUT /users/:id (admin)', updPlayer.ok)
+    await req('DELETE', `/users/${tempPlayerId}`, null, adminToken)
+    mark('DELETE /users/:id (admin)', true, 'cleaned')
   }
 
   // ── BOOKINGS ──

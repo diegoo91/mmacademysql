@@ -27,11 +27,25 @@ router.get('/', async (req, res) => {
     }))
     const usersByRole = await Promise.all(['superadmin', 'admin', 'coach', 'player'].map(async (role) => ({ role, count: await db.count('users', u => u.role === role) })))
 
-    const sessionCredits = (await db.findAll('users', u => (u.private_balance || 0) > 0 || (u.group_balance || 0) > 0)).map(u => ({
-      user_id: u.id, name: u.name,
-      private_balance: u.private_balance || 0,
-      group_balance: u.group_balance || 0,
-    }))
+    const { effectivePrivate, effectiveGroupBalance, ensureCycleFresh } = await import('../utils/balance.js')
+    const allUsers = await db.findAll('users')
+    const sessionCredits = []
+    for (const u of allUsers) {
+      const fresh = await ensureCycleFresh(u, { notify: false })
+      const usr = fresh || u
+      const priv = effectivePrivate(usr)
+      const grp = effectiveGroupBalance(usr)
+      if (priv > 0 || grp > 0) {
+        sessionCredits.push({
+          name: usr.name,
+          private_balance: priv,
+          group_balance: grp,
+          cycle_private: usr.cycle_private || 0,
+          cycle_group: usr.cycle_group || 0,
+          cycle_expires_at: usr.cycle_expires_at || null,
+        })
+      }
+    }
 
     const upcomingSlots = (await db.findAll('slots'))
       .filter(s => s.date >= new Date().toISOString().slice(0, 10))

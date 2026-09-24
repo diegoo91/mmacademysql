@@ -1,174 +1,129 @@
 import db from '../db.js'
+import {
+  effectivePrivate,
+  effectiveGroupBalance,
+  ensureCycleFresh,
+  deductBalanceCycle,
+  reverseBalanceCycle,
+  creditCycle,
+} from './cycle.js'
 
 /**
  * Centralized balance utilities — single source of truth for all
  * balance checks, deductions, credits, and reversals.
  *
  * Conversion rule: 1 Private session = 2 Group sessions.
- * When Group balance is insufficient and Private is available,
- * automatically convert: priv-1, group+2 (net: group uses one converted
- * session from Private).
+ * Monthly cycle model: new payments live in cycle_* buckets and expire
+ * ~14th of the following month; grandfathered private_balance/group_balance
+ * never expire. Reads/deducts always go through ensureCycleFresh (lazy).
+ *
+ * Re-exported cycle helpers keep one import surface for routes.
  */
+export {
+  effectivePrivate,
+  effectiveGroupBalance,
+  ensureCycleFresh,
+  creditCycle,
+  monthlyDisplay,
+  hasActiveCycle,
+  hasLegacyBalance,
+  isCycleExpired,
+  currentCycleKey,
+  cycleExpiryFor,
+  runBalanceCycleSweep,
+  notifyUpcomingExpiry,
+} from './cycle.js'
 
 // ── Read-only checks ──────────────────────────────────────────────
 
-/** Effective group balance = group + private*2 */
+/** Effective group balance = legacy(group+priv*2) + cycle(group+priv*2) */
 export function effectiveGroup(user) {
-  const grp = user.group_balance || 0
-  const priv = user.private_balance || 0
-  return grp + priv * 2
+  return effectiveGroupBalance(user)
+}
+
+/** Effective private = legacy private + active cycle private (clamped ≥ 0). */
+export function effectivePriv(user) {
+  return effectivePrivate(user)
 }
 
 /**
  * Does the user have enough balance for `count` sessions of `sessionType`?
  * Conversion-aware for group: accounts for private balance converting 1→2.
+ * Lazily expires a past cycle before measuring.
  */
-export function hasEnoughBalance(user, sessionType, count = 1) {
+export async function hasEnoughBalance(user, sessionType, count = 1) {
   if (!user) return false
+  const fresh = await ensureCycleFresh(user, { notify: false })
+  const u = fresh || user
   if (sessionType === 'private') {
-    return (user.private_balance || 0) >= count
+    return effectivePrivate(u) >= count
   }
   if (sessionType === 'group') {
-    return effectiveGroup(user) >= count
+    return effectiveGroupBalance(u) >= count
   }
   return false
 }
 
-// ── Mutation helpers (always called inside transactions) ───────────
+// ── Mutation helpers (always called inside transactions when needed) ──
 
 /**
- * Deduct one session from user, conversion-aware.
- * Private: priv-1
- * Group: if grp>0 → grp-1; else if priv>0 → priv-1, grp+2 (net: priv-1, grp+1)
- *
- * Returns { success: boolean, newBalance: { private_balance, group_balance } | null }
+ * Deduct one session from user, conversion-aware, dual-path
+ * (cycle first, then grandfathered legacy).
+ * Returns { success: boolean, newBalance: {...} | null }
  */
 export async function deductBalance(userId, sessionType) {
-  return db.transaction(async (tx) => {
-    const user = await tx.get('users', userId)
-    if (!user) return { success: false, newBalance: null }
-
-    const priv = user.private_balance || 0
-    const grp = user.group_balance || 0
-
-    if (sessionType === 'private') {
-      if (priv <= 0) return { success: false, newBalance: null }
-      const newPriv = priv - 1
-      await tx.update('users', userId, { private_balance: newPriv })
-      return { success: true, newBalance: { private_balance: newPriv, group_balance: grp } }
-    }
-
-    if (sessionType === 'group') {
-      if (grp > 0) {
-        const newGrp = grp - 1
-        await tx.update('users', userId, { group_balance: newGrp })
-        return { success: true, newBalance: { private_balance: priv, group_balance: newGrp } }
-      }
-      if (priv > 0) {
-        // Auto-convert: consume 1 private, credit 2 group, use 1 of the 2
-        const newPriv = priv - 1
-        const newGrp = grp + 1 // net: grp +2 -1 = grp +1
-        await tx.update('users', userId, { private_balance: newPriv, group_balance: newGrp })
-        return { success: true, newBalance: { private_balance: newPriv, group_balance: newGrp } }
-      }
-      return { success: false, newBalance: null }
-    }
-
-    return { success: false, newBalance: null }
-  })
+  return deductBalanceCycle(userId, sessionType, { allowNegative: false })
 }
 
 /**
  * Deduct allowing negative balance (admin override "deduct anyway").
- * Still uses conversion logic when possible — only goes negative
- * as a last resort (group when no private available).
+ * Only the legacy bucket may go negative as a last resort.
  */
 export async function deductBalanceAllowNegative(userId, sessionType) {
-  return db.transaction(async (tx) => {
-    const user = await tx.get('users', userId)
-    if (!user) return { success: false, newBalance: null }
-
-    const priv = user.private_balance || 0
-    const grp = user.group_balance || 0
-
-    if (sessionType === 'private') {
-      const newPriv = priv - 1
-      await tx.update('users', userId, { private_balance: newPriv })
-      return { success: true, newBalance: { private_balance: newPriv, group_balance: grp } }
-    }
-
-    if (sessionType === 'group') {
-      if (grp > 0) {
-        const newGrp = grp - 1
-        await tx.update('users', userId, { group_balance: newGrp })
-        return { success: true, newBalance: { private_balance: priv, group_balance: newGrp } }
-      }
-      if (priv > 0) {
-        const newPriv = priv - 1
-        const newGrp = grp + 1
-        await tx.update('users', userId, { private_balance: newPriv, group_balance: newGrp })
-        return { success: true, newBalance: { private_balance: newPriv, group_balance: newGrp } }
-      }
-      // Allow negative
-      const newGrp = grp - 1
-      await tx.update('users', userId, { group_balance: newGrp })
-      return { success: true, newBalance: { private_balance: priv, group_balance: newGrp } }
-    }
-
-    return { success: false, newBalance: null }
-  })
+  return deductBalanceCycle(userId, sessionType, { allowNegative: true })
 }
 
 /**
- * Credit balance (e.g. payment approval).
+ * Credit a payment approval into the MONTHLY CYCLE bucket.
+ * Does not touch grandfathered legacy balances; expired prior cycles
+ * are audit-logged and cleared first (payments do not stack on old remaining).
  */
 export async function creditBalance(userId, sessionType, count = 1) {
-  return db.transaction(async (tx) => {
-    const user = await tx.get('users', userId)
-    if (!user) return false
-    const priv = user.private_balance || 0
-    const grp = user.group_balance || 0
-    if (sessionType === 'private') {
-      await tx.update('users', userId, { private_balance: priv + count, balance_zero_since: null })
-    } else if (sessionType === 'group') {
-      await tx.update('users', userId, { group_balance: grp + count, balance_zero_since: null })
-    }
-    return true
-  })
+  const n = Math.max(0, parseInt(count, 10) || 0)
+  if (n === 0) return true
+  const privateAdd = sessionType === 'private' ? n : 0
+  const groupAdd = sessionType === 'group' ? n : 0
+  const result = await creditCycle(userId, privateAdd, groupAdd)
+  return !!result?.ok
+}
+
+/** Credit both buckets at once (payment with private_sessions + group_sessions). */
+export async function creditBalanceBoth(userId, privateCount, groupCount) {
+  const result = await creditCycle(userId, privateCount, groupCount)
+  return !!result?.ok
 }
 
 /**
  * Reverse a previously deducted balance (used on cancel/delete).
- * If group > 0, reverse by reducing group. Otherwise convert back:
- * add 1 private (reverse of the priv-1 used to convert).
+ * Returns to the live cycle bucket if one is active, else legacy.
+ * Floor at 0 per bucket.
  */
 export async function reverseBalance(userId, sessionType) {
-  return db.transaction(async (tx) => {
-    const user = await tx.get('users', userId)
-    if (!user) return false
-    const priv = user.private_balance || 0
-    const grp = user.group_balance || 0
-    if (sessionType === 'private') {
-      await tx.update('users', userId, { private_balance: priv - 1 })
-    } else if (sessionType === 'group') {
-      if (grp > 0) {
-        await tx.update('users', userId, { group_balance: grp - 1 })
-      } else {
-        // Was converted from private → reverse: add 1 private
-        await tx.update('users', userId, { group_balance: 0, private_balance: priv + 1 })
-      }
-    }
-    return true
-  })
+  return reverseBalanceCycle(userId, sessionType)
 }
 
 /**
  * Update user balance with both fields at once, with balance_zero_since tracking.
+ * Admin manual edit of LEGACY balances only (cycle is system-managed).
  */
 export async function updateUserBalance(userId, newPriv, newGrp) {
-  const updates = { private_balance: newPriv, group_balance: newGrp }
-  if (newPriv === 0 && newGrp === 0) {
-    updates.balance_zero_since = new Date().toISOString()
+  const updates = { private_balance: Math.max(0, newPriv), group_balance: Math.max(0, newGrp) }
+  if (updates.private_balance === 0 && updates.group_balance === 0) {
+    const user = await db.get('users', userId)
+    const cycP = user?.cycle_private || 0
+    const cycG = user?.cycle_group || 0
+    if (cycP === 0 && cycG === 0) updates.balance_zero_since = new Date().toISOString()
+    else updates.balance_zero_since = null
   } else {
     updates.balance_zero_since = null
   }

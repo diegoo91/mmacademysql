@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { api } from './lib/api'
@@ -12,23 +13,24 @@ import GuestBooking from './pages/GuestBooking'
 import Payment from './pages/Payment'
 import Profile from './pages/Profile'
 import Login from './pages/Login'
+import Tournament from './pages/Tournament'
 import AdminLayout from './pages/admin/AdminLayout'
 import Dashboard from './pages/admin/Dashboard'
-import Players from './pages/admin/Players'
 import Results from './pages/admin/Results'
 import Users from './pages/admin/Users'
+import UserDetail from './pages/admin/UserDetail'
 import Imports from './pages/admin/Imports'
-import Bookings from './pages/admin/Bookings'
 import Comments from './pages/admin/Comments'
 import ScheduleManager from './pages/admin/ScheduleManager'
 import Expenses from './pages/admin/Expenses'
 import Reports from './pages/admin/Reports'
 import Payments from './pages/admin/Payments'
 import Roles from './pages/admin/Roles'
+import AdminTournament from './pages/admin/Tournament'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
-  if (loading) return <div className="min-h-screen bg-theme flex items-center justify-center"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="min-h-screen bg-theme flex items-center justify-center"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
   if (!user) return <Navigate to="/login" replace />
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />
   return children
@@ -38,6 +40,8 @@ function ForcePasswordChange() {
   const { user, setUser, logout } = useAuth()
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showNew, setShowNew] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -66,14 +70,24 @@ function ForcePasswordChange() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">New Password</label>
-            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={8} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" placeholder="Min 8 characters" />
+            <div className="relative">
+              <input type={showNew ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={8} required className="w-full px-4 pr-11 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" placeholder="Min 8 characters" />
+              <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme" aria-label={showNew ? 'Hide password' : 'Show password'}>
+                {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Confirm Password</label>
-            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} minLength={8} required className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-lime-400" />
+            <div className="relative">
+              <input type={showConfirm ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)} minLength={8} required className="w-full px-4 pr-11 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+              <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme" aria-label={showConfirm ? 'Hide password' : 'Show password'}>
+                {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           {error && <p className="text-rose-400 text-xs text-center">{error}</p>}
-          <button type="submit" disabled={saving} className="w-full py-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-slate-950 font-extrabold text-sm transition-all disabled:opacity-50">
+          <button type="submit" disabled={saving} className="w-full py-3 rounded-xl bg-brand hover:bg-brand-hover text-white font-extrabold text-sm transition-all disabled:opacity-50">
             {saving ? 'Saving...' : 'Set Password & Continue'}
           </button>
           <button type="button" onClick={logout} className="w-full py-2.5 rounded-xl bg-surface border border-theme text-theme text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-800">
@@ -89,7 +103,7 @@ function AppRoutes() {
   const { user, loading } = useAuth()
 
   if (loading) {
-    return <div className="min-h-screen bg-theme flex items-center justify-center"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+    return <div className="min-h-screen bg-theme flex items-center justify-center"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
   }
 
   if (user?.force_password_change) {
@@ -103,6 +117,7 @@ function AppRoutes() {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/book" element={<Book />} />
+        <Route path="/tournament" element={<Tournament />} />
         <Route path="/guest-booking" element={<GuestBooking />} />
         <Route path="/payment" element={<Payment />} />
         <Route path="/profile" element={
@@ -122,21 +137,20 @@ function AppRoutes() {
               <Dashboard />
             </ProtectedRoute>
           } />
-          <Route path="bookings" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
-              <Bookings />
-            </ProtectedRoute>
-          } />
           <Route path="schedule" element={<ScheduleManager />} />
-          <Route path="players" element={<Players />} />
           <Route path="results" element={
             <ProtectedRoute roles={['superadmin', 'admin']}>
               <Results />
             </ProtectedRoute>
           } />
           <Route path="users" element={
-            <ProtectedRoute roles={['superadmin']}>
+            <ProtectedRoute roles={['superadmin', 'admin', 'coach']}>
               <Users />
+            </ProtectedRoute>
+          } />
+          <Route path="users/:id" element={
+            <ProtectedRoute roles={['superadmin', 'admin', 'coach']}>
+              <UserDetail />
             </ProtectedRoute>
           } />
           <Route path="roles" element={
@@ -167,6 +181,11 @@ function AppRoutes() {
           <Route path="payments" element={
             <ProtectedRoute roles={['superadmin', 'admin']}>
               <Payments />
+            </ProtectedRoute>
+          } />
+          <Route path="tournament" element={
+            <ProtectedRoute roles={['superadmin', 'admin']}>
+              <AdminTournament />
             </ProtectedRoute>
           } />
         </Route>

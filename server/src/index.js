@@ -11,7 +11,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 import authRoutes from './routes/auth.js'
 import usersRoutes from './routes/users.js'
-import playersRoutes from './routes/players.js'
 import resultsRoutes from './routes/results.js'
 import slotsRoutes from './routes/slots.js'
 import bookingsRoutes from './routes/bookings.js'
@@ -96,7 +95,6 @@ app.use(autoAudit)
 
 app.use('/api/auth', authRoutes)
 app.use('/api/users', usersRoutes)
-app.use('/api/players', playersRoutes)
 app.use('/api/results', resultsRoutes)
 app.use('/api/slots', slotsRoutes)
 app.use('/api/bookings', actionLimiter, bookingsRoutes)
@@ -116,6 +114,25 @@ app.use('/api/transfers', transfersRoutes)
 app.use('/api/guest-booking-requests', guestBookingRequestsRoutes)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
+
+// Admin-triggered balance cycle sweep (before 404 catch-all)
+app.post('/api/balance/rollover', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || ''
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+    if (!token) return res.status(401).json({ error: 'Unauthorized' })
+    const { verifyAccessToken } = await import('./utils/tokens.js')
+    const payload = verifyAccessToken(token)
+    if (!payload) return res.status(401).json({ error: 'Unauthorized' })
+    if (!['superadmin', 'admin'].includes(payload.role)) return res.status(403).json({ error: 'Admin only' })
+    const { runBalanceCycleSweep } = await import('./utils/cycle.js')
+    const result = await runBalanceCycleSweep({ upcomingDays: 3 })
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    console.error('Balance rollover error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 
 // 404 JSON handler — never return HTML stack traces
 app.use('/api', (req, res) => {
@@ -179,6 +196,33 @@ try {
   console.log('Migration check for balance constraints skipped:', err.message)
 }
 
+// Migration: monthly cycle balance columns (idempotent)
+// cycle_* = new payments (expire ~14th of following month);
+// private_balance/group_balance = grandfathered legacy (never expire).
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    const cycleCols = [
+      ['cycle_key', "VARCHAR(7)"],
+      ['cycle_expires_at', 'TIMESTAMP'],
+      ['cycle_private', 'INTEGER DEFAULT 0'],
+      ['cycle_group', 'INTEGER DEFAULT 0'],
+      ['cycle_private_paid', 'INTEGER DEFAULT 0'],
+      ['cycle_group_paid', 'INTEGER DEFAULT 0'],
+    ]
+    for (const [name, type] of cycleCols) {
+      const has = await knex.schema.hasColumn('users', name)
+      if (!has) {
+        await knex.raw(`ALTER TABLE users ADD COLUMN ${name} ${type}`)
+        console.log(`Migration: added users.${name}`)
+      }
+    }
+  }
+} catch (err) {
+  console.log('Migration check for cycle balance columns skipped:', err.message)
+}
+
 // Ensure roles table exists and has the 4 system roles (safe idempotent migration)
 async function ensureRoles() {
   try {
@@ -214,6 +258,25 @@ async function ensureRoles() {
   }
 }
 await ensureRoles()
+
+// ── Monthly cycle sweep (lazy expiry + upcoming notices) ──────────
+try {
+  const { runBalanceCycleSweep } = await import('./utils/cycle.js')
+  const sweepOnce = async (label) => {
+    try {
+      const r = await runBalanceCycleSweep({ upcomingDays: 3 })
+      if (r.expired || r.upcoming) console.log(`Balance cycle sweep (${label}):`, r)
+    } catch (e) {
+      console.error(`Balance cycle sweep (${label}) failed:`, e.message)
+    }
+  }
+  await sweepOnce('startup')
+  setInterval(() => sweepOnce('interval'), 6 * 60 * 60 * 1000) // every 6h
+} catch (err) {
+  console.log('Balance cycle sweep init skipped:', err.message)
+}
+
+// Admin-triggered rollover endpoint — registered above (before 404 catch-all)
 
 app.listen(PORT, () => {
   console.log(`MM Padel Academy API running on http://localhost:${PORT}`)

@@ -21,7 +21,7 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
 
   const fetchSuggestions = (q) => {
     if (q.length < 3) { setSuggestions([]); return }
-    api.get(`/players?search=${encodeURIComponent(q)}&limit=10`).then(data => {
+    api.get(`/users?role=player&search=${encodeURIComponent(q)}&limit=10`).then(data => {
       setSuggestions(data.players || [])
       setOpen(true)
     }).catch(() => setSuggestions([]))
@@ -97,7 +97,7 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
               key={s.id}
               type="button"
               onClick={() => selectName(s.full_name, s)}
-              className={`w-full text-left px-3 py-2 text-xs ${i === activeIdx ? 'bg-lime-400/10 text-lime-400' : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+              className={`w-full text-left px-3 py-2 text-xs ${i === activeIdx ? 'bg-brand/10 text-brand-text' : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-800'}`}
             >
               {s.full_name}
             </button>
@@ -106,7 +106,7 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
             <button
               type="button"
               onClick={addNewPlayer}
-              className={`w-full text-left px-3 py-2 text-xs border-t border-theme ${activeIdx === suggestions.length ? 'bg-lime-400/10 text-lime-400' : 'text-muted italic hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+              className={`w-full text-left px-3 py-2 text-xs border-t border-theme ${activeIdx === suggestions.length ? 'bg-brand/10 text-brand-text' : 'text-muted italic hover:bg-slate-100 dark:hover:bg-slate-800'}`}
             >
               Add '{query}' as new player
             </button>

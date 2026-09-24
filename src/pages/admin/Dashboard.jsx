@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { ArrowRightLeft, BarChart3, Calendar, CheckCircle2, Clock, FileUp, Send, TrendingUp, Users, UserX, XCircle } from 'lucide-react'
+import { ArrowRightLeft, BarChart3, Calendar, CheckCircle2, Clock, FileUp, RefreshCw, Send, TrendingUp, Users, UserX, XCircle } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 
 function StatCard({ icon: Icon, label, value, color = 'lime' }) {
   const colors = {
-    lime: 'bg-lime-400/10 text-lime-400 border-lime-400/20',
+    lime: 'bg-brand/10 text-brand-text border-brand-text/20',
     blue: 'bg-blue-400/10 text-blue-400 border-blue-400/20',
     purple: 'bg-purple-400/10 text-purple-400 border-purple-400/20',
     amber: 'bg-amber-400/10 text-amber-400 border-amber-400/20',
@@ -26,7 +26,7 @@ function StatCard({ icon: Icon, label, value, color = 'lime' }) {
 }
 
 export default function Dashboard() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, loading: authLoading } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,15 +34,31 @@ export default function Dashboard() {
   const [decidingId, setDecidingId] = useState(null)
   const [proposeForm, setProposeForm] = useState(null)
   const [proposeData, setProposeData] = useState({ proposed_date: '', proposed_time: '' })
+  const [rolloverLoading, setRolloverLoading] = useState(false)
+  const [rolloverMsg, setRolloverMsg] = useState('')
+
+  const handleRollover = async () => {
+    setRolloverLoading(true)
+    setRolloverMsg('')
+    try {
+      const r = await api.post('/balance/rollover')
+      setRolloverMsg(`Swept: ${r.expired ?? 0} expired, ${r.upcoming ?? 0} upcoming notified`)
+    } catch (e) {
+      setRolloverMsg(e.message || 'Rollover failed')
+    } finally {
+      setRolloverLoading(false)
+    }
+  }
 
   useEffect(() => {
+    if (authLoading) return
     api.get('/dashboard').then(setData).catch(e => setError(e.message)).finally(() => setLoading(false))
     if (isAdmin) {
       api.get('/booking-requests?status=pending')
         .then(data => setPendingRequests(Array.isArray(data) ? data : []))
         .catch(() => {})
     }
-  }, [isAdmin])
+  }, [authLoading, isAdmin])
 
   const handleDecide = async (id, decision, extra = {}) => {
     setDecidingId(id)
@@ -54,7 +70,7 @@ export default function Dashboard() {
     setDecidingId(null)
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
   if (error) return <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>
   if (!data) return null
 
@@ -62,9 +78,24 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="font-heading text-3xl font-black text-theme">Dashboard</h1>
-        <p className="text-muted text-sm mt-1">Academy overview and key metrics</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-3xl font-black text-theme">Dashboard</h1>
+          <p className="text-muted text-sm mt-1">Academy overview and key metrics</p>
+        </div>
+        {isAdmin && (
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={handleRollover}
+              disabled={rolloverLoading}
+              className="px-4 py-2 rounded-xl bg-brand/10 text-brand-text border border-brand-text/30 hover:bg-brand/20 text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${rolloverLoading ? 'animate-spin' : ''}`} />
+              {rolloverLoading ? 'Sweeping…' : 'Run balance sweep'}
+            </button>
+            {rolloverMsg && <span className="text-[11px] text-muted">{rolloverMsg}</span>}
+          </div>
+        )}
       </div>
 
       {/* Pending Requests Strip */}
@@ -189,7 +220,7 @@ export default function Dashboard() {
                     <span className="text-theme font-bold">{r.count}</span>
                   </div>
                   <div className="h-2 bg-theme rounded-full overflow-hidden">
-                    <div className="h-full bg-lime-400 rounded-full transition-all" style={{ width: `${stats.totalUsers > 0 ? (r.count / stats.totalUsers) * 100 : 0}%` }} />
+                    <div className="h-full bg-brand rounded-full transition-all" style={{ width: `${stats.totalUsers > 0 ? (r.count / stats.totalUsers) * 100 : 0}%` }} />
                   </div>
                 </div>
               </div>
@@ -210,7 +241,7 @@ export default function Dashboard() {
                     <p className="text-xs text-muted">{b.ref} - {b.session_type}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-lime-400">EGP {b.total?.toLocaleString()}</p>
+                    <p className="text-sm font-bold text-brand-text">EGP {b.total?.toLocaleString()}</p>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${b.status === 'confirmed' ? 'bg-green-500/10 text-green-400' : b.status === 'cancelled' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-500/10 text-muted'}`}>
                       {b.status}
                     </span>
@@ -240,8 +271,8 @@ export default function Dashboard() {
                 {sessionCredits.map(c => (
                   <tr key={c.user_id}>
                     <td className="py-3 text-theme font-medium">{c.name}</td>
-                    <td className="py-3 text-lime-400 font-bold">{c.private_balance}</td>
-                    <td className="py-3 text-lime-400 font-bold">{c.group_balance}</td>
+                    <td className="py-3 text-brand-text font-bold">{c.private_balance}</td>
+                    <td className="py-3 text-brand-text font-bold">{c.group_balance}</td>
                   </tr>
                 ))}
               </tbody>

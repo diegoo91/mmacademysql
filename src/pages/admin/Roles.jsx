@@ -45,15 +45,15 @@ export default function Roles() {
     }
   }
 
-  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-black text-theme flex items-center gap-2">
-          <Shield className="w-6 h-6 text-lime-400" /> Role Permissions
+          <Shield className="w-6 h-6 text-brand-text" /> Role Permissions
         </h2>
-        {msg && <span className={`text-sm font-bold ${msg.includes('error') || msg.includes('Error') ? 'text-rose-400' : 'text-lime-400'}`}>{msg}</span>}
+        {msg && <span className={`text-sm font-bold ${msg.includes('error') || msg.includes('Error') ? 'text-rose-400' : 'text-brand-text'}`}>{msg}</span>}
       </div>
 
       <p className="text-sm text-muted">
@@ -64,7 +64,7 @@ export default function Roles() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {roles.map(role => (
           <div key={role.name} className={`p-5 rounded-2xl border transition-all ${
-            editing === role.name ? 'bg-lime-400/5 border-lime-400/30' : 'bg-surface border-theme'
+            editing === role.name ? 'bg-brand/5 border-brand-text/30' : 'bg-surface border-theme'
           }`}>
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -75,15 +75,15 @@ export default function Roles() {
                 editing === role.name ? (
                   <div className="flex gap-2">
                     <button onClick={() => setEditing(null)} className="px-3 py-1.5 rounded-lg bg-surface border border-theme text-theme text-xs font-bold">Cancel</button>
-                    <button onClick={save} disabled={saving} className="px-3 py-1.5 rounded-lg bg-lime-400 hover:bg-lime-300 text-slate-950 text-xs font-bold flex items-center gap-1 disabled:opacity-50">
+                    <button onClick={save} disabled={saving} className="px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50">
                       {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => startEdit(role)} className="px-3 py-1.5 rounded-lg bg-surface border border-theme text-theme text-xs font-bold hover:border-lime-400/50">Edit</button>
+                  <button onClick={() => startEdit(role)} className="px-3 py-1.5 rounded-lg bg-surface border border-theme text-theme text-xs font-bold hover:border-brand-text/50">Edit</button>
                 )
               ) : (
-                <span className="px-3 py-1.5 rounded-lg bg-lime-400/10 text-lime-400 text-xs font-bold border border-lime-400/30">All modules (locked)</span>
+                <span className="px-3 py-1.5 rounded-lg bg-brand/10 text-brand-text text-xs font-bold border border-brand-text/30">All modules (locked)</span>
               )}
             </div>
 
@@ -97,9 +97,9 @@ export default function Roles() {
                     disabled={editing !== role.name}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
                       has
-                        ? 'bg-lime-400/10 text-lime-400 border-lime-400/40'
+                        ? 'bg-brand/10 text-brand-text border-brand-text/40'
                         : 'bg-surface text-muted border-theme'
-                    } ${editing === role.name ? 'cursor-pointer hover:border-lime-400/50' : ''}`}
+                    } ${editing === role.name ? 'cursor-pointer hover:border-brand-text/50' : ''}`}
                   >
                     {mod}
                   </button>

@@ -21,6 +21,7 @@ export default function Navbar() {
     ...(!user ? [{ name: 'Sign Up', path: '/signup' }] : []),
     ...(!user ? [{ name: 'Guest Booking', path: '/guest-booking' }] : []),
     { name: 'Schedule', path: '/schedule' },
+    { name: 'Tournament', path: '/tournament' },
     { name: 'Book a Session', path: '/book' },
   ]
 
@@ -71,12 +72,12 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           <Link to="/" className="flex items-center gap-3 group">
-            <div                 className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-lime-400/80 shadow-lg shadow-lime-400/20 group-hover:scale-105 transition-transform bg-surface shrink-0">
-              <img src={`${import.meta.env.BASE_URL}images/logo.jpg`} alt="MM Padel Academy Logo" className="w-full h-full object-cover" />
+            <div className="relative w-12 h-12 rounded-xl overflow-hidden border-2 border-brand-text/80 shadow-lg shadow-brand/20 group-hover:scale-105 transition-transform bg-surface shrink-0 flex items-center justify-center p-0.5">
+              <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="MM Padel Academy Logo" className="w-full h-full object-contain" />
             </div>
             <div className="flex flex-col">
               <span className="font-heading text-xl font-extrabold tracking-tight text-theme flex items-center gap-1.5">
-                MM <span className="text-lime-400">PADEL</span> ACADEMY
+                MM <span className="text-brand-text">PADEL</span> ACADEMY
               </span>
               <span className="text-[10px] uppercase font-bold text-muted tracking-widest -mt-1">
                 Train &bull; Improve &bull; Compete
@@ -93,7 +94,7 @@ export default function Navbar() {
                   to={link.path}
                   className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
                     active
-                      ? 'bg-lime-400 text-slate-950 shadow-md shadow-lime-400/20'
+                      ? 'bg-brand text-white shadow-md shadow-brand/20'
                       : 'text-theme hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50'
                   }`}
                 >
@@ -119,11 +120,11 @@ export default function Navbar() {
                       key={t.id}
                       onClick={() => { setTheme(t.id); setShowThemeMenu(false) }}
                       className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-between ${
-                        theme === t.id ? 'bg-lime-400/10 text-lime-400' : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-800'
+                        theme === t.id ? 'bg-brand/10 text-brand-text' : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
                     >
                       <span>{t.label}</span>
-                      {theme === t.id && <span className="w-2 h-2 rounded-full bg-lime-400" />}
+                      {theme === t.id && <span className="w-2 h-2 rounded-full bg-brand" />}
                     </button>
                   ))}
                 </div>
@@ -145,7 +146,7 @@ export default function Navbar() {
                     <div className="flex items-center justify-between px-4 py-3 border-b border-theme">
                       <span className="text-xs font-bold text-theme">Notifications</span>
                       {unreadCount > 0 && (
-                        <button onClick={markAllRead} className="text-[10px] text-lime-400 font-semibold hover:underline">Mark all read</button>
+                        <button onClick={markAllRead} className="text-[10px] text-brand-text font-semibold hover:underline">Mark all read</button>
                       )}
                     </div>
                     {notifications.length === 0 ? (
@@ -166,7 +167,7 @@ export default function Navbar() {
                               navigate(n.link)
                             }
                           }}
-                          className={`w-full text-left px-4 py-3 border-b border-theme hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors ${!n.read ? 'bg-lime-400/5' : ''}`}
+                          className={`w-full text-left px-4 py-3 border-b border-theme hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors ${!n.read ? 'bg-brand/5' : ''}`}
                         >
                           <p className="text-xs font-bold text-theme">{n.title}</p>
                           <p className="text-[11px] text-muted mt-0.5">{n.body}</p>
@@ -182,12 +183,12 @@ export default function Navbar() {
             {user ? (
               <div className="flex items-center gap-3 bg-surface pl-3 pr-2 py-1.5 rounded-full border border-theme">
                 <Link to="/profile" className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-lime-400/20 text-lime-400 flex items-center justify-center font-bold text-xs border border-lime-400/40">
+                  <div className="w-7 h-7 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-xs border border-brand-text/40">
                     {user.name.charAt(0)}
                   </div>
                   <div className="flex flex-col">
                     <span className="text-xs font-bold text-theme leading-tight">{user.name}</span>
-                    <span className="text-[10px] text-lime-400 font-medium flex items-center gap-1">
+                    <span className="text-[10px] text-brand-text font-medium flex items-center gap-1">
                       {(user.role === 'superadmin' || user.role === 'admin' || user.role === 'coach') && (
                         <Shield className="w-3 h-3" />
                       )}
@@ -213,7 +214,7 @@ export default function Navbar() {
                 </button>
                 <Link
                   to="/book"
-                  className="px-5 py-2.5 text-sm font-bold rounded-full bg-lime-400 hover:bg-lime-300 text-slate-950 transition-all shadow-lg shadow-lime-400/20 hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
+                  className="px-5 py-2.5 text-sm font-bold rounded-full bg-gold hover:bg-gold-hover text-slate-950 transition-all shadow-lg shadow-gold/30 hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
                 >
                   <Calendar className="w-4 h-4" />
                   <span>Book Session</span>
@@ -255,7 +256,7 @@ export default function Navbar() {
               onClick={() => setMobileMenuOpen(false)}
               className={`flex items-center justify-between px-4 py-3 rounded-xl text-base font-semibold transition-colors ${
                 isActive(link.path)
-                  ? 'bg-lime-400 text-slate-950 font-bold'
+                  ? 'bg-brand text-white font-bold'
                   : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-900'
               }`}
             >
@@ -276,7 +277,7 @@ export default function Navbar() {
               <div className="p-4 rounded-xl bg-surface border border-theme flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-theme">{user.name}</p>
-                  <p className="text-xs text-lime-400 flex items-center gap-1">
+                  <p className="text-xs text-brand-text flex items-center gap-1">
                     {(user.role === 'superadmin' || user.role === 'admin' || user.role === 'coach') && (
                       <Shield className="w-3 h-3" />
                     )}
@@ -304,7 +305,7 @@ export default function Navbar() {
                 <Link
                   to="/signup"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full py-3 rounded-xl bg-lime-400 text-slate-950 font-bold text-center text-sm flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-xl bg-brand text-white font-bold text-center text-sm flex items-center justify-center gap-2"
                 >
                   <UserPlus className="w-4 h-4" />
                   <span>Create Account</span>
