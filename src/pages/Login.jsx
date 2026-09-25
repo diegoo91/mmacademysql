@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Lock, LogIn, Mail } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import Logo from '../components/Logo'
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -47,9 +48,7 @@ export default function Login() {
       <div className="absolute top-20 right-10 w-96 h-96 bg-brand/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-brand-text/80 shadow-lg shadow-brand/20 mx-auto mb-4 bg-surface flex items-center justify-center p-1">
-            <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="MM Padel Academy Logo" className="w-full h-full object-contain" />
-          </div>
+          <Logo className="w-16 h-16 rounded-2xl border-2 border-brand-text/80 shadow-lg shadow-brand/20 mx-auto mb-4" />
           <h1 className="font-heading text-3xl font-black text-theme">Member Login</h1>
           <p className="text-muted text-sm mt-1">Access your MM Padel Academy portal</p>
         </div>

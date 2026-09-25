@@ -18,16 +18,10 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { canonTime, formatSlotTime } from '../lib/time'
 import { useAuth } from '../context/AuthContext'
 import { COURTS } from '../data/siteConfig'
 import DeclineChoiceModal from '../components/DeclineChoiceModal'
-
-const TIME_LABELS = {
-  '14:00': '2:00–3:00', '15:00': '3:00–4:00', '16:00': '4:00–5:00',
-  '17:00': '5:00–6:00', '18:00': '6:00–7:00', '19:00': '7:00–8:00',
-  '20:00': '8:00–9:00', '21:00': '9:00–10:00', '22:00': '10:00–11:00',
-  '23:00': '11:00–12:00',
-}
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -78,7 +72,7 @@ export default function Schedule() {
       if (b.status !== 'confirmed') continue
       try {
         const sessions = JSON.parse(b.sessions_json || '[]')
-        for (const s of sessions) keys.add(`${s.date}|${s.time}|${s.court}`)
+        for (const s of sessions) keys.add(`${s.date}|${canonTime(s.time)}|${s.court}`)
       } catch {}
     }
     return keys
@@ -102,7 +96,7 @@ export default function Schedule() {
     if (!name) return keys
     for (const s of slots) {
       const playerName = (s.player_text || '').split(/\s*\/\s*/)[0].trim().toLowerCase()
-      if (playerName === name) keys.add(`${s.date}|${s.time}|${s.court}`)
+      if (playerName === name) keys.add(`${s.date}|${canonTime(s.time)}|${s.court}`)
     }
     return keys
   }, [user, slots])
@@ -199,14 +193,20 @@ export default function Schedule() {
 
   const currentDaySlots = useMemo(() => {
     const daySlots = slotsByDate.get(scheduleDate) || []
-    const times = [...new Set(daySlots.map(s => s.time))].sort()
-    return times.map(time => {
-      const c1 = daySlots.find(s => s.time === time && s.court === 1)
-      const c2 = daySlots.find(s => s.time === time && s.court === 2)
-      const c3 = daySlots.find(s => s.time === time && s.court === 3)
+    const groups = new Map()
+    for (const s of daySlots) {
+      const k = canonTime(s.time)
+      if (!groups.has(k)) groups.set(k, [])
+      groups.get(k).push(s)
+    }
+    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([start, list]) => {
+      const rangeRaw = list.find(s => String(s.time).includes('-'))
+      const c1 = list.find(s => s.court === 1)
+      const c2 = list.find(s => s.court === 2)
+      const c3 = list.find(s => s.court === 3)
       return {
-        time,
-        label: TIME_LABELS[time] || time,
+        time: start,
+        label: formatSlotTime(rangeRaw ? rangeRaw.time : start),
         court1: c1?.player_text || '',
         court2: c2?.player_text || '',
         court3: c3?.player_text || '',
@@ -220,7 +220,7 @@ export default function Schedule() {
   const weekTimes = useMemo(() => {
     const set = new Set()
     for (const s of slots) {
-      set.add(s.time)
+      set.add(canonTime(s.time))
     }
     return [...set].sort()
   }, [slots])
@@ -435,13 +435,13 @@ export default function Schedule() {
                       <div key={time} className="grid grid-cols-8 gap-3 py-2 items-center text-xs">
                         <div className="font-bold text-theme font-mono flex items-center gap-1.5 text-[11px]">
                           <Clock className="w-3.5 h-3.5 text-brand-text" />
-                          <span>{TIME_LABELS[time] || time}</span>
+                          <span>{formatSlotTime(time)}</span>
                         </div>
                         {weekDates.map(date => {
                           const daySlots = slotsByDate.get(date) || []
-                          const s = daySlots.find(x => x.time === time && x.court === 1)
-                          const s2 = daySlots.find(x => x.time === time && x.court === 2)
-                          const s3 = daySlots.find(x => x.time === time && x.court === 3)
+                          const s = daySlots.find(x => canonTime(x.time) === time && x.court === 1)
+                          const s2 = daySlots.find(x => canonTime(x.time) === time && x.court === 2)
+                          const s3 = daySlots.find(x => canonTime(x.time) === time && x.court === 3)
                           const c1 = s?.player_text || ''
                           const c2 = s2?.player_text || ''
                           const c3 = s3?.player_text || ''
@@ -457,7 +457,7 @@ export default function Schedule() {
                                 <span className="block">{[c1 && `C1: ${c1}`, c2 && `C2: ${c2}`, c3 && `C3: ${c3}`].filter(Boolean).join(' / ')}{isMine ? ' ★' : ''}</span>
                               )}
                               {!empty && (() => {
-                                const allSlots = (slotsByDate.get(date) || []).filter(x => x.time === time)
+                                const allSlots = (slotsByDate.get(date) || []).filter(x => canonTime(x.time) === time)
                                 const coachNames = [...new Set(allSlots.map(x => x.coach_name).filter(Boolean))]
                                 return coachNames.length > 0 ? <span className="block text-[9px] text-amber-400 mt-0.5">{coachNames.join(', ')}</span> : null
                               })()}

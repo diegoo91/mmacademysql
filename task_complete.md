@@ -224,11 +224,46 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 ---
 
+## Phase 12: Session Polish & UX (2026-09-25)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 144 | Logo component (`src/components/Logo.jsx` + `public/images/logo-badge.png`) swapped into Navbar, Footer, LoginModal, Login, DeclineChoiceModal, Book — both themes verified | Done | 2026-09-25 |
+| 145 | Unified time utils (`src/lib/time.js` — `canonTime`, `formatSlotTime` incl. `10:00-12:00` ranges) wired into 10 pages/components | Done | 2026-09-25 |
+| 146 | Reports totals fix: All-Time preset default, approved-only totals, "Received (Filtered)" — verified live (all = 96,400 EGP) | Done | 2026-09-25 |
+| 147 | Schedule Manager: per-cell dropdown menu with two-step delete confirm | Done | 2026-09-25 |
+| 148 | Scroll-to-top on route change (`ScrollToTop.jsx` mounted in `Layout.jsx`) | Done | 2026-09-25 |
+| 149 | Session-polish batch: `oxlint` 0 new warnings, `vite build` clean | Done | 2026-09-25 |
+
+---
+
+## Phase 13: Balance Integrity & UserDetail Rework (2026-09-25)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 150 | `scripts/balance-audit.js` (read-only) — finding: all stored balances correct, display-only bug (3× private counted), 3 mis-attributed prod slots | Done | 2026-09-25 |
+| 151 | True-total display: `group_balance` = real credits + new `group_from_private` in `users.js`/`reports.js`/`dashboard.js`; Reports/UserDetail/Profile/ScheduleManager UI — verified live (Titos 5/0, remaining 5) | Done | 2026-09-25 |
+| 152 | `scripts/apply-balance-fixes.js` — applied: slot 216 renamed + 1 group deducted (Eyad/Youssef Dawish 4→3), slot 214 renamed, orphan user 26 deleted; slot 213 skipped per rejection; backups + 5 audit rows | Done | 2026-09-25 |
+| 153 | Post-fix verification: audit re-run (all stored == FIFO), live API check, `oxlint` + `vite build` clean | Done | 2026-09-25 |
+| 154 | UserDetail restructure: Amount Owed + Total Paid moved to top; Remaining Private + Remaining Group merged into one `1P · 2G` card (full-width on mobile) | Done | 2026-09-25 |
+
+---
+
+## Phase 14: Coach Balance Backfill (2026-09-25)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 155 | Preflight: Coach Laila = `user_id 36`, Coach Omar = `user_id 37` (only coaches), zero existing rows for 2026-09-20..23 | Done | 2026-09-25 |
+| 156 | Backup `coach_daily_hours` → `scripts/payments-backups/coach-daily-hours-2026-09-25T16-05-48.json`, then transactional insert of 7 rows + 7 audit rows | Done | 2026-09-25 |
+| 157 | API verification: range sums Laila 26h (7+6+6+7), Omar 18h (7+6+5, 21-9 skipped) ASSERT PASS; all-time balances Laila 73 / Omar 44 | Done | 2026-09-25 |
+
+---
+
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| Total tasks completed | 143 |
+| Total tasks completed | 157 |
 | Phase 1: Initial Build | 18 |
 | Phase 2: Deployment | 6 |
 | Phase 3: Feature Enhancements | 12 |
@@ -240,6 +275,9 @@ All tasks completed from project inception (2026-09-09) through current date.
 | Phase 9: Supabase Migration + Public Repo | 9 |
 | Phase 10: Railway Backend + Pages Repoint | 9 |
 | Phase 11: Production PG Bug Fixes | 6 |
+| Phase 12: Session Polish & UX | 6 |
+| Phase 13: Balance Integrity & UserDetail Rework | 5 |
+| Phase 14: Coach Balance Backfill | 3 |
 
 ---
 
@@ -287,6 +325,9 @@ All tasks completed from project inception (2026-09-09) through current date.
 | 38 | Schedule import overwrites instead of merging group players | Changed from `db.upsert` to `findAll` + merge + delete extras | 2026-09-19 |
 | 39 | `db.findAll` predicate never matches — raw knex Date objects vs strings | Normalize rows before passing to predicate in `findAll` | 2026-09-19 |
 | 40 | 9 slot routes missing `authenticate` middleware — silent 401s | Added `authenticate` to PUT/DELETE/approve/toggle-type/mark-attended routes | 2026-09-19 |
+| 41 | Reports vs Payments totals disagreed (missing All-Time preset) | All-Time preset default + approved-only totals + "Received (Filtered)" | 2026-09-25 |
+| 42 | Remaining-sessions display overstated (private counted 3× as group) | True-total display: group = real credits, convertible amount surfaced as `group_from_private` note | 2026-09-25 |
+| 43 | Prod slots 214/216 mis-attributed names + orphan user 26 (bare "Youssef") | Renamed to canonical players, +1 group deducted per slot, orphan deleted; slot 213 skipped per rejection | 2026-09-25 |
 
 ---
 
@@ -310,6 +351,9 @@ All tasks completed from project inception (2026-09-09) through current date.
 | `users.role` stays as name string (no FK) | Avoids refactoring ~40 `requireRole` call sites; validated at app layer |
 | Per-user permission overrides kept | Role gives baseline, user.permissions adds extras; zero migration of existing data |
 | Superadmin row locked to all modules | Prevents accidental lockout from reduced permissions |
+| True-total display + separate convertible note | Balances show real remaining; "available as group (up to X)" note instead of hidden pooling — matches conversion rule 1 priv = 2 group |
+| Balance fixes via script with backups + audit rows | `apply-balance-fixes.js`: validations, optimistic-lock guards, tx rollback, backup JSON, `audit_logs` rows — repeatable/verifiable prod data ops |
+| Coach balance = SUM(coach_daily_hours) − SUM(coach_payments) | Hours worked upserted per day (UNIQUE coach+date); backfill done via transactional SQL + audit rows with pre/post verification |
 
 ---
 
@@ -343,6 +387,12 @@ All tasks completed from project inception (2026-09-09) through current date.
 | `server/.env.example` | 1d/30d token defaults |
 | `server/e2e-all.cjs` | Existing: 99-endpoint sweep |
 | `scripts/migrate-local-pg-to-supabase.js` | New: schema apply + data load + verify for Supabase |
+| `server/src/routes/users.js` (balance display) | `enrichPlayer`: `group_balance` = real credits, new `group_from_private` field |
+| `server/src/routes/reports.js` (balance display) | Both remaining-sessions builders fixed (group real + convertible note) |
+| `server/src/routes/dashboard.js` | `sessionCredits` group balance = real credits |
+| `scripts/balance-audit.js` | New: read-only prod audit — stored vs FIFO, orphan segments, duplicate names |
+| `scripts/apply-balance-fixes.js` | New: transactional prod fixes — validations, optimistic locks, backups, audit rows |
+| `scripts/payments-backups/` | Excluded from git: balance-fixes + coach-daily-hours backup JSONs |
 
 ### Frontend (src/)
 | File | Changes |
@@ -361,3 +411,11 @@ All tasks completed from project inception (2026-09-09) through current date.
 | `public/CNAME` | `www.mmacademy.com` for custom domain |
 | `.github/workflows/deploy.yml` | Pages deploy with `VITE_API_BASE` baked in at build time |
 | `render.yaml` | Inert (Railway deprecated config-as-code; kept for reference) |
+| `src/components/Logo.jsx` + `public/images/logo-badge.png` | New: logo badge component + asset, used in Navbar, Footer, LoginModal, Login, DeclineChoiceModal, Book |
+| `src/components/ScrollToTop.jsx` | New: scroll reset on route change; mounted in `Layout.jsx` |
+| `src/lib/time.js` | New: `canonTime` / `formatSlotTime` unified time format (incl. `10:00-12:00`) |
+| `src/pages/admin/UserDetail.jsx` | Owed/Paid moved to top, Remaining merged into `1P · 2G` card, Balances "Available as group" row |
+| `src/pages/admin/Reports.jsx` | All-Time default, approved-only totals, "Received (Filtered)", convertible note |
+| `src/pages/admin/ScheduleManager.jsx` | Cell dropdown + two-step delete; group-avail check includes convertible private (`grp + priv*2`) |
+| `src/pages/Profile.jsx` | "Up to X as group" conversion note; time utils |
+| Other logo/time files | `Navbar`, `Footer`, `LoginModal`, `Login`, `DeclineChoiceModal`, `Book`, `Schedule`, `Dashboard`, `Users` — logo swap + time-format wiring |

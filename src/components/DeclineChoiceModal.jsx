@@ -1,4 +1,5 @@
 import { CalendarClock, XCircle } from 'lucide-react'
+import { formatSlotTime } from '../lib/time'
 
 /**
  * Shown when a player declines attendance.
@@ -19,7 +20,7 @@ export default function DeclineChoiceModal({ open, slot, loading, error, onChoos
             Need a different slot?
           </h3>
           <p className="text-sm text-muted leading-relaxed">
-            You declined <strong className="text-theme">{slot.date} at {slot.time}</strong> (Court {slot.court}).
+            You declined <strong className="text-theme">{slot.date} at {formatSlotTime(slot.time)}</strong> (Court {slot.court}).
             Would you like a different slot instead, or will you not be attending at all?
           </p>
         </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRightLeft, CheckCircle2, Download, FileUp, Lock, Plus, Search, Shield, Unlock, Upload, X } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
+import { formatSlotTime } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
 
 export function ConvertModal({ user, onClose, onDone }) {
@@ -336,7 +337,7 @@ export function HistoryModal({ user, onClose }) {
                 {sessions.map((s, i) => (
                   <tr key={i} className="text-theme">
                     <td className="px-3 py-2.5">{s.date}</td>
-                    <td className="px-3 py-2.5 font-mono">{s.time}</td>
+                        <td className="px-3 py-2.5 font-mono">{formatSlotTime(s.time)}</td>
                     <td className="px-3 py-2.5">Court {s.court}</td>
                     <td className="px-3 py-2.5"><span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${s.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>{s.session_type || 'private'}</span></td>
                     <td className="px-3 py-2.5 text-center">

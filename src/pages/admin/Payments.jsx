@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DollarSign, Plus, Trash2, Search, Check, X as XIcon, Users, UserPlus } from 'lucide-react'
 import { api } from '../../lib/api'
+import { formatSlotTime } from '../../lib/time'
 
 const PAYMENT_STATUS_COLORS = {
   payment_pending: 'bg-amber-400/20 text-amber-400',
@@ -146,10 +147,11 @@ export default function Payments() {
            (p.notes || '').toLowerCase().includes(q)
   })
 
-  const totalAmount = filtered.reduce((s, p) => s + (p.amount || 0), 0)
+  const totalAmount = filtered.reduce((s, p) => s + (p.status === 'payment_approved' ? (p.amount || 0) : 0), 0)
   const totalPrivate = payments.reduce((s, p) => s + (p.private_sessions || 0), 0)
   const totalGroup = payments.reduce((s, p) => s + (p.group_sessions || 0), 0)
   const pendingCount = payments.filter(p => p.status === 'payment_pending').length
+  const pendingAmount = payments.filter(p => p.status === 'payment_pending').reduce((s, p) => s + (p.amount || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -270,7 +272,7 @@ export default function Payments() {
               <select value={guestForm.time} onChange={e => setGuestForm({ ...guestForm, time: e.target.value })} required className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm">
                 <option value="">Select time</option>
                 {['14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'].map(t => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>{formatSlotTime(t)}</option>
                 ))}
               </select>
             </div>
@@ -299,7 +301,7 @@ export default function Payments() {
       {pendingCount > 0 && (
         <div className="p-4 rounded-2xl bg-amber-400/5 border border-amber-400/30 flex items-center justify-between">
           <span className="text-sm font-bold text-amber-400">
-            {pendingCount} payment{pendingCount === 1 ? '' : 's'} pending review — approve to credit balance and unlock schedule approval
+            {pendingCount} payment{pendingCount === 1 ? '' : 's'} pending review (EGP {pendingAmount.toLocaleString()}) — approve to credit balance and unlock schedule approval
           </span>
         </div>
       )}
@@ -307,7 +309,7 @@ export default function Payments() {
       {/* Summary + Search */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="glass-panel rounded-2xl px-5 py-3 border border-theme">
-          <span className="text-xs font-semibold text-muted">Total Filtered</span>
+          <span className="text-xs font-semibold text-muted">Received (Filtered)</span>
           <span className="ml-3 text-lg font-black text-brand-text">EGP {totalAmount.toLocaleString()}</span>
           <span className="ml-2 text-xs text-muted">({filtered.length} payments)</span>
         </div>

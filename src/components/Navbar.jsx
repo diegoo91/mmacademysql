@@ -4,6 +4,7 @@ import { Bell, Calendar, ChevronRight, LogOut, Menu, Moon, Palette, Shield, Sun,
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { api } from '../lib/api'
+import Logo from './Logo'
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -72,9 +73,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="relative w-12 h-12 rounded-xl overflow-hidden border-2 border-brand-text/80 shadow-lg shadow-brand/20 group-hover:scale-105 transition-transform bg-surface shrink-0 flex items-center justify-center p-0.5">
-              <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="MM Padel Academy Logo" className="w-full h-full object-contain" />
-            </div>
+            <Logo className="w-12 h-12 rounded-xl border-2 border-brand-text/80 shadow-lg shadow-brand/20 group-hover:scale-105 transition-transform" />
             <div className="flex flex-col">
               <span className="font-heading text-xl font-extrabold tracking-tight text-theme flex items-center gap-1.5">
                 MM <span className="text-brand-text">PADEL</span> ACADEMY

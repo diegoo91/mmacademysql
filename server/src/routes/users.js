@@ -65,7 +65,8 @@ async function enrichPlayer(p, allSlots, bookingsById) {
   }
   const { effectivePrivate, effectiveGroupBalance, monthlyDisplay } = await import('../utils/balance.js')
   const private_balance = effectivePrivate(p)
-  const group_balance = effectiveGroupBalance(p)
+  const group_from_private = private_balance * 2
+  const group_balance = Math.max(0, effectiveGroupBalance(p) - group_from_private)
   const monthly = monthlyDisplay(p)
   const remaining_sessions = private_balance + group_balance
   const total_private = private_balance + used_private
@@ -77,6 +78,7 @@ async function enrichPlayer(p, allSlots, bookingsById) {
     remaining_sessions,
     private_balance,
     group_balance,
+    group_from_private,
     cycle_private: monthly.private,
     cycle_group: monthly.group,
     cycle_expires_at: monthly.expires_at,

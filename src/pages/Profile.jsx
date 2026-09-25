@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Camera, Clock, Download, Mail, Phone, Shield, ArrowRightLeft, Calendar, Trophy, CheckCircle, XCircle, Key, BarChart3, Eye, EyeOff } from 'lucide-react'
 import { api, fileUrl } from '../lib/api'
+import { canonTime, formatSlotTime } from '../lib/time'
 import { useAuth } from '../context/AuthContext'
 import DeclineChoiceModal from '../components/DeclineChoiceModal'
 
@@ -511,6 +512,9 @@ export default function Profile() {
               </div>
             </div>
             <p className="text-[11px] text-muted mt-3 text-center">1 Private session = 2 Group sessions.</p>
+            {totalPrivateRemaining > 0 && (
+              <p className="text-[11px] text-purple-400 font-semibold text-center">Up to {totalGroupRemaining + totalPrivateRemaining * 2} as group.</p>
+            )}
             <ConversionRequestButton privateRemaining={totalPrivateRemaining} groupRemaining={totalGroupRemaining} />
           </div>
         ) : (
@@ -844,7 +848,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
                 {slot.session_type || 'Private'} Session
               </p>
               <p className="text-xs text-muted mb-3">
-                {slot.date} at {slot.time} — Court {slot.court}
+                {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court}
               </p>
               <div className="flex gap-2">
                 <button
@@ -870,7 +874,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-blue-400 uppercase">Payment Approved — Awaiting Schedule Approval ({paymentApproved.length})</p>
           {paymentApproved.map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-blue-400/5 border border-blue-400/20 text-xs text-muted">
-              {slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'Private'}
+              {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Private'}
             </div>
           ))}
         </div>
@@ -881,7 +885,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-amber-400 uppercase">Payment Pending Review ({paymentPending.length})</p>
           {paymentPending.map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-amber-400/5 border border-amber-400/20 text-xs text-muted">
-              {slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'Private'}
+              {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Private'}
             </div>
           ))}
         </div>
@@ -892,7 +896,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-emerald-400 uppercase">Confirmed Sessions ({playerConfirmed.length})</p>
           {playerConfirmed.sort((a, b) => b.date.localeCompare(a.date)).map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-emerald-400/5 border border-emerald-400/20 text-xs text-muted flex justify-between items-center">
-              <span>{slot.date} at {slot.time} — Court {slot.court} — {slot.session_type || 'Private'}</span>
+              <span>{slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Private'}</span>
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             </div>
           ))}
@@ -916,7 +920,7 @@ function SessionHistoryPanel({ slots, loading }) {
   if (loading) return null
   const pastSlots = slots
     .filter(s => s.date <= new Date().toISOString().slice(0, 10) || ['player_confirmed', 'cancelled', 'denied'].includes(s.status))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
+    .sort((a, b) => b.date.localeCompare(a.date) || canonTime(b.time).localeCompare(canonTime(a.time)))
   if (pastSlots.length === 0) return null
 
   return (
@@ -931,7 +935,7 @@ function SessionHistoryPanel({ slots, loading }) {
             <div key={slot.id} className="p-3 rounded-xl bg-surface/80 border border-theme flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-3">
                 <span className="font-bold text-theme">{slot.date}</span>
-                <span className="text-muted">{slot.time}</span>
+                <span className="text-muted">{formatSlotTime(slot.time)}</span>
                 <span className="text-muted">Court {slot.court}</span>
                 <span className="text-brand-text font-bold capitalize">{slot.session_type || 'Session'}</span>
               </div>

@@ -166,3 +166,48 @@
 - **Railway**: `mm-academy-api-production` connected to Supabase via pooler
 - **Local pg** (`localhost:5432/mmacademy`): legacy — no longer used for production
 - **JSON backend** (`server/data/academy.db.json`): legacy fallback — `DB_ENABLED` is `true` on Railway
+
+---
+
+## Session Polish & UX — Completed (2026-09-25)
+
+- [x] Logo component `src/components/Logo.jsx` + `public/images/logo-badge.png` — used in Navbar, Footer, LoginModal, Login, DeclineChoiceModal, Book (both themes verified)
+- [x] Unified time format `src/lib/time.js` (`canonTime`, `formatSlotTime` — handles range times like `10:00-12:00`) wired into 10 pages/components
+- [x] Reports totals fix: All-Time preset default, approved-only totals, "Received (Filtered)" — verified live (all = 96,400 EGP)
+- [x] Schedule Manager: per-cell dropdown menu + two-step delete confirm
+- [x] Scroll-to-top on route change (`ScrollToTop.jsx` in `Layout.jsx`)
+- [x] `oxlint` 0 new warnings, `vite build` clean
+
+---
+
+## Balance Integrity & UserDetail Rework — Completed (2026-09-25)
+
+- [x] **Phase 0 audit** — `scripts/balance-audit.js` (read-only): all stored balances correct (stored == FIFO for 33 players); bug was display-only (private counted 3× as group); 3 mis-attributed confirmed slots; orphan segments `john smith`/`jane doe`
+- [x] **True-total display** — `users.js` `enrichPlayer` + both `reports.js` builders + `dashboard.js`: `group_balance` = real credits, new `group_from_private`; UI notes in Reports/UserDetail/Profile; ScheduleManager group check now `grp + priv*2` — verified live (Titos 5 priv / 0 group / remaining 5 / fromPrivate 10)
+- [x] **Prod fixes applied** — `scripts/apply-balance-fixes.js` (validations, optimistic locks, tx, backups, audit rows):
+  - slot 216 `Eyad / Youssef` → `Eyad Dawish / Youssef Dawish` + 1 group deducted each (id11/id27: 4→3, `balance_status='deducted'`)
+  - slot 214 → `Ammar Abd El Ghany / Adham`
+  - orphan user 26 `Youssef` deleted (prod + local)
+  - slot 213 **skipped** — user rejected (Zein stays 6)
+  - first run rolled back cleanly on `audit_logs` column mismatch (`before`→`rec_before`), fixed + re-ran; 5 audit rows written
+- [x] **Post-fix verify** — audit re-run clean (stored == FIFO, no dupes), live API (Eyad 0/3, Youssef Dawish 0/3, bare Youssef gone, Titos 5/0), lint + build clean
+- [x] **UserDetail restructure** — Amount Owed + Total Paid moved to top; Remaining Private + Remaining Group merged into one `REMAINING PRIVATE / GROUP` card (`1P · 2G`, full-width on mobile); Balances panel full-width below
+
+---
+
+## Coach Hours Backfill — Completed (2026-09-25)
+
+- [x] Preflight: Coach Laila = `user_id 36`, Coach Omar = `user_id 37` (only coaches in system); zero existing rows for 2026-09-20..23
+- [x] Backup: `scripts/payments-backups/coach-daily-hours-2026-09-25T16-05-48.json` (13 rows)
+- [x] Inserted 7 rows + 7 `audit_logs` rows in one transaction (notes `Backfill 2026-09-25`, source `admin`):
+  - Laila (36): 09-20=7, 09-21=6, 09-22=6, 09-23=7 → **26h**
+  - Omar (37): 09-20=7, 09-22=6, 09-23=5 → **18h** (21-9 skipped per confirmation)
+- [x] API verify: `GET /reports/coach-hours?from=2026-09-20&to=2026-09-23` ASSERT PASS (26/18); `GET /reports/coach-balance` → Laila **73**, Omar **44** (all-time, paid 0)
+
+---
+
+## Data state right now (updated 2026-09-25)
+
+- **Player balances (prod):** Eyad Dawish 0/3, Youssef Dawish 0/3, Titos 5/0; totals 33 = 10 private + 23 group; remaining orphan segments: `zein`, `john smith`, `jane doe`
+- **Coach balances (prod):** Laila 73 earned / 0 paid; Omar 44 earned / 0 paid
+- **Audit trail:** 5 rows from balance fixes + 7 rows from coach backfill (2026-09-25)

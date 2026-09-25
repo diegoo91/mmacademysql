@@ -16,15 +16,9 @@ import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { COURTS } from '../data/siteConfig'
 import { PRICING, calculatePrice, perSessionRate } from '../data/pricingData'
+import { canonTime, formatSlotTime } from '../lib/time'
 
 const ALL_TIMES = ['14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00']
-
-const timeLabels = {
-  '14:00': '2:00–3:00', '15:00': '3:00–4:00', '16:00': '4:00–5:00',
-  '17:00': '5:00–6:00', '18:00': '6:00–7:00', '19:00': '7:00–8:00',
-  '20:00': '8:00–9:00', '21:00': '9:00–10:00', '22:00': '10:00–11:00',
-  '23:00': '11:00–12:00',
-}
 
 const SESSION_TYPES = [
   { value: 'private', label: 'Private Coaching', sub: '1-on-1 Personalised Coaching', tag: '1,000 / 3,600 / 7,000 / 10,800 / 14,000 EGP' },
@@ -73,7 +67,7 @@ export default function Book() {
         const map = new Map()
         for (const s of slots) {
           if (s.status !== 'available') {
-            map.set(`${s.date}|${s.time}|${s.court}`, s.player_text)
+              map.set(`${s.date}|${canonTime(s.time)}|${s.court}`, s.player_text)
           }
         }
         setBookedMap(map)
@@ -104,7 +98,7 @@ export default function Book() {
           time: sel.time,
           court: sel.court,
           date: daySelectedDate,
-          label: `${daySelectedDate} · ${timeLabels[sel.time]} · Court ${sel.court}`,
+          label: `${daySelectedDate} · ${formatSlotTime(sel.time)} · Court ${sel.court}`,
         }))
       : [],
     [mode, daySelections, daySelectedDate]
@@ -124,7 +118,7 @@ export default function Book() {
           date: dateStr,
           time: weekTime,
           court: 1,
-          label: `${dateStr} · ${timeLabels[weekTime]} · ${dayKey[0].toUpperCase() + dayKey.slice(1)}`,
+          label: `${dateStr} · ${formatSlotTime(weekTime)} · ${dayKey[0].toUpperCase() + dayKey.slice(1)}`,
         })
       }
     }
@@ -282,7 +276,7 @@ export default function Book() {
                       <div className="divide-y divide-theme">
                         {ALL_TIMES.map((time) => (
                           <div key={time} className="grid grid-cols-3 items-stretch">
-                            <div className="px-3 py-2 text-theme font-mono text-[11px] flex items-center bg-surface/80">{timeLabels[time]}</div>
+                            <div className="px-3 py-2 text-theme font-mono text-[11px] flex items-center bg-surface/80">{formatSlotTime(time)}</div>
                             {[1, 2].map((court) => {
                               const booked = isTimeBooked(daySelectedDate, time, court)
                               const selected = daySelections.has(`${time}|${court}`)
@@ -329,8 +323,8 @@ export default function Book() {
                     <div className="flex flex-wrap gap-2">
                       {ALL_TIMES.map((time) => (
                         <button key={time} onClick={() => setWeekTime(time)} className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${weekTime === time ? 'bg-brand text-white border-brand-text' : 'bg-surface text-theme border-theme/80 hover:border-brand-text/60'}`}>
-                          {timeLabels[time]}
-                        </button>
+                        {formatSlotTime(time)}
+                      </button>
                       ))}
                     </div>
                   </div>

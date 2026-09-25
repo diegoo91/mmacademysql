@@ -1,15 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Calendar as CalendarIcon, Check, Clock, Download, FileSpreadsheet, Plus, Trash2, Upload, X, ArrowRightLeft, Undo2, UserCheck, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar as CalendarIcon, Check, Clock, Download, Ellipsis, FileSpreadsheet, Plus, Trash2, Upload, X, ArrowRightLeft, Undo2, UserCheck, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import PlayerSearchInput from '../../components/PlayerSearchInput'
+import { TIME_LABELS, canonTime, formatSlotTime } from '../../lib/time'
 
-const TIME_LABELS = {
-  '14:00': '2:00–3:00', '15:00': '3:00–4:00', '16:00': '4:00–5:00',
-  '17:00': '5:00–6:00', '18:00': '6:00–7:00', '19:00': '7:00–8:00',
-  '20:00': '8:00–9:00', '21:00': '9:00–10:00', '22:00': '10:00–11:00',
-  '23:00': '11:00–12:00',
-}
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const ALL_TIMES = ['14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00']
 
@@ -41,6 +36,76 @@ function toLocalDateStr(d) {
 }
 function formatDateShort(d) { const [,m,day] = d.split('-'); return `${Number(day)}/${Number(m)}` }
 function getDayName(d) { return DAY_NAMES[new Date(d + 'T00:00:00').getDay()] }
+
+function CellActionMenu({ slot, onApprove, onAttend, onToggle, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [pos, setPos] = useState({ left: 0, top: 0 })
+
+  const openMenu = (e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const MENU_W = 176
+    const MENU_H = confirmDelete ? 120 : 210
+    let left = Math.min(r.right, window.innerWidth - MENU_W - 8)
+    let top = r.bottom + 4
+    if (top + MENU_H > window.innerHeight - 8) top = Math.max(8, r.top - MENU_H)
+    setPos({ left: Math.max(8, left), top })
+    setConfirmDelete(false)
+    setOpen(true)
+  }
+
+  const close = () => { setOpen(false); setConfirmDelete(false) }
+  const itemCls = 'w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold text-left hover:bg-black/10 dark:hover:bg-white/10 transition-colors'
+
+  return (
+    <>
+      <button onClick={openMenu} title="Slot actions" aria-label="Slot actions" className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 shrink-0 text-current opacity-60 hover:opacity-100">
+        <Ellipsis className="w-4 h-4" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={close} />
+          <div className="fixed z-50 w-44 rounded-xl bg-surface border border-theme shadow-2xl overflow-hidden py-1" style={{ left: pos.left, top: pos.top }} role="menu">
+            {confirmDelete ? (
+              <div className="p-3 space-y-2">
+                <p className="text-[11px] text-muted leading-snug">Permanently remove this slot from the schedule?</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { onDelete(); close() }} className="flex-1 px-2 py-1.5 rounded-lg bg-rose-500/15 text-rose-400 text-[11px] font-bold hover:bg-rose-500/25 border border-rose-400/30">Delete</button>
+                  <button onClick={() => setConfirmDelete(false)} className="flex-1 px-2 py-1.5 rounded-lg bg-surface border border-theme text-muted text-[11px] font-bold">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {slot.status === 'payment_approved' && (
+                  <button role="menuitem" onClick={() => { onApprove(); close() }} className={`${itemCls} text-emerald-400`}>
+                    <Check className="w-3.5 h-3.5" /> Approve
+                  </button>
+                )}
+                {slot.status === 'schedule_approved' && (
+                  <button role="menuitem" onClick={() => { onAttend(); close() }} className={`${itemCls} text-cyan-400`}>
+                    <UserCheck className="w-3.5 h-3.5" /> Mark Attended
+                  </button>
+                )}
+                {slot.status !== 'available' && slot.status !== 'player_confirmed' && (
+                  <button role="menuitem" onClick={() => { onToggle(); close() }} className={`${itemCls} text-amber-400`}>
+                    <ArrowRightLeft className="w-3.5 h-3.5" /> Toggle Private/Group
+                  </button>
+                )}
+                <button role="menuitem" onClick={() => { onEdit(); close() }} className={`${itemCls} text-blue-400`}>
+                  <CalendarIcon className="w-3.5 h-3.5" /> Edit
+                </button>
+                <div className="my-1 border-t border-theme" />
+                <button role="menuitem" onClick={() => setConfirmDelete(true)} className={`${itemCls} text-rose-400`}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
 
 export default function ScheduleManager() {
   const { isAdmin, isSuperAdmin } = useAuth()
@@ -164,18 +229,24 @@ export default function ScheduleManager() {
   }, [date])
   const weekTimes = useMemo(() => {
     const set = new Set()
-    for (const s of slots) set.add(s.time)
+    for (const s of slots) set.add(canonTime(s.time))
     return [...set].sort()
   }, [slots])
 
   const currentDaySlots = useMemo(() => {
     const daySlots = slotsByDate.get(date) || []
-    const times = [...new Set(daySlots.map(s => s.time))].sort()
-    return times.map(time => {
-      const c1 = daySlots.find(s => s.time === time && s.court === 1)
-      const c2 = daySlots.find(s => s.time === time && s.court === 2)
-      const c3 = daySlots.find(s => s.time === time && s.court === 3)
-      return { time, label: TIME_LABELS[time] || time, slot1: c1 || null, slot2: c2 || null, slot3: c3 || null }
+    const groups = new Map()
+    for (const s of daySlots) {
+      const k = canonTime(s.time)
+      if (!groups.has(k)) groups.set(k, [])
+      groups.get(k).push(s)
+    }
+    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([start, list]) => {
+      const rangeRaw = list.find(s => String(s.time).includes('-'))
+      const c1 = list.find(s => s.court === 1)
+      const c2 = list.find(s => s.court === 2)
+      const c3 = list.find(s => s.court === 3)
+      return { time: start, label: formatSlotTime(rangeRaw ? rangeRaw.time : start), slot1: c1 || null, slot2: c2 || null, slot3: c3 || null }
     })
   }, [date, slotsByDate])
 
@@ -277,8 +348,9 @@ export default function ScheduleManager() {
           if (!sp) continue
           const priv = sp.private_balance || 0
           const grp = sp.group_balance || 0
-          const hasEnough = stype === 'private' ? priv > 0 : grp > 0
-          if (!hasEnough) insufficient.push({ name: sp.full_name || sp.name, remaining: stype === 'private' ? priv : grp })
+          const grpAvail = grp + priv * 2
+          const hasEnough = stype === 'private' ? priv > 0 : grpAvail > 0
+          if (!hasEnough) insufficient.push({ name: sp.full_name || sp.name, remaining: stype === 'private' ? priv : grpAvail })
         }
         setPendingOverride({ payload: { ...addForm, player_text: joinedNames }, players: insufficient, sessionType: stype })
       } else {
@@ -381,25 +453,14 @@ export default function ScheduleManager() {
   const renderSlotActions = (slot) => {
     if (!canEdit || !slot) return null
     return (
-      <div className="flex gap-1 shrink-0">
-        {slot.status === 'payment_approved' && (
-          <button onClick={() => handleApproveSlot(slot.id)} className="p-0.5 text-emerald-400 hover:text-emerald-300" title="Approve">
-            <Check className="w-3 h-3" />
-          </button>
-        )}
-        {slot.status === 'schedule_approved' && (
-          <button onClick={() => handleMarkAttended(slot.id)} className="p-0.5 text-cyan-400 hover:text-cyan-300" title="Mark Attended (retroactive)">
-            <UserCheck className="w-3 h-3" />
-          </button>
-        )}
-        {slot.status !== 'available' && slot.status !== 'player_confirmed' && (
-          <button onClick={() => handleToggleType(slot)} className="p-0.5 text-slate-400 hover:text-amber-400" title="Toggle Private/Group">
-            <ArrowRightLeft className="w-3 h-3" />
-          </button>
-        )}
-        <button onClick={() => setEditSlot(slot)} className="p-0.5 text-slate-400 hover:text-blue-400" title="Edit"><CalendarIcon className="w-3 h-3" /></button>
-        <button onClick={() => handleDeleteSlot(slot.id)} className="p-0.5 text-slate-400 hover:text-rose-400" title="Delete"><Trash2 className="w-3 h-3" /></button>
-      </div>
+      <CellActionMenu
+        slot={slot}
+        onApprove={() => handleApproveSlot(slot.id)}
+        onAttend={() => handleMarkAttended(slot.id)}
+        onToggle={() => handleToggleType(slot)}
+        onEdit={() => setEditSlot(slot)}
+        onDelete={() => handleDeleteSlot(slot.id)}
+      />
     )
   }
 
@@ -598,13 +659,13 @@ export default function ScheduleManager() {
                     <div key={time} className="grid grid-cols-8 gap-3 py-2 items-center text-xs">
                         <div className="font-bold text-theme font-mono flex items-center gap-1.5 text-[11px]">
                         <Clock className="w-3.5 h-3.5 text-brand-text" />
-                        <span>{TIME_LABELS[time] || time}</span>
+                        <span>{formatSlotTime(time)}</span>
                       </div>
                        {weekDates.map(d => {
                         const daySlots = slotsByDate.get(d) || []
-                        const s1 = daySlots.find(x => x.time === time && x.court === 1)
-                        const s2 = daySlots.find(x => x.time === time && x.court === 2)
-                        const s3 = daySlots.find(x => x.time === time && x.court === 3)
+                        const s1 = daySlots.find(x => canonTime(x.time) === time && x.court === 1)
+                        const s2 = daySlots.find(x => canonTime(x.time) === time && x.court === 2)
+                        const s3 = daySlots.find(x => canonTime(x.time) === time && x.court === 3)
                         const empty = !s1 && !s2 && !s3
                         const hasSlots = s1 || s2 || s3
                         const statuses = [s1?.status, s2?.status, s3?.status].filter(Boolean)
@@ -701,7 +762,7 @@ export default function ScheduleManager() {
                     {scheduleUnknowns.map((u, i) => (
                       <div key={i} className="flex items-center gap-2 flex-wrap">
                         <span className="text-[11px] text-theme font-semibold">{u.name}</span>
-                        <span className="text-[10px] text-muted">{u.date} {u.time} Court {u.court}</span>
+                          <span className="text-[10px] text-muted">{u.date} {formatSlotTime(u.time)} Court {u.court}</span>
                         {creatingPlayer?.row === u.row && creatingPlayer?.name === u.name ? (
                           <div className="flex items-center gap-1 flex-wrap">
                             <input type="email" value={newPlayerEmail} onChange={e => setNewPlayerEmail(e.target.value)} placeholder="Email *" className="text-[11px] px-2 py-1 rounded-lg bg-surface border border-theme text-theme w-36" />
@@ -930,7 +991,7 @@ export default function ScheduleManager() {
 
 function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
   const existingParts = (slot.player_text || '').split(/\s*\/\s*/)
-  const [form, setForm] = useState({ player_text: existingParts[0] || '', date: slot.date, time: slot.time, court: slot.court, session_type: slot.session_type || null, coach_id: slot.coach_id || null })
+  const [form, setForm] = useState({ player_text: existingParts[0] || '', date: slot.date, time: canonTime(slot.time), court: slot.court, session_type: slot.session_type || null, coach_id: slot.coach_id || null })
   const [players, setPlayers] = useState(existingParts.length > 0 ? existingParts : [''])
   const [loading, setLoading] = useState(false)
   const [pendingOverride, setPendingOverride] = useState(null)

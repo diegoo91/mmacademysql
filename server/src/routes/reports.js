@@ -20,6 +20,9 @@ router.get('/summary', requireRole('superadmin', 'admin'), async (req, res) => {
       rangeFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
       rangeTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    } else if (preset === 'all') {
+      rangeFrom = null
+      rangeTo = null
     }
 
     const allBookings = await db.findAll('bookings')
@@ -45,11 +48,14 @@ router.get('/summary', requireRole('superadmin', 'admin'), async (req, res) => {
     let standalonePayments = await db.findAll('payments')
     if (rangeFrom) standalonePayments = standalonePayments.filter(p => p.date >= rangeFrom)
     if (rangeTo) standalonePayments = standalonePayments.filter(p => p.date <= rangeTo)
-    const mappedStandalone = standalonePayments.map(p => ({
-      id: 'pay-' + p.id, ref: p.ref, date: p.date,
-      player: p.player_name, amount: Number(p.amount) || 0,
-      session_type: p.method, status: 'paid', paid: true,
-    }))
+    const mappedStandalone = standalonePayments.map(p => {
+      const approved = p.status === 'payment_approved'
+      return {
+        id: 'pay-' + p.id, ref: p.ref, date: p.date,
+        player: p.player_name, amount: Number(p.amount) || 0,
+        session_type: p.method, status: approved ? 'paid' : (p.status || 'pending'), paid: approved,
+      }
+    })
     const allPayments = [...payments, ...mappedStandalone]
 
     let allSlots = await db.findAll('slots')
@@ -142,7 +148,8 @@ router.get('/summary', requireRole('superadmin', 'admin'), async (req, res) => {
     if (rangeFrom) expenses = expenses.filter(e => e.date >= rangeFrom)
     if (rangeTo) expenses = expenses.filter(e => e.date <= rangeTo)
 
-    const totalRevenue = allPayments.reduce((s, p) => s + p.amount, 0)
+    const totalRevenue = payments.reduce((s, p) => s + p.amount, 0)
+      + standalonePayments.filter(p => p.status === 'payment_approved').reduce((s, p) => s + (Number(p.amount) || 0), 0)
     const totalExpenses = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)
 
     let newPlayers = 0
@@ -194,6 +201,9 @@ router.get('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) 
       rangeFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
       rangeTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    } else if (preset === 'all') {
+      rangeFrom = null
+      rangeTo = null
     }
 
     let allHours = await db.findAll('coach_daily_hours')
@@ -392,7 +402,8 @@ router.get('/remaining-sessions', requireRole('superadmin', 'admin'), async (req
       const fresh = await ensureCycleFresh(p, { notify: true })
       const u = fresh || p
       const priv = effectivePrivate(u)
-      const grp = effectiveGroupBalance(u)
+      const grpFromPriv = priv * 2
+      const grp = Math.max(0, effectiveGroupBalance(u) - grpFromPriv)
       if (priv <= 0 && grp <= 0) continue
       const monthly = monthlyDisplay(u)
       withBalance.push({
@@ -402,6 +413,7 @@ router.get('/remaining-sessions', requireRole('superadmin', 'admin'), async (req
         phone: u.phone,
         private_balance: priv,
         group_balance: grp,
+        group_from_private: grpFromPriv,
         cycle_private: monthly.private,
         cycle_group: monthly.group,
         cycle_expires_at: monthly.expires_at,
@@ -434,6 +446,9 @@ function resolveRange(from, to, preset) {
     rangeFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     rangeTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  } else if (preset === 'all') {
+    rangeFrom = null
+    rangeTo = null
   }
   return { rangeFrom, rangeTo }
 }
@@ -462,11 +477,14 @@ async function buildSummaryPayload(rangeFrom, rangeTo, preset) {
   let standalonePayments = await db.findAll('payments')
   if (rangeFrom) standalonePayments = standalonePayments.filter(p => p.date >= rangeFrom)
   if (rangeTo) standalonePayments = standalonePayments.filter(p => p.date <= rangeTo)
-  const mappedStandalone = standalonePayments.map(p => ({
-    id: 'pay-' + p.id, ref: p.ref, date: p.date,
-    player: p.player_name, amount: Number(p.amount) || 0,
-    session_type: p.method, status: 'paid', paid: true,
-  }))
+  const mappedStandalone = standalonePayments.map(p => {
+    const approved = p.status === 'payment_approved'
+    return {
+      id: 'pay-' + p.id, ref: p.ref, date: p.date,
+      player: p.player_name, amount: Number(p.amount) || 0,
+      session_type: p.method, status: approved ? 'paid' : (p.status || 'pending'), paid: approved,
+    }
+  })
   const allPayments = [...payments, ...mappedStandalone]
 
   let allSlots = await db.findAll('slots')
@@ -549,7 +567,8 @@ async function buildSummaryPayload(rangeFrom, rangeTo, preset) {
   if (rangeFrom) expenses = expenses.filter(e => e.date >= rangeFrom)
   if (rangeTo) expenses = expenses.filter(e => e.date <= rangeTo)
 
-  const totalRevenue = allPayments.reduce((s, p) => s + p.amount, 0)
+  const totalRevenue = payments.reduce((s, p) => s + p.amount, 0)
+    + standalonePayments.filter(p => p.status === 'payment_approved').reduce((s, p) => s + (Number(p.amount) || 0), 0)
   const totalExpenses = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)
 
   let newPlayers = 0
@@ -592,13 +611,15 @@ async function buildRemainingSessions() {
     const fresh = await ensureCycleFresh(p, { notify: false })
     const u = fresh || p
     const priv = effectivePrivate(u)
-    const grp = effectiveGroupBalance(u)
+    const grpFromPriv = priv * 2
+    const grp = Math.max(0, effectiveGroupBalance(u) - grpFromPriv)
     if (priv <= 0 && grp <= 0) continue
     const monthly = monthlyDisplay(u)
     out.push({
       name: u.name,
       private_balance: priv,
       group_balance: grp,
+      group_from_private: grpFromPriv,
       cycle_private: monthly.private,
       cycle_group: monthly.group,
       cycle_expires_at: monthly.expires_at,
@@ -661,11 +682,13 @@ router.get('/full-export', requireRole('superadmin', 'admin'), async (req, res) 
 
     const rangeLabel = preset === 'custom'
       ? `${from || 'start'} to ${to || 'end'}`
-      : preset === 'month'
-        ? `${rangeFrom} to ${rangeTo} (full calendar month)`
-        : preset === 'week'
-          ? `${rangeFrom} to ${rangeTo} (rolling 7 days)`
-          : `${rangeFrom || 'all'} to ${rangeTo || 'all'}`
+      : preset === 'all'
+        ? 'All Time'
+        : preset === 'month'
+          ? `${rangeFrom} to ${rangeTo} (full calendar month)`
+          : preset === 'week'
+            ? `${rangeFrom} to ${rangeTo} (rolling 7 days)`
+            : `${rangeFrom || 'all'} to ${rangeTo || 'all'}`
 
     addSheet(wb, 'Summary', [
       { key: 'Metric', width: 28 }, { key: 'Value', width: 24 },

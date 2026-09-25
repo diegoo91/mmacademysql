@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRightLeft, DollarSign, Download, Edit, History, Key, Lock, Mail, Phone, Plus, Settings2, Shield, Trash2, Unlock, AlertCircle, CheckCircle2, X } from 'lucide-react'
 import { api } from '../../lib/api'
+import { formatSlotTime } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
 import { UserModal, ConvertModal, HistoryModal, TransferModal } from './Users'
 
@@ -431,23 +432,7 @@ export default function UserDetail() {
 
       {isPlayer && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[
-              { label: 'Used Sessions', value: user.used_sessions ?? 0, cls: 'text-brand-text' },
-              { label: 'Used Private', value: user.used_private ?? 0, cls: 'text-blue-400' },
-              { label: 'Used Group', value: user.used_group ?? 0, cls: 'text-purple-400' },
-              { label: 'Remaining Private', value: user.private_balance ?? 0, cls: 'text-brand-text' },
-              { label: 'Remaining Group', value: user.group_balance ?? 0, cls: 'text-purple-400' },
-              { label: 'This Month Private', value: user.cycle_private ?? 0, cls: 'text-brand-text' },
-            ].map(s => (
-              <div key={s.label} className="glass-panel rounded-2xl p-4 border border-theme text-center">
-                <p className={`font-heading text-2xl font-black ${s.cls}`}>{s.value}</p>
-                <p className="text-[10px] text-muted uppercase tracking-wider mt-1 font-semibold">{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className={`glass-panel rounded-2xl p-5 border ${amountOwed > 0 ? 'border-amber-400/40 bg-amber-400/5' : 'border-theme'}`}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-xl bg-amber-400/10"><DollarSign className="w-5 h-5 text-amber-400" /></div>
@@ -470,35 +455,68 @@ export default function UserDetail() {
               <p className="font-heading text-3xl font-black text-theme">EGP {totalPaid.toLocaleString()}</p>
               <p className="text-[10px] text-muted mt-2">{payments.length} payment{payments.length !== 1 ? 's' : ''} on record</p>
             </div>
-            <div className="glass-panel rounded-2xl p-5 border border-theme">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-xl bg-brand/10"><History className="w-5 h-5 text-brand-text" /></div>
-                <span className="text-xs font-bold text-muted uppercase">Balances</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[
+              { label: 'Used Sessions', value: user.used_sessions ?? 0, cls: 'text-brand-text' },
+              { label: 'Used Private', value: user.used_private ?? 0, cls: 'text-blue-400' },
+              { label: 'Used Group', value: user.used_group ?? 0, cls: 'text-purple-400' },
+              {
+                label: 'Remaining Private / Group',
+                cls: '',
+                full: true,
+                value: (
+                  <span>
+                    <span className="text-brand-text">{user.private_balance ?? 0}P</span>
+                    <span className="text-muted"> · </span>
+                    <span className="text-purple-400">{user.group_balance ?? 0}G</span>
+                  </span>
+                ),
+              },
+              { label: 'This Month Private', value: user.cycle_private ?? 0, cls: 'text-brand-text' },
+            ].map(s => (
+              <div key={s.label} className={`glass-panel rounded-2xl p-4 border border-theme text-center ${s.full ? 'col-span-2 sm:col-span-1' : ''}`}>
+                <p className={`font-heading text-2xl font-black ${s.cls}`}>{s.value}</p>
+                <p className="text-[10px] text-muted uppercase tracking-wider mt-1 font-semibold">{s.label}</p>
               </div>
-              <div className="space-y-1.5 mt-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted">Private remaining</span>
-                  <span className="font-black text-brand-text">{user.private_balance ?? 0}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted">Group remaining</span>
-                  <span className="font-black text-purple-400">{user.group_balance ?? 0}</span>
-                </div>
-                <div className="flex justify-between text-sm border-t border-theme pt-1.5 mt-1.5">
-                  <span className="text-muted">This month P / G</span>
-                  <span className="font-black text-brand-text">{user.cycle_private ?? 0} / {user.cycle_group ?? 0}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted">Carryover P / G</span>
-                  <span className="font-black text-muted">{user.legacy_private ?? 0} / {user.legacy_group ?? 0}</span>
-                </div>
-                {user.cycle_expires_at && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted">Package expires</span>
-                    <span className="font-bold text-amber-400">{new Date(user.cycle_expires_at).toLocaleDateString()}</span>
-                  </div>
-                )}
+            ))}
+          </div>
+
+          <div className="glass-panel rounded-2xl p-5 border border-theme">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-xl bg-brand/10"><History className="w-5 h-5 text-brand-text" /></div>
+              <span className="text-xs font-bold text-muted uppercase">Balances</span>
+            </div>
+            <div className="space-y-1.5 mt-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Private remaining</span>
+                <span className="font-black text-brand-text">{user.private_balance ?? 0}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Group remaining</span>
+                <span className="font-black text-purple-400">{user.group_balance ?? 0}</span>
+              </div>
+              {(user.group_from_private ?? 0) > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">Available as group</span>
+                  <span className="font-black text-purple-400">{(user.group_balance ?? 0) + user.group_from_private}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm border-t border-theme pt-1.5 mt-1.5">
+                <span className="text-muted">This month P / G</span>
+                <span className="font-black text-brand-text">{user.cycle_private ?? 0} / {user.cycle_group ?? 0}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted">Carryover P / G</span>
+                <span className="font-black text-muted">{user.legacy_private ?? 0} / {user.legacy_group ?? 0}</span>
+              </div>
+              {user.cycle_expires_at && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Package expires</span>
+                  <span className="font-bold text-amber-400">{new Date(user.cycle_expires_at).toLocaleDateString()}</span>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -604,7 +622,7 @@ export default function UserDetail() {
                   {sessions.map((s, i) => (
                     <tr key={i} className="text-theme">
                       <td className="px-3 py-2.5">{s.date}</td>
-                      <td className="px-3 py-2.5 font-mono">{s.time}</td>
+                        <td className="px-3 py-2.5 font-mono">{formatSlotTime(s.time)}</td>
                       <td className="px-3 py-2.5">Court {s.court}</td>
                       <td className="px-3 py-2.5">
                         <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${s.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>

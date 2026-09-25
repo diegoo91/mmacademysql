@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Lock, Mail, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import Logo from './Logo'
 
 export default function LoginModal() {
   const { isLoginModalOpen, closeLoginModal, login } = useAuth()
@@ -76,9 +77,7 @@ export default function LoginModal() {
         </button>
 
         <div className="text-center mb-6">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-brand-text/80 shadow-lg shadow-brand/20 mx-auto mb-3 bg-surface flex items-center justify-center p-1">
-            <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="MM Padel Academy Logo" className="w-full h-full object-contain" />
-          </div>
+          <Logo className="w-16 h-16 rounded-2xl border-2 border-brand-text/80 shadow-lg shadow-brand/20 mx-auto mb-3" />
           <h3 className="text-2xl font-bold font-heading text-theme">Welcome Back</h3>
           <p className="text-sm text-muted mt-1">Access your MM Padel Academy member portal</p>
         </div>

@@ -28,6 +28,7 @@ function DateRangeSelector({ preset, setPreset, from, setFrom, to, setTo }) {
           {[
             { id: 'week', label: 'This Week' },
             { id: 'month', label: 'Full Month' },
+            { id: 'all', label: 'All Time' },
             { id: 'custom', label: 'Custom' },
           ].map(opt => (
           <button key={opt.id} onClick={() => setPreset(opt.id)} className={`px-4 py-2 rounded-xl font-extrabold text-xs transition-all ${
@@ -336,7 +337,10 @@ export default function Reports() {
                       <div className="w-8 h-8 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-xs">{p.name?.charAt(0)}</div>
                       <div>
                         <span className="font-semibold text-theme text-sm">{p.name}</span>
-                        <div className="text-[10px] text-muted">{p.private_balance} private + {p.group_balance} group</div>
+                        <div className="text-[10px] text-muted">
+                          {p.private_balance} private + {p.group_balance} group
+                          {(p.group_from_private ?? 0) > 0 && <span> · up to {p.group_balance + p.group_from_private} as group</span>}
+                        </div>
                       </div>
                     </div>
                     <span className="px-3 py-1 rounded-full bg-brand/10 text-brand-text text-xs font-bold">{p.remaining_sessions} left</span>

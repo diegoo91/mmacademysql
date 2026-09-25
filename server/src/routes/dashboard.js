@@ -34,12 +34,14 @@ router.get('/', async (req, res) => {
       const fresh = await ensureCycleFresh(u, { notify: false })
       const usr = fresh || u
       const priv = effectivePrivate(usr)
-      const grp = effectiveGroupBalance(usr)
+      const grpFromPriv = priv * 2
+      const grp = Math.max(0, effectiveGroupBalance(usr) - grpFromPriv)
       if (priv > 0 || grp > 0) {
         sessionCredits.push({
           name: usr.name,
           private_balance: priv,
           group_balance: grp,
+          group_from_private: grpFromPriv,
           cycle_private: usr.cycle_private || 0,
           cycle_group: usr.cycle_group || 0,
           cycle_expires_at: usr.cycle_expires_at || null,

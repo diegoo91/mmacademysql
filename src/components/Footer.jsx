@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowUpRight, Clock, Globe, MapPin, MessageCircle, Phone, Share2 } from 'lucide-react'
 import { CONTACT } from '../data/siteConfig'
 import { useAuth } from '../context/AuthContext'
+import Logo from './Logo'
 
 export default function Footer() {
   const mapsUrl = CONTACT.mapsUrl
@@ -13,9 +14,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pb-12 border-b border-theme">
           <div className="space-y-4">
             <Link to="/" className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl overflow-hidden border-2 border-brand-text/80 shadow-lg shadow-brand/20 bg-surface shrink-0 flex items-center justify-center p-0.5">
-                <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="MM Padel Academy Logo" className="w-full h-full object-contain" />
-              </div>
+              <Logo className="w-12 h-12 rounded-xl border-2 border-brand-text/80 shadow-lg shadow-brand/20" />
               <span className="font-heading text-lg font-extrabold text-theme">
                 MM <span className="text-brand-text">PADEL</span> ACADEMY
               </span>

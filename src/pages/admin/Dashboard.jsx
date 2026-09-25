@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowRightLeft, BarChart3, Calendar, CheckCircle2, Clock, FileUp, RefreshCw, Send, TrendingUp, Users, UserX, XCircle } from 'lucide-react'
 import { api } from '../../lib/api'
+import { formatSlotTime } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
 
 function StatCard({ icon: Icon, label, value, color = 'lime' }) {
@@ -195,7 +196,7 @@ export default function Dashboard() {
                           ? 'bg-blue-400/10 text-blue-400 border-blue-400/20'
                           : 'bg-purple-400/10 text-purple-400 border-purple-400/20'
                       }`}>
-                        <span>{s.time}</span>
+                          <span>{formatSlotTime(s.time)}</span>
                         <span>C{s.court}</span>
                         {s.player_text && <span className="opacity-70">· {s.player_text.length > 15 ? s.player_text.slice(0, 15) + '…' : s.player_text}</span>}
                       </span>
