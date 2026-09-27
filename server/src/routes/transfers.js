@@ -2,6 +2,7 @@ import { Router } from 'express'
 import db from '../db.js'
 import { requireRole } from '../middleware/rbac.js'
 import { auditLog } from '../middleware/audit.js'
+import { planSettlement } from '../utils/cycle.js'
 
 const router = Router()
 
@@ -66,14 +67,17 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
       }
     }
 
-    // Credit to receiver
-    let newToPriv = toBalance
-    let newToGrp = toGroup
-    if (session_type === 'private') {
-      newToPriv = toBalance + count
-    } else {
-      newToGrp = toGroup + count
-    }
+    // Credit to receiver — settle the receiver's negative legacy debt first
+    // (same rule as payments: own bucket, then cross at 1P = 2G), remainder
+    // lands in legacy carryover as before.
+    const plan = planSettlement(
+      session_type === 'private' ? count : 0,
+      session_type === 'group' ? count : 0,
+      toBalance,
+      toGroup,
+    )
+    const newToPriv = toBalance + plan.settled_private + plan.credited_private
+    const newToGrp = toGroup + plan.settled_group + plan.credited_group
 
     await db.transaction(async (tx) => {
       await tx.update('users', from_player_id, { private_balance: newFromPriv, group_balance: newFromGrp })
@@ -92,11 +96,20 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
         created_by: req.user?.id || null,
       })
 
-      await auditLog(req, 'session_transfer', 'session_transfers', transfer.id, null, transfer)
+      await auditLog(req, 'session_transfer', 'session_transfers', transfer.id, null, {
+        ...transfer,
+        settlement: {
+          settled_private: plan.settled_private,
+          settled_group: plan.settled_group,
+          credited_private: plan.credited_private,
+          credited_group: plan.credited_group,
+        },
+      })
     })
 
     res.json({
       ok: true,
+      settlement: plan,
       transfer: {
         from: { id: from_player_id, name: fromPlayer.name, new_private: newFromPriv, new_group: newFromGrp },
         to: { id: to_player_id, name: toPlayer.name, new_private: newToPriv, new_group: newToGrp },
