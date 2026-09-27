@@ -4,6 +4,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { computeUnpaidPlayers } from '../utils/sessionPaid.js'
+import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const router = Router()
 router.use(authenticate)
@@ -316,8 +317,10 @@ router.put('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) 
     const existing = await db.find('coach_daily_hours', h => h.coach_id === coach_id && h.date === date)
     if (existing) {
       await db.update('coach_daily_hours', existing.id, { hours, notes: notes || existing.notes, updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19) })
+      await auditUpdate(req, 'coach_daily_hours', existing.id, { hours: existing.hours, notes: existing.notes }, { hours, notes: notes || existing.notes })
     } else {
-      await db.insert('coach_daily_hours', { coach_id, date, hours, notes: notes || '', source: 'admin', created_by: req.user?.id || req.user?.user_id })
+      const created = await db.insert('coach_daily_hours', { coach_id, date, hours, notes: notes || '', source: 'admin', created_by: req.user?.id || req.user?.user_id })
+      await auditCreate(req, 'coach_daily_hours', created.id, { coach_id, date, hours, notes: notes || '' })
     }
 
     res.json({ ok: true })
@@ -330,7 +333,11 @@ router.put('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) 
 // DELETE /admin/coach-hours/:id — admin: remove a daily hour record
 router.delete('/coach-hours/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
+    const before = await db.get('coach_daily_hours', req.params.id)
     const removed = await db.remove('coach_daily_hours', req.params.id)
+    if (removed && before) {
+      await auditDelete(req, 'coach_daily_hours', before.id, { coach_id: before.coach_id, date: before.date, hours: before.hours, notes: before.notes })
+    }
     res.json({ ok: removed })
   } catch (err) {
     console.error('Delete coach hours error:', err)
@@ -349,6 +356,7 @@ router.post('/coach-payments', requireRole('superadmin', 'admin'), async (req, r
       coach_id, date, hours_deducted, amount: amount || 0, notes: notes || '',
       created_by: req.user?.id || req.user?.user_id,
     })
+    await auditCreate(req, 'coach_payments', rec.id, { coach_id, date, hours_deducted, amount: amount || 0, notes: notes || '' })
     res.json({ ok: true, payment: rec })
   } catch (err) {
     console.error('Create coach payment error:', err)
@@ -373,7 +381,11 @@ router.get('/coach-payments', requireRole('superadmin', 'admin'), async (req, re
 // DELETE /admin/coach-payments/:id — admin: remove a coach payment record
 router.delete('/coach-payments/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
+    const before = await db.get('coach_payments', req.params.id)
     const removed = await db.remove('coach_payments', req.params.id)
+    if (removed && before) {
+      await auditDelete(req, 'coach_payments', before.id, { coach_id: before.coach_id, date: before.date, hours_deducted: before.hours_deducted, amount: before.amount, notes: before.notes })
+    }
     res.json({ ok: removed })
   } catch (err) {
     console.error('Delete coach payments error:', err)

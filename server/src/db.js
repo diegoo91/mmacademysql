@@ -10,8 +10,50 @@
 // `opts.orderBy` accepts [[col, dir], ...] or a legacy comparator function.
 import legacyDb from './database.js'
 import { getKnex, now, stamp, DB_ENABLED } from './sql.js'
+import { currentActorId } from './actor.js'
 
 export const isSql = () => DB_ENABLED
+
+// ---------------------------------------------------------------------------
+// Actor columns (created_by / updated_by)
+// Which tables actually expose them is read once from information_schema so a
+// schema change can never make writes fail with "column does not exist".
+// ---------------------------------------------------------------------------
+let ACTOR_COLUMNS = null
+
+export async function loadActorColumns() {
+  if (ACTOR_COLUMNS) return ACTOR_COLUMNS
+  const map = Object.create(null)
+  if (DB_ENABLED) {
+    try {
+      const res = await getKnex().raw(
+        "SELECT table_name, column_name FROM information_schema.columns " +
+        "WHERE table_schema = 'public' AND column_name IN ('created_by','updated_by')"
+      )
+      for (const r of res.rows) {
+        if (!map[r.table_name]) map[r.table_name] = Object.create(null)
+        map[r.table_name][r.column_name] = true
+      }
+    } catch (err) {
+      console.warn('loadActorColumns failed (actor columns disabled):', err.message)
+    }
+  }
+  ACTOR_COLUMNS = map
+  return map
+}
+
+// Mirrors mysql-adapter withAuditCols: created_by on insert, updated_by on both.
+// An explicit value in the payload always wins.
+async function applyActorCols(table, row, isInsert) {
+  const cols = await loadActorColumns()
+  const on = cols[table]
+  if (!on) return row
+  const actor = currentActorId()
+  if (actor === null || actor === undefined) return row
+  if (isInsert && on.created_by && row.created_by === undefined) row.created_by = actor
+  if (on.updated_by && row.updated_by === undefined) row.updated_by = actor
+  return row
+}
 
 export const TABLES = [
   'users', 'results', 'slots', 'bookings', 'import_batches', 'comments',
@@ -292,7 +334,7 @@ function pgApi(trx) {
       return row ? normalizeFromPg(table, row) : null
     },
     async insert(table, record) {
-      const row = normalizeForPg(table, stamp(record, true))
+      const row = normalizeForPg(table, await applyActorCols(table, stamp(record, true), true))
       // Remove auto-generated PK before insert
       const pk = PG_PK[table]
       if (pk && (row[pk] === undefined || row[pk] === null)) delete row[pk]
@@ -302,13 +344,14 @@ function pgApi(trx) {
     },
     async insertMany(table, records) {
       if (!records.length) return 0
-      const rows = records.map((r) => {
-        const row = normalizeForPg(table, stamp(r, true))
+      const rows = []
+      for (const r of records) {
+        const row = normalizeForPg(table, await applyActorCols(table, stamp(r, true), true))
         const pk = PG_PK[table]
         if (pk && (row[pk] === undefined || row[pk] === null)) delete row[pk]
         if (!pk && (row.id === undefined || row.id === null)) delete row.id
-        return row
-      })
+        rows.push(row)
+      }
       for (let i = 0; i < rows.length; i += 100) {
         await q(table).insert(rows.slice(i, i + 100))
       }
@@ -320,6 +363,7 @@ function pgApi(trx) {
       delete row.updated_at; delete row.created_at; delete row.id
       const pk = PG_PK[table]
       if (pk) delete row[pk]
+      await applyActorCols(table, row, false)
       await q(table).where(whereId(table, id)).update(row)
       return this.get(table, id)
     },

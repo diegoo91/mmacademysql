@@ -32,7 +32,8 @@ import guestBookingRequestsRoutes from './routes/guest-booking-requests.js'
 import { ensureAdmin } from './ensure-admin.js'
 import { autoAudit } from './middleware/auto-audit.js'
 import { SYSTEM_ROLES } from './utils/modules.js'
-import db from './db.js'
+import db, { loadActorColumns } from './db.js'
+import { runWithActor } from './actor.js'
 
 const app = express()
 const PORT = process.env.PORT || 5174
@@ -79,6 +80,9 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '5mb' }))
 app.use(cookieParser())
+// One actor context per request: authenticate() fills it in, db.js reads it
+// when stamping created_by/updated_by.
+app.use((req, res, next) => runWithActor({ userId: null }, () => next()))
 app.use('/uploads', express.static(join(__dirname, '..', 'data', 'uploads')))
 
 // Per-endpoint rate limits
@@ -284,6 +288,32 @@ try {
   }
 } catch (err) {
   console.log('Migration check for push_subscriptions skipped:', err.message)
+}
+
+// Migration: created_by/updated_by parity — coach_daily_hours, coach_payments
+// and session_transfers only carry created_by. Safe idempotent.
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    for (const table of ['coach_daily_hours', 'coach_payments', 'session_transfers']) {
+      if (await knex.schema.hasTable(table) && !(await knex.schema.hasColumn(table, 'updated_by'))) {
+        await knex.schema.alterTable(table, (t) => t.integer('updated_by'))
+        console.log(`Migration: added ${table}.updated_by`)
+      }
+    }
+  }
+} catch (err) {
+  console.log('Migration for updated_by columns skipped:', err.message)
+}
+
+// Cache which tables expose created_by/updated_by (information_schema, once).
+try {
+  const cols = await loadActorColumns()
+  const tables = Object.keys(cols)
+  console.log(`Actor columns ready: ${tables.length} tables (${tables.join(', ')})`)
+} catch (err) {
+  console.log('Actor column load skipped:', err.message)
 }
 
 // ── Monthly cycle sweep (lazy expiry + upcoming notices) ──────────

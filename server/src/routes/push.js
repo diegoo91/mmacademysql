@@ -2,6 +2,7 @@ import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { getVapidPublicKey, pushEnabled, saveSubscription, removeSubscription } from '../utils/push.js'
+import { auditCreate, auditDelete } from '../middleware/audit.js'
 
 const router = Router()
 
@@ -32,6 +33,7 @@ router.post('/subscribe', async (req, res) => {
       return res.status(400).json({ error: 'Invalid subscription payload' })
     }
     const row = await saveSubscription(req.user.id, { endpoint, keys }, req.headers['user-agent'])
+    await auditCreate(req, 'push_subscription', row?.id ?? null, { endpoint, user_agent: req.headers['user-agent'] })
     res.json({ ok: true, id: row?.id ?? null })
   } catch (err) {
     console.error('Push subscribe error:', err)
@@ -44,6 +46,7 @@ router.post('/unsubscribe', async (req, res) => {
     const { endpoint } = req.body || {}
     if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' })
     await removeSubscription(req.user.id, endpoint)
+    await auditDelete(req, 'push_subscription', null, { endpoint })
     res.json({ ok: true })
   } catch (err) {
     console.error('Push unsubscribe error:', err)

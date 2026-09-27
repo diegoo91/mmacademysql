@@ -1,5 +1,6 @@
 import { verifyAccessToken } from '../utils/tokens.js'
 import db from '../db.js'
+import { setActor } from '../actor.js'
 
 export async function authenticate(req, res, next) {
   const header = req.headers.authorization
@@ -15,6 +16,7 @@ export async function authenticate(req, res, next) {
     }
     const { password_hash, ...safe } = user
     req.user = safe
+    setActor(safe.id)
     next()
   } catch (err) {
     if (err?.status) return res.status(err.status).json({ error: err.message })
@@ -31,6 +33,7 @@ export async function optionalAuth(req, res, next) {
     if (user) {
       const { password_hash, ...safe } = user
       req.user = safe
+      setActor(safe.id)
     }
   } catch { /* ignore */ }
   next()

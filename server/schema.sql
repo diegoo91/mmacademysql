@@ -447,6 +447,7 @@ CREATE TABLE coach_daily_hours (
     notes TEXT DEFAULT '',
     source VARCHAR(32) DEFAULT 'manual',
     created_by INT,
+    updated_by INT,
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now(),
     UNIQUE (coach_id, date)
@@ -461,6 +462,7 @@ CREATE TABLE coach_payments (
     amount NUMERIC DEFAULT 0,
     notes TEXT DEFAULT '',
     created_by INT,
+    updated_by INT,
     created_at TIMESTAMP DEFAULT now()
 );
 
@@ -477,6 +479,7 @@ CREATE TABLE session_transfers (
     to_balance_after INT,
     notes TEXT,
     created_by INT REFERENCES users(user_id),
+    updated_by INT REFERENCES users(user_id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
