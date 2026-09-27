@@ -27,6 +27,8 @@ dist-ssr
 # Server secrets and data
 .env
 server/.env
+server/.env.bak*
+server/.env.local*
 server/academy.db.json
 server/data/academy.db.json
 server/data/uploads/
@@ -43,6 +45,8 @@ server/backups/
 !server/migrations/*.sql
 mysql-export/
 backup_*.dmp
+supabase-export/
+scripts/payments-backups/
 
 # Spreadsheet files (may contain credentials)
 *.xlsx

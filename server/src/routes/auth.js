@@ -81,7 +81,7 @@ router.post('/signup', async (req, res) => {
     await createSession(user.id, refreshToken, expiresAt)
     res.cookie('refreshToken', refreshToken, cookieOptions(REFRESH_MAX_AGE))
     await auditCreate(req, 'user', user.id, { name, email, role: 'player', skill_level: skillLevel || 'Intermediate' })
-    res.json({ user: safe, accessToken })
+    res.json({ user: safe, accessToken, refreshToken })
   } catch (err) {
     console.error('Signup error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -112,7 +112,7 @@ router.post('/login', checkLoginLockout, async (req, res) => {
     const { token: refreshToken, expiresAt } = signRefreshToken(safe)
     await createSession(user.id, refreshToken, expiresAt)
     res.cookie('refreshToken', refreshToken, cookieOptions(REFRESH_MAX_AGE))
-    res.json({ user: safe, accessToken })
+    res.json({ user: safe, accessToken, refreshToken })
   } catch (err) {
     console.error('Login error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -121,7 +121,7 @@ router.post('/login', checkLoginLockout, async (req, res) => {
 
 router.post('/refresh', async (req, res) => {
   try {
-    const token = req.cookies?.refreshToken
+    const token = req.body?.refreshToken || req.cookies?.refreshToken
     if (!token) return res.status(401).json({ error: 'No refresh token' })
 
     const session = await findActiveSession(token)
@@ -154,14 +154,14 @@ router.post('/refresh', async (req, res) => {
     const { token: newRefresh, expiresAt } = signRefreshToken(safe)
     await createSession(user.id, newRefresh, expiresAt)
     res.cookie('refreshToken', newRefresh, cookieOptions(REFRESH_MAX_AGE))
-    res.json({ user: safe, accessToken })
+    res.json({ user: safe, accessToken, refreshToken: newRefresh })
   } catch {
     return res.status(401).json({ error: 'Invalid refresh token' })
   }
 })
 
 router.post('/logout', async (req, res) => {
-  const token = req.cookies?.refreshToken
+  const token = req.body?.refreshToken || req.cookies?.refreshToken
   if (token) {
     try {
       await deactivateSession(token)

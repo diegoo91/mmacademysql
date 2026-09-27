@@ -4,12 +4,14 @@ import Navbar from './Navbar'
 import Footer from './Footer'
 import LoginModal from './LoginModal'
 import ScrollToTop from './ScrollToTop'
+import A2HSBanner from './A2HSBanner'
 
 export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col bg-theme text-theme font-sans selection:bg-brand selection:text-white">
       <ScrollToTop />
       <Navbar />
+      <A2HSBanner />
       <LoginModal />
       <main className="flex-grow">
         <Outlet />

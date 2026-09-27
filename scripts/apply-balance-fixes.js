@@ -85,8 +85,8 @@ function auditRow(action, targetType, targetId, before, after) {
 
 async function runProd() {
   const env = readFileSync(join(ROOT, 'server', '.env'), 'utf8')
-  const url = env.match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim()
-  if (!url) fail('DATABASE_URL missing in server/.env')
+  const url = env.match(/^PROD_DATABASE_URL=(.*)$/m)?.[1]?.trim() || env.match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim()
+  if (!url) fail('PROD_DATABASE_URL (or DATABASE_URL) missing in server/.env')
   const { Client } = require('pg')
   const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
   await client.connect()

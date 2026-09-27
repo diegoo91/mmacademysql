@@ -5,6 +5,7 @@ import { requireRole } from '../middleware/rbac.js'
 import { validateLength, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
+import { notifyUser as deliverNotification } from '../utils/notify.js'
 
 const router = Router()
 
@@ -164,7 +165,7 @@ async function notifyUser(userId, kind, title, body, link) {
   if (!userId) return
   const all = await db.findAll('notifications', n => n.user_id === userId && n.kind === kind)
   if (all.some(n => n.body === body)) return
-  await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
+  await deliverNotification({ userId, kind, title, body, link })
 }
 
 async function findPlayerUser(playerText) {

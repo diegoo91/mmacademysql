@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
 import { hasEnoughBalance, reverseBalance, effectiveGroup } from '../utils/balance.js'
+import { notifyUser } from '../utils/notify.js'
 
 const router = Router()
 router.use(authenticate)
@@ -28,7 +29,7 @@ function parseIfString(v) { return typeof v === 'string' ? JSON.parse(v) : v }
 
 async function notify(userId, kind, title, body, link) {
   if (!userId) return
-  await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
+  await notifyUser({ userId, kind, title, body, link })
 }
 
 async function freeSlotsForBooking(booking) {
@@ -229,11 +230,11 @@ router.post('/', async (req, res) => {
       // Notify admins
       const admins = await db.findAll('users', u => u.role === 'superadmin' || u.role === 'admin')
       for (const admin of admins) {
-        await db.insert('notifications', {
-          user_id: admin.id, kind: 'new_payment',
+        await notifyUser({
+          userId: admin.id, kind: 'new_payment',
           title: 'New Payment Pending',
           body: `${req.user?.name || 'Player'} submitted payment for ${sessionType} booking (${sessions.length} sessions).`,
-          link: '/admin', read: 0,
+          link: '/admin',
         })
       }
     }

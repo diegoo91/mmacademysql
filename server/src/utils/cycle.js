@@ -1,5 +1,6 @@
 import db from '../db.js'
 import { auditLog } from '../middleware/audit.js'
+import { notifyUser } from './notify.js'
 
 /**
  * Monthly cycle balance model.
@@ -149,18 +150,18 @@ export async function ensureCycleFresh(userOrId, { req = null, notify = true } =
 
   if (notify) {
     const body = `Your ${user.cycle_key} session package expired. Used ${usedPrivate} private / ${usedGroup} group; ${remPrivate} private / ${remGroup} group expired.`
-    await db.insert('notifications', {
-      user_id: user.id, kind: 'balance_expired',
-      title: 'Session package expired', body, link: '/profile', read: 0,
+    await notifyUser({
+      userId: user.id, kind: 'balance_expired',
+      title: 'Session package expired', body, link: '/profile',
     }).catch(() => {})
     try {
       const admins = await db.findAll('users', u => u.role === 'superadmin' || u.role === 'admin')
       for (const a of admins) {
-        await db.insert('notifications', {
-          user_id: a.id, kind: 'balance_expired',
+        await notifyUser({
+          userId: a.id, kind: 'balance_expired',
           title: 'Player package expired',
           body: `${user.name}: ${user.cycle_key} package expired (${remPrivate}P / ${remGroup}G unused).`,
-          link: '/admin', read: 0,
+          link: '/admin',
         }).catch(() => {})
       }
     } catch { /* non-fatal */ }
@@ -182,9 +183,9 @@ export async function notifyUpcomingExpiry(days = 3) {
     const body = `Your session package (${p.cycle_key}) expires ${p.cycle_expires_at.slice(0, 10)}. Remaining: ${p.cycle_private || 0} private / ${p.cycle_group || 0} group.`
     const existing = await db.findAll('notifications', n => n.user_id === p.id && n.kind === 'balance_expiring')
     if (existing.some(n => n.body === body)) continue
-    await db.insert('notifications', {
-      user_id: p.id, kind: 'balance_expiring',
-      title: 'Session package expiring soon', body, link: '/profile', read: 0,
+    await notifyUser({
+      userId: p.id, kind: 'balance_expiring',
+      title: 'Session package expiring soon', body, link: '/profile',
     }).catch(() => {})
     sent++
   }

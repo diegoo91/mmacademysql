@@ -4,6 +4,13 @@ import { Bell, Calendar, ChevronRight, LogOut, Menu, Moon, Palette, Shield, Sun,
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { api } from '../lib/api'
+import {
+  enablePushNotifications,
+  disablePushNotifications,
+  getPushStatus,
+  needsA2HS,
+  pushSupported,
+} from '../lib/push'
 import Logo from './Logo'
 
 export default function Navbar() {
@@ -41,9 +48,10 @@ export default function Navbar() {
   useEffect(() => {
     if (!showNotifications) return
     const handleClick = (e) => {
-      if (!e.target.closest('[data-notif-panel]')) {
-        setShowNotifications(false)
-      }
+      // Ignore clicks on the panel itself and on any bell toggle (desktop or
+      // mobile) so the toggle's own onClick decides, instead of a close+reopen race.
+      if (e.target.closest('[data-notif-panel]') || e.target.closest('[data-notif-toggle]')) return
+      setShowNotifications(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -67,6 +75,93 @@ export default function Navbar() {
       setUnreadCount(0)
     }).catch(() => {})
   }
+
+  const [pushOn, setPushOn] = useState(false)
+  const [pushMsg, setPushMsg] = useState('')
+
+  useEffect(() => {
+    if (!user || !pushSupported()) return
+    getPushStatus().then(s => setPushOn(Boolean(s.subscribed))).catch(() => {})
+  }, [user])
+
+  const togglePush = async () => {
+    setPushMsg('')
+    if (pushOn) {
+      await disablePushNotifications()
+      setPushOn(false)
+      setPushMsg('Push notifications turned off.')
+      return
+    }
+    if (needsA2HS()) {
+      setPushMsg('On iPhone: tap Share → Add to Home Screen, then open it from your Home Screen.')
+      return
+    }
+    const r = await enablePushNotifications()
+    if (r.ok) {
+      setPushOn(true)
+      setPushMsg('Push notifications enabled.')
+    } else if (r.reason === 'denied') {
+      setPushMsg('Notifications are blocked — allow them in your browser settings.')
+    } else if (r.reason === 'not-configured') {
+      setPushMsg('Push notifications are not configured on this server.')
+    } else if (r.reason === 'unsupported') {
+      setPushMsg('This browser does not support push notifications.')
+    } else {
+      setPushMsg('Could not enable notifications — please try again.')
+    }
+  }
+
+  const notifPanel = (
+    <div data-notif-panel className="absolute right-0 top-full mt-2 w-80 bg-surface border border-theme rounded-xl shadow-2xl z-50 max-h-96 overflow-y-auto">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-theme">
+        <span className="text-xs font-bold text-theme">Notifications</span>
+        {unreadCount > 0 && (
+          <button onClick={markAllRead} className="text-[10px] text-brand-text font-semibold hover:underline">Mark all read</button>
+        )}
+      </div>
+      {notifications.length === 0 ? (
+        <p className="px-4 py-6 text-xs text-muted text-center">No notifications</p>
+      ) : (
+        notifications.slice(0, 10).map(n => (
+          <button
+            key={n.id}
+            onClick={() => {
+              if (!n.read) {
+                api.put(`/notifications/${n.id}/read`).then(() => {
+                  setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: 1 } : x))
+                  setUnreadCount(prev => Math.max(0, prev - 1))
+                }).catch(() => {})
+              }
+              if (n.link) {
+                setShowNotifications(false)
+                navigate(n.link)
+              }
+            }}
+            className={`w-full text-left px-4 py-3 border-b border-theme hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors ${!n.read ? 'bg-brand/5' : ''}`}
+          >
+            <p className="text-xs font-bold text-theme">{n.title}</p>
+            <p className="text-[11px] text-muted mt-0.5">{n.body}</p>
+            <p className="text-[10px] text-muted mt-1">{n.created_at?.slice(0, 16)}</p>
+          </button>
+        ))
+      )}
+      {pushSupported() && (
+        <div className="px-4 py-3 border-t border-theme">
+          <button
+            onClick={togglePush}
+            className={`w-full py-2 rounded-lg text-xs font-bold transition-all border ${
+              pushOn
+                ? 'bg-brand/10 text-brand-text border-brand/30'
+                : 'bg-brand text-white border-transparent hover:bg-brand-hover'
+            }`}
+          >
+            {pushOn ? 'Push notifications: On' : 'Enable push notifications'}
+          </button>
+          {pushMsg && <p className="text-[10px] text-muted mt-2 leading-snug">{pushMsg}</p>}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <header className="sticky top-0 z-40 w-full glass-panel border-b border-theme">
@@ -132,7 +227,7 @@ export default function Navbar() {
 
             {user && (
               <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2.5 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                <button data-notif-toggle onClick={() => setShowNotifications(!showNotifications)} className="relative p-2.5 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
                   <Bell className="w-4 h-4" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -140,42 +235,7 @@ export default function Navbar() {
                     </span>
                   )}
                 </button>
-                {showNotifications && (
-                  <div data-notif-panel className="absolute right-0 top-full mt-2 w-80 bg-surface border border-theme rounded-xl shadow-2xl z-50 max-h-96 overflow-y-auto">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-theme">
-                      <span className="text-xs font-bold text-theme">Notifications</span>
-                      {unreadCount > 0 && (
-                        <button onClick={markAllRead} className="text-[10px] text-brand-text font-semibold hover:underline">Mark all read</button>
-                      )}
-                    </div>
-                    {notifications.length === 0 ? (
-                      <p className="px-4 py-6 text-xs text-muted text-center">No notifications</p>
-                    ) : (
-                      notifications.slice(0, 10).map(n => (
-                        <button
-                          key={n.id}
-                          onClick={() => {
-                            if (!n.read) {
-                              api.put(`/notifications/${n.id}/read`).then(() => {
-                                setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: 1 } : x))
-                                setUnreadCount(prev => Math.max(0, prev - 1))
-                              }).catch(() => {})
-                            }
-                            if (n.link) {
-                              setShowNotifications(false)
-                              navigate(n.link)
-                            }
-                          }}
-                          className={`w-full text-left px-4 py-3 border-b border-theme hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors ${!n.read ? 'bg-brand/5' : ''}`}
-                        >
-                          <p className="text-xs font-bold text-theme">{n.title}</p>
-                          <p className="text-[11px] text-muted mt-0.5">{n.body}</p>
-                          <p className="text-[10px] text-muted mt-1">{n.created_at?.slice(0, 16)}</p>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
+                {showNotifications && notifPanel}
               </div>
             )}
 
@@ -225,7 +285,12 @@ export default function Navbar() {
           <div className="md:hidden flex items-center gap-2">
             {user && (
               <div className="relative">
-                <button className="relative p-2 rounded-xl bg-surface border border-theme text-theme">
+                <button
+                  data-notif-toggle
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  aria-label="Notifications"
+                  className="relative p-2 rounded-xl bg-surface border border-theme text-theme"
+                >
                   <Bell className="w-4 h-4" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
@@ -233,6 +298,7 @@ export default function Navbar() {
                     </span>
                   )}
                 </button>
+                {showNotifications && notifPanel}
               </div>
             )}
             <button

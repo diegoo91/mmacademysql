@@ -4,13 +4,14 @@ import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate } from '../middleware/audit.js'
 import { updateUserBalance, ensureCycleFresh, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
+import { notifyUser } from '../utils/notify.js'
 
 const router = Router()
 router.use(authenticate)
 
 async function notify(userId, kind, title, body, link) {
   if (!userId) return
-  await db.insert('notifications', { user_id: userId, kind, title, body, link: link || null, read: 0 })
+  await notifyUser({ userId, kind, title, body, link })
 }
 
 router.post('/', async (req, res) => {

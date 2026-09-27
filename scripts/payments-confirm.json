@@ -1,0 +1,6 @@
+{
+  "deleteIds": [45, 47],
+  "note": "Yasin Mahmoud 2026-09-24 Cash 7200 + Cash 1000 — confirmed by operator keep-list (payments-keep.json): not among the 20 kept rows. Pairing report: 20/20 keep-rows paired, 0 unclear.",
+  "keepSum": 96400,
+  "confirmedAt": "2026-09-25"
+}

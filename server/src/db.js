@@ -17,7 +17,7 @@ export const TABLES = [
   'users', 'results', 'slots', 'bookings', 'import_batches', 'comments',
   'notifications', 'conversion_requests', 'expenses', 'booking_requests',
   'payments', 'audit_logs', 'court_defaults', 'app_sessions', 'roles',
-  'coach_daily_hours', 'coach_payments',
+  'coach_daily_hours', 'coach_payments', 'push_subscriptions',
 ]
 
 // ---------------------------------------------------------------------------
@@ -97,6 +97,7 @@ const DATE_COLS = {
   roles: ['created_at', 'updated_at'],
   coach_daily_hours: ['date', 'created_at', 'updated_at'],
   coach_payments: ['date', 'created_at'],
+  push_subscriptions: ['created_at', 'updated_at'],
 }
 const JSON_COLS = {
   results: ['sidea', 'sideb', 'sidea_ids', 'sideb_ids'],

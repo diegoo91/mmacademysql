@@ -31,6 +31,7 @@ DROP TABLE IF EXISTS bookings CASCADE;
 DROP TABLE IF EXISTS results CASCADE;
 DROP TABLE IF EXISTS import_batches CASCADE;
 DROP TABLE IF EXISTS players CASCADE;
+DROP TABLE IF EXISTS session_transfers CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- ------------------------------------------------------------ app_sessions ---

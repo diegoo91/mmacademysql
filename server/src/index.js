@@ -18,6 +18,7 @@ import importsRoutes from './routes/imports.js'
 import dashboardRoutes from './routes/dashboard.js'
 import commentsRoutes from './routes/comments.js'
 import notificationsRoutes from './routes/notifications.js'
+import pushRoutes from './routes/push.js'
 import conversionRequestsRoutes from './routes/conversion-requests.js'
 import expensesRoutes from './routes/expenses.js'
 import reportsRoutes from './routes/reports.js'
@@ -102,6 +103,7 @@ app.use('/api/imports', importsRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/comments', actionLimiter, commentsRoutes)
 app.use('/api/notifications', notificationsRoutes)
+app.use('/api/push', pushRoutes)
 app.use('/api/conversion-requests', actionLimiter, conversionRequestsRoutes)
 app.use('/api/expenses', expensesRoutes)
 app.use('/api/reports', reportsRoutes)
@@ -258,6 +260,31 @@ async function ensureRoles() {
   }
 }
 await ensureRoles()
+
+// Migration: push_subscriptions table (Web Push) — safe idempotent
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    const hasTable = await knex.schema.hasTable('push_subscriptions')
+    if (!hasTable) {
+      await knex.schema.createTable('push_subscriptions', (t) => {
+        t.increments('id').primary()
+        t.integer('user_id').notNullable()
+        t.text('endpoint').notNullable().unique()
+        t.text('p256dh').notNullable()
+        t.text('auth').notNullable()
+        t.string('user_agent', 300)
+        t.timestamp('created_at').defaultTo(knex.fn.now())
+        t.timestamp('updated_at').defaultTo(knex.fn.now())
+        t.index(['user_id'])
+      })
+      console.log('Migration: created push_subscriptions table')
+    }
+  }
+} catch (err) {
+  console.log('Migration check for push_subscriptions skipped:', err.message)
+}
 
 // ── Monthly cycle sweep (lazy expiry + upcoming notices) ──────────
 try {

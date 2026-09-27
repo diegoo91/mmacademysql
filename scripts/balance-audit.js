@@ -27,8 +27,8 @@ const dstr = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d |
 let client = null
 async function pgConnect() {
   const env = readFileSync(join(ROOT, 'server', '.env'), 'utf8')
-  const DATABASE_URL = env.match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim()
-  if (!DATABASE_URL) { console.error('DATABASE_URL missing in server/.env'); process.exit(1) }
+  const DATABASE_URL = env.match(/^PROD_DATABASE_URL=(.*)$/m)?.[1]?.trim() || env.match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim()
+  if (!DATABASE_URL) { console.error('PROD_DATABASE_URL (or DATABASE_URL) missing in server/.env'); process.exit(1) }
   const { Client } = require('pg')
   client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } })
   await client.connect()
