@@ -307,6 +307,26 @@ try {
   console.log('Migration for updated_by columns skipped:', err.message)
 }
 
+// Migration: payment settlement record — what a payment offset from legacy
+// debt (settled_*) and what it credited into the cycle (credited_*).
+// Nullable (null = pre-settlement row, reversed with legacy semantics). Idempotent.
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    if (await knex.schema.hasTable('payments')) {
+      for (const col of ['settled_private', 'settled_group', 'credited_private', 'credited_group']) {
+        if (!(await knex.schema.hasColumn('payments', col))) {
+          await knex.schema.alterTable('payments', (t) => t.integer(col))
+          console.log(`Migration: added payments.${col}`)
+        }
+      }
+    }
+  }
+} catch (err) {
+  console.log('Migration for payments settlement columns skipped:', err.message)
+}
+
 // Cache which tables expose created_by/updated_by (information_schema, once).
 try {
   const cols = await loadActorColumns()

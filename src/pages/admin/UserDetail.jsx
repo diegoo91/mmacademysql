@@ -304,6 +304,24 @@ export default function UserDetail() {
     } catch (err) { alert(err.message || 'Status update failed') }
   }
 
+  const handleWriteOff = async () => {
+    const debtP = user.debt_private ?? 0
+    const debtG = user.debt_group ?? 0
+    if (!debtP && !debtG) return
+    const reason = prompt(
+      `Write off negative balance for ${user.name}?\n\nCurrent debt: ${debtP} private / ${debtG} group\nA reason is required (it is audit-logged).`,
+      'Month-start write-off'
+    )
+    if (reason === null) return
+    if (!reason.trim()) { alert('A reason is required.'); return }
+    try {
+      await api.post(`/users/${id}/writeoff`, { reason: reason.trim() })
+      refreshPlayer()
+    } catch (err) {
+      alert(err.message || 'Write-off failed')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -511,6 +529,12 @@ export default function UserDetail() {
                 <span className="text-muted">Carryover P / G</span>
                 <span className="font-black text-muted">{user.legacy_private ?? 0} / {user.legacy_group ?? 0}</span>
               </div>
+              {(user.debt_private > 0 || user.debt_group > 0) && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-rose-400 font-semibold">Negative balance (owed)</span>
+                  <span className="font-black text-rose-400">{user.debt_private}P · {user.debt_group}G</span>
+                </div>
+              )}
               {user.cycle_expires_at && (
                 <div className="flex justify-between text-xs">
                   <span className="text-muted">Package expires</span>
@@ -518,6 +542,11 @@ export default function UserDetail() {
                 </div>
               )}
             </div>
+            {canEdit && (user.debt_private > 0 || user.debt_group > 0) && (
+              <button onClick={handleWriteOff} className="mt-3 w-full px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 text-xs font-bold flex items-center justify-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Write off negative balance
+              </button>
+            )}
           </div>
         </>
       )}

@@ -349,6 +349,12 @@ CREATE TABLE payments (
     notes TEXT,
     status VARCHAR(50),
     booking_id INT,
+    -- settlement record (null on pre-settlement rows): what the payment
+    -- offset from legacy debt and what it credited into the cycle
+    settled_private INT,
+    settled_group INT,
+    credited_private INT,
+    credited_group INT,
     created_by INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_by INT,

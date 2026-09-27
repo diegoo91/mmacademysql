@@ -64,11 +64,12 @@ export default function Payments() {
     setSubmitting(true)
     try {
       const player = players.find(p => p.id === parseInt(form.player_id))
-      await api.post('/payments', {
+      const res = await api.post('/payments', {
         ...form,
         player_id: parseInt(form.player_id),
         player_name: player?.name || '',
       })
+      notifySettlement(res, form)
       setShowForm(false)
       setForm({ date: new Date().toISOString().slice(0, 10), player_id: '', method: 'Cash', amount: '', private_sessions: '', group_sessions: '', notes: '' })
       fetchData()
@@ -80,11 +81,53 @@ export default function Payments() {
 
   const handleApprove = async (id) => {
     try {
-      await api.put(`/payments/${id}/approve`)
+      const res = await api.put(`/payments/${id}/approve`)
+      notifySettlement(res)
       fetchData()
     } catch (err) {
       alert(err.message || 'Failed to approve')
     }
+  }
+
+  // When a payment settled existing debt first, tell the admin exactly what
+  // happened: offset first, remainder credited to this month's package.
+  const notifySettlement = (res, formOverride) => {
+    const s = res?.settlement
+    if (!s || (!s.settled_private && !s.settled_group)) return
+    const pSessions = res?.private_sessions ?? formOverride?.private_sessions ?? 0
+    const gSessions = res?.group_sessions ?? formOverride?.group_sessions ?? 0
+    const owed = [
+      s.settled_private > 0 ? `${s.settled_private} private` : null,
+      s.settled_group > 0 ? `${s.settled_group} group` : null,
+    ].filter(Boolean).join(' + ')
+    alert(
+      `Payment recorded.\n\n` +
+      `Paid: ${pSessions} private / ${gSessions} group\n` +
+      `Offset existing debt first: ${owed}\n` +
+      `Credited to this month's package: ${s.credited_private} private / ${s.credited_group} group`
+    )
+  }
+
+  // Per-row balance effect: debt offset (if any) + what entered the cycle.
+  const balanceEffect = (p) => {
+    if (p.status !== 'payment_approved') return <span className="text-muted">—</span>
+    const hasRecord = p.credited_private != null || p.credited_group != null
+    const settled = (p.settled_private || 0) > 0 || (p.settled_group || 0) > 0
+    const creditedP = hasRecord ? (p.credited_private || 0) : (p.private_sessions || 0)
+    const creditedG = hasRecord ? (p.credited_group || 0) : (p.group_sessions || 0)
+    const owed = [
+      (p.settled_private || 0) > 0 ? `${p.settled_private}P` : '',
+      (p.settled_group || 0) > 0 ? `${p.settled_group}G` : '',
+    ].filter(Boolean).join(' ')
+    return (
+      <span className="whitespace-nowrap">
+        {settled && (
+          <span className="text-rose-400 font-bold" title={`Offset ${owed} of existing debt first`}>−{owed} debt</span>
+        )}
+        {settled && ' '}
+        <span className="text-emerald-400 font-bold">+{creditedP}P / {creditedG}G</span>
+      </span>
+    )
   }
 
   const handleReject = async (id) => {
@@ -98,23 +141,12 @@ export default function Payments() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this payment? Balance credits will be reversed if approved.')) return
+    if (!confirm('Delete this payment? Any remaining credited sessions will be removed, and debt this payment settled will be reinstated on the player.')) return
     try {
       await api.del(`/payments/${id}`)
       fetchData()
     } catch (err) {
-      if (err.status === 409 && err.data) {
-        const cur = err.data.current || {}
-        const rev = err.data.trying_to_reverse || {}
-        alert(
-          `${err.message}\n\n` +
-          `Current balance — Private: ${cur.private_balance ?? 0}, Group: ${cur.group_balance ?? 0}\n` +
-          `Trying to reverse — Private: ${rev.private_sessions ?? 0}, Group: ${rev.group_sessions ?? 0}\n\n` +
-          `Spend or transfer those sessions first, then delete this payment.`
-        )
-      } else {
-        alert(err.message || 'Failed to delete')
-      }
+      alert(err.message || 'Failed to delete')
     }
   }
 
@@ -339,6 +371,7 @@ export default function Payments() {
                   <th className="text-left pb-3 font-semibold">Method</th>
                   <th className="text-right pb-3 font-semibold">Amount</th>
                   <th className="text-left pb-3 font-semibold">Status</th>
+                  <th className="text-left pb-3 font-semibold">Balance Effect</th>
                   <th className="text-left pb-3 font-semibold">Notes</th>
                   <th className="text-right pb-3 font-semibold"></th>
                 </tr>
@@ -364,6 +397,7 @@ export default function Payments() {
                         {PAYMENT_STATUS_LABELS[p.status] || p.status}
                       </span>
                     </td>
+                    <td className="py-3 text-xs">{balanceEffect(p)}</td>
                     <td className="py-3 text-muted text-xs max-w-[200px] truncate">{p.notes}</td>
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-1">

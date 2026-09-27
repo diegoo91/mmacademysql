@@ -3,7 +3,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
-import { creditBalanceBoth, ensureCycleFresh } from '../utils/balance.js'
+import { creditCycle, ensureCycleFresh } from '../utils/balance.js'
 import { notifyUser } from '../utils/notify.js'
 
 const router = Router()
@@ -15,6 +15,8 @@ const STATUS = {
   PAYMENT_APPROVED: 'payment_approved',
   PAYMENT_REJECTED: 'payment_rejected',
 }
+
+const EMPTY_SETTLEMENT = { settled_private: 0, settled_group: 0, credited_private: 0, credited_group: 0 }
 
 async function generateRef() {
   const count = await db.count('payments')
@@ -52,6 +54,7 @@ router.post('/', async (req, res) => {
   const isCash = method === 'Cash'
 
   let payment
+  let settlement = null
   if (isCash && player_id) {
     payment = await db.insert('payments', {
       ref,
@@ -67,10 +70,27 @@ router.post('/', async (req, res) => {
       booking_id: booking_id || null,
       created_by: req.user?.id || null,
     })
-    // Credit into monthly cycle (outside nested tx — creditCycle opens its own)
-    await creditBalanceBoth(player_id, parseInt(private_sessions) || 0, parseInt(group_sessions) || 0)
-    await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id, private_sessions, group_sessions })
-    await auditBalanceChange(req, 'user', player_id, null, null, 'payment.credit.cycle')
+    // Settle legacy debt first, then credit the remainder into the monthly
+    // cycle (creditCycle opens its own tx — must stay outside any other tx)
+    const userBefore = await db.get('users', player_id)
+    const credit = await creditCycle(player_id, parseInt(private_sessions) || 0, parseInt(group_sessions) || 0)
+    settlement = credit?.settlement || EMPTY_SETTLEMENT
+    await db.update('payments', payment.id, {
+      settled_private: settlement.settled_private,
+      settled_group: settlement.settled_group,
+      credited_private: settlement.credited_private,
+      credited_group: settlement.credited_group,
+    })
+    payment = { ...payment, settled_private: settlement.settled_private, settled_group: settlement.settled_group, credited_private: settlement.credited_private, credited_group: settlement.credited_group }
+    const userAfter = await db.get('users', player_id)
+    const snap = (u) => u ? {
+      private_balance: u.private_balance,
+      group_balance: u.group_balance,
+      cycle_private: u.cycle_private,
+      cycle_group: u.cycle_group,
+    } : null
+    await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id, private_sessions, group_sessions, settlement })
+    await auditBalanceChange(req, 'user', player_id, snap(userBefore), { ...snap(userAfter), settlement }, 'payment.credit.cycle')
   } else {
     payment = await db.insert('payments', {
       ref,
@@ -89,7 +109,7 @@ router.post('/', async (req, res) => {
     await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id, status: payment.status })
   }
 
-  res.status(201).json(payment)
+  res.status(201).json(settlement ? { ...payment, settlement } : payment)
 })
 
 // PUT /:id/approve — approve payment, credit balance, move linked slots to payment_approved
@@ -121,11 +141,20 @@ router.put('/:id/approve', async (req, res) => {
       }
     })
 
-    // Credit into monthly cycle after tx commit (does not stack on legacy)
+    // Settle legacy debt first, then credit the remainder into the monthly
+    // cycle after tx commit (does not stack on legacy)
+    let settlement = null
     if (payment.player_id) {
       const privateAdd = parseInt(payment.private_sessions) || 0
       const groupAdd = parseInt(payment.group_sessions || 0)
-      await creditBalanceBoth(payment.player_id, privateAdd, groupAdd)
+      const credit = await creditCycle(payment.player_id, privateAdd, groupAdd)
+      settlement = credit?.settlement || EMPTY_SETTLEMENT
+      await db.update('payments', payment.id, {
+        settled_private: settlement.settled_private,
+        settled_group: settlement.settled_group,
+        credited_private: settlement.credited_private,
+        credited_group: settlement.credited_group,
+      })
     }
 
     await auditUpdate(req, 'payment', payment.id, { status: payment.status }, { status: STATUS.PAYMENT_APPROVED, ref: payment.ref })
@@ -133,7 +162,7 @@ router.put('/:id/approve', async (req, res) => {
       const userAfter = await db.get('users', payment.player_id)
       await auditBalanceChange(req, 'user', payment.player_id,
         { private_balance: userBefore?.private_balance, group_balance: userBefore?.group_balance, cycle_private: userBefore?.cycle_private, cycle_group: userBefore?.cycle_group },
-        { private_balance: userAfter?.private_balance, group_balance: userAfter?.group_balance, cycle_private: userAfter?.cycle_private, cycle_group: userAfter?.cycle_group },
+        { private_balance: userAfter?.private_balance, group_balance: userAfter?.group_balance, cycle_private: userAfter?.cycle_private, cycle_group: userAfter?.cycle_group, settlement },
         'payment.approve')
     }
 
@@ -145,7 +174,7 @@ router.put('/:id/approve', async (req, res) => {
         '/profile')
     }
 
-    res.json(updated)
+    res.json(settlement ? { ...updated, settlement } : updated)
   } catch (err) {
     console.error('Approve payment error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -188,7 +217,12 @@ router.put('/:id/reject', async (req, res) => {
   }
 })
 
-// DELETE /:id — reverse balance, clamp at 0, reject if would go negative
+// DELETE /:id — reverse the credit exactly:
+//   * settlement rows: take back only what this payment credited (floor at the
+//     current cycle remainder), then reinstate the debt it had forgiven
+//     (legacy may go negative again — that debt is real again).
+//   * pre-settlement rows: legacy behavior — sessions come out of the cycle
+//     first, the legacy remainder is floored at 0.
 router.delete('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id)
@@ -198,34 +232,55 @@ router.delete('/:id', async (req, res) => {
     if (payment.status === STATUS.PAYMENT_APPROVED && payment.player_id) {
       const user = await ensureCycleFresh(payment.player_id, { notify: false }) || await db.get('users', payment.player_id)
       if (user) {
-        const privSessions = payment.private_sessions || 0
-        const grpSessions = payment.group_sessions || 0
-        // Reverse from cycle first (where credit landed), floor at 0; then legacy
+        const hasSettlement = payment.credited_private != null || payment.credited_group != null
         let cycP = Math.max(0, user.cycle_private || 0)
         let cycG = Math.max(0, user.cycle_group || 0)
-        let legP = Math.max(0, user.private_balance || 0)
-        let legG = Math.max(0, user.group_balance || 0)
-        const takeP = Math.min(privSessions, cycP)
-        cycP -= takeP
-        const leftP = privSessions - takeP
-        legP = Math.max(0, legP - leftP)
-        const takeG = Math.min(grpSessions, cycG)
-        cycG -= takeG
-        const leftG = grpSessions - takeG
-        legG = Math.max(0, legG - leftG)
-        const newPriv = legP
-        const newGrp = legG
+        const rawLegP = Number(user.private_balance) || 0
+        const rawLegG = Number(user.group_balance) || 0
+        let newLegP, newLegG, reversal
+
+        if (hasSettlement) {
+          const credP = Math.max(0, payment.credited_private || 0)
+          const credG = Math.max(0, payment.credited_group || 0)
+          const backP = Math.min(credP, cycP)
+          const backG = Math.min(credG, cycG)
+          cycP -= backP
+          cycG -= backG
+          newLegP = rawLegP - Math.max(0, payment.settled_private || 0)
+          newLegG = rawLegG - Math.max(0, payment.settled_group || 0)
+          reversal = {
+            cycle: { private: backP, group: backG },
+            reinstated_debt: { private: Math.max(0, payment.settled_private || 0), group: Math.max(0, payment.settled_group || 0) },
+            uncredited_shortfall: { private: credP - backP, group: credG - backG },
+          }
+        } else {
+          const privSessions = payment.private_sessions || 0
+          const grpSessions = payment.group_sessions || 0
+          const takeP = Math.min(privSessions, cycP)
+          const takeG = Math.min(grpSessions, cycG)
+          cycP -= takeP
+          cycG -= takeG
+          newLegP = Math.max(0, Math.max(0, rawLegP) - (privSessions - takeP))
+          newLegG = Math.max(0, Math.max(0, rawLegG) - (grpSessions - takeG))
+          reversal = {
+            cycle: { private: takeP, group: takeG },
+            legacy: { private: privSessions - takeP, group: grpSessions - takeG },
+          }
+        }
+        const newCycP = cycP
+        const newCycG = cycG
+
         await db.transaction(async (tx) => {
           await tx.update('users', user.id, {
-            private_balance: newPriv, group_balance: newGrp,
-            cycle_private: cycP, cycle_group: cycG,
+            private_balance: newLegP, group_balance: newLegG,
+            cycle_private: newCycP, cycle_group: newCycG,
           })
           await tx.remove('payments', id)
         })
-        await auditDelete(req, 'payment', id, { ref: payment.ref, status: payment.status, player_id: payment.player_id, amount: payment.amount })
+        await auditDelete(req, 'payment', id, { ref: payment.ref, status: payment.status, player_id: payment.player_id, amount: payment.amount, settlement: hasSettlement ? { settled_private: payment.settled_private, settled_group: payment.settled_group, credited_private: payment.credited_private, credited_group: payment.credited_group } : null })
         await auditBalanceChange(req, 'user', payment.player_id,
           { private_balance: user.private_balance, group_balance: user.group_balance, cycle_private: user.cycle_private, cycle_group: user.cycle_group },
-          { private_balance: newPriv, group_balance: newGrp, cycle_private: cycP, cycle_group: cycG },
+          { private_balance: newLegP, group_balance: newLegG, cycle_private: newCycP, cycle_group: newCycG, reversal },
           'payment.delete.reverse')
       } else {
         await db.remove('payments', id)

@@ -85,6 +85,10 @@ async function enrichPlayer(p, allSlots, bookingsById) {
     legacy_private: monthly.legacy_private,
     legacy_group: monthly.legacy_group,
     paid_this_cycle: monthly.paid_this_cycle,
+    // Explicit debt magnitudes (≥ 0) for admin surfaces — displayed balances
+    // stay clamped; these say "owes X" when legacy went negative.
+    debt_private: Math.max(0, -(Number(p.private_balance) || 0)),
+    debt_group: Math.max(0, -(Number(p.group_balance) || 0)),
     total_private,
     total_group,
     full_name: p.name,
@@ -467,6 +471,78 @@ router.post('/:id/balance', requireRole('superadmin', 'admin'), async (req, res)
     })
   } catch (err) {
     console.error('Balance control error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// POST /:id/writeoff — clear a player's NEGATIVE legacy balance (month-start
+// debt write-off). Only negative buckets are zeroed: positive legacy and the
+// current cycle are never touched. Reason is mandatory and audit-logged.
+// body: { reason: string }
+router.post('/:id/writeoff', requireRole('superadmin', 'admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id)
+    const user = await db.get('users', id)
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    if (user.role !== 'player') return res.status(400).json({ error: 'Write-off applies to players only' })
+    const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : ''
+    if (!reason) return res.status(400).json({ error: 'reason is required' })
+
+    const fresh = (await ensureCycleFresh(user, { notify: false })) || user
+    const rawP = Number(fresh.private_balance) || 0
+    const rawG = Number(fresh.group_balance) || 0
+    const debtP = Math.max(0, -rawP)
+    const debtG = Math.max(0, -rawG)
+    if (debtP === 0 && debtG === 0) {
+      return res.status(400).json({ error: 'No negative balance to write off' })
+    }
+
+    const before = {
+      private_balance: fresh.private_balance,
+      group_balance: fresh.group_balance,
+      cycle_private: fresh.cycle_private,
+      cycle_group: fresh.cycle_group,
+    }
+
+    const newP = debtP > 0 ? 0 : rawP // zero only the negative side
+    const newG = debtG > 0 ? 0 : rawG
+    const live = fresh.cycle_key && fresh.cycle_expires_at && new Date(fresh.cycle_expires_at) >= new Date()
+    const liveCycP = live ? Math.max(0, fresh.cycle_private || 0) : 0
+    const liveCycG = live ? Math.max(0, fresh.cycle_group || 0) : 0
+    await db.update('users', id, {
+      private_balance: newP,
+      group_balance: newG,
+      balance_zero_since: (newP === 0 && newG === 0 && liveCycP === 0 && liveCycG === 0)
+        ? new Date().toISOString()
+        : null,
+    })
+
+    const after = await db.get('users', id)
+    const { password_hash, ...safe } = after
+    await auditBalanceChange(req, 'user', id, before, {
+      private_balance: safe.private_balance,
+      group_balance: safe.group_balance,
+      cycle_private: safe.cycle_private,
+      cycle_group: safe.cycle_group,
+      written_off: { private: debtP, group: debtG },
+      reason,
+    }, 'writeoff')
+
+    const monthly = monthlyDisplay(safe)
+    res.json({
+      ...safe,
+      effective_private: effectivePrivate(safe),
+      effective_group: effectiveGroupBalance(safe),
+      cycle_private: monthly.private,
+      cycle_group: monthly.group,
+      cycle_expires_at: monthly.expires_at,
+      legacy_private: monthly.legacy_private,
+      legacy_group: monthly.legacy_group,
+      written_off: { private: debtP, group: debtG },
+      full_name: safe.name,
+    })
+  } catch (err) {
+    console.error('Balance write-off error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
