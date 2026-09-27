@@ -211,3 +211,60 @@
 - **Player balances (prod):** Eyad Dawish 0/3, Youssef Dawish 0/3, Titos 5/0; totals 33 = 10 private + 23 group; remaining orphan segments: `zein`, `john smith`, `jane doe`
 - **Coach balances (prod):** Laila 73 earned / 0 paid; Omar 44 earned / 0 paid
 - **Audit trail:** 5 rows from balance fixes + 7 rows from coach backfill (2026-09-25)
+
+---
+
+## Settle-then-credit payments + negative-balance write-off — Completed (2026-09-27)
+
+- [x] **Settlement rule** (user-locked: 1P = 2G, own bucket first, then cross) — `planSettlement()` pure fn in `server/src/utils/cycle.js`; `creditCycle` settles negative legacy debt FIRST, remainder enters cycle. Example: pay 8P vs debt −5P/−2G → settled 5P+2G, credited **2P**, debt 0. 43/43 local scenarios + 12,100-combo property sweep (`verify-settlement.cjs`)
+- [x] **payments cols** `settled_private/settled_group/credited_private/credited_group` (nullable; null = pre-settlement row → legacy delete semantics) — schema.sql + idempotent runtime migration (index.js); **verified in prod (all 4)**
+- [x] **Delete = exact reversal** (settlement rows: pull back credited from cycle floor-at-remainder, reinstate forgiven debt; old rows keep floor-at-0); audit `payment.delete.reverse` with breakdown
+- [x] **Write-off** `POST /users/:id/writeoff` `{reason}` — admin+superadmin, players only, negatives only, mandatory reason, audit `balance.writeoff`; `enrichPlayer` exposes `debt_private/debt_group`
+- [x] **UI** — Payments.jsx: Balance Effect column + settlement alert + fixed delete wording; UserDetail.jsx: debt row + Write-off button on Balances panel **and inside Balance Control modal** (`b64fc2f` — option existed only on the page panel before; user was looking in the modal)
+- [x] **Deployed** — `1c09bef` (feature) + `b64fc2f` (modal entry) pushed; GH Pages run 36324269898 ✓ (bundle `B2HquGAj` contains write-off strings); Railway auto-deploy `3de2964b` SUCCESS; prod verified: writeoff route = 401-unauth (live)
+- [x] **Totos corrected to 2** — FIFO entitlement 8 bought − 5P − 2G(=1P) = 2; `POST /users/23/balance {cycle_private:2}`, audit **id 2421** (`balance.balance.profile_control`, 14:03:15); debt 0, not in unpaid report. His PAY-0022 (8P) predated the settlement feature and his −5/−2 debt had been zeroed by the Sep21 package rekey → manual correction applied the same math
+- [x] **Two-ledger root cause (why Balance Control never cleared unpaid)** — unpaid report (`utils/sessionPaid.js`) = FIFO of **payment-row session counts** vs all slots (matched by `user_id` OR `player_text` for shared slots; private never borrows group pool, group borrows 1P=2G). Balance Control only writes balance columns → can never clear unpaid. Clearing = Add Payment with session counts (settlement absorbs debt in same op)
+- [x] **Why Ismail deducted, Totos/Magdy not** — UI slot-assign flow writes `balance_status='deducted'` (Ismail Sep21/23 slots); Sep17–18 bulk schedule import created the old slots with `balance_status=null` and never touched balance
+- [x] **Probe scripts** (machine-local `C:\Users\AHMED~1.FOU\AppData\Local\Temp\opencode\`): `slot-origins.cjs`, `orphan-slots.cjs`, `unpaid-now.cjs`, `audit-totos*.cjs`, `today-audit.cjs`, `totos-fix.cjs`, `verify-settlement.cjs` — run with workdir `server/` (dotenvx injects `.env`; `PROD_DATABASE_URL` = prod, read-only)
+- [ ] **Magdy — awaiting user decision:** 4 unpaid private (Sep14/17/23 + Sep28 #551 created today 12:10) = **EGP 4,000**; fix = Cash payment with 4 private sessions (amount 4000 if real cash, else 0); settlement absorbs his −1P debt → end state legacy 0, cycle 3
+- [ ] Optional: Balance Control modal hint — "unpaid sessions are covered via Add Payment, not balance edits"
+
+## Gift unpaid sessions (0 EGP) UI — Completed (2026-09-27)
+
+- [x] User chose **option 2 (4 sessions, EGP 0) as a UI button** rather than an API call
+- [x] `src/lib/gift.js` — `giftUnpaidSessions()` posts a **0-EGP Cash payment** for the exact unpaid counts (Cash auto-approves → `creditCycle` runs settle-then-credit, so any negative balance is absorbed first); `confirmGift()` shared dialog showing counts + 0 EGP + current owed
+- [x] **Reports.jsx** — "Gift (0 EGP)" button on every Unpaid Players row (`Gift` icon, per-row `giftingId` loading, `giftMsg` feedback line, refetches `/reports/unpaid`)
+- [x] **UserDetail.jsx** — "Gift Unpaid at 0 EGP (nP + nG)" under Collect Payment, shown only when `amount_owed > 0 && canEdit && unpaidSessions.length > 0`; counts derived from `report.sessions` (`!s.paid`)
+- [x] lint 0 errors (pre-existing warnings only) + `vite build` clean; pushed **`3d8c164`**, GH Pages run 36345820249
+- [ ] Press the button for Magdy in prod → verify `/reports/unpaid` drops to 18 players and Magdy balance = legacy 0/+1, cycle 3/0
+
+## Data state right now (updated 2026-09-27)
+
+- **Totos (23):** cycle 2/0, legacy 0/0, debt 0/0, unpaid report clean ✓ (audit 2421)
+- **Magdy (18):** raw legacy −1/+1 (player view clamped 0/1 + debt 1P), **4 unpaid private = EGP 4,000**, needs payment fix (decision pending)
+- **Ismail (16):** legacy 0/+3, recent slots deducted, not in unpaid list
+- **Unpaid report (prod):** 19 players, EGP 89,500 total
+- **Deploys:** main `b64fc2f`; GH bundle `B2HquGAj`; Railway `3de2964b` (2026-09-27 16:58)
+- **Audit:** `GET /api/audit-logs?limit=500` returns newest-first; actions: `balance.balance.profile_control`, `balance.payment.credit.cycle`, `balance.writeoff`, `payment.delete.reverse`
+
+## Settle-first coverage audit + local = production sync — Completed (2026-09-27)
+
+- [x] **Payment/credit-path audit (rule: every credit settles negative debt first)**
+  - Safe already: Cash POST (`payments.js:76`), Instapay approve (`payments.js:150`), booking `payment_pending` → approve → `creditCycle`; imports update bookings only (no balance credit); `creditBalance`/`creditBalanceBoth` wrappers unused
+  - **Gap found & fixed: `transfers.js`** — receiver was credited by direct `balance + count`, which nets same-bucket debt but never settles cross-bucket debt. Now runs `planSettlement` (own bucket → 1P=2G cross; remainder → legacy carryover as before); settlement breakdown added to the audit log + API response. 5/5 value-preservation cases pass (e.g. 4G into −1P → legacy 0/+2, value in/out equal)
+- [x] Pushed **`f566791`**; Pages CI correctly skipped (workflow path filter = frontend only, commit was server-only); **Railway auto-deploy `490d81cd` SUCCESS** (2026-09-27 19:58 UTC)
+- [x] **`git pull origin main`** → already up to date (backend + frontend parity with origin)
+- [x] **DB pull prod → local:** `pg_dump -Fc -n public` from Supabase pooler (`sslmode=no-verify` → `require` for CLI compat) → dropped/recreated `public` on `localhost:5432/mmacademy` → `pg_restore --no-owner --no-privileges`
+  - **21/21 table row counts identical, 0 mismatches** (users 39, payments 22, slots 194, audit_logs 2428, notifications 102, import_batches 33, …)
+  - users balance totals identical: private 4 / group 23 / cycle_private 2 / cycle_group 0
+  - role split identical: admin 1, coach 2, player 34, superadmin 2 (the smoke "FAIL players 34 vs 39" was a wrong expectation — 39 = all users; DB confirms both envs = 34 players)
+  - pre-replace local backup: `C:\Users\AHMED~1.FOU\AppData\Local\Temp\opencode\local-before-pull.dump` (216 KB); prod dump: `prod-pull.dump` (221 KB)
+- [x] **Local API restarted on current code** (port 5174) — `smoke-local.cjs`: login ✓, Totos cycle 2 / debt 0 ✓, unpaid report 19 players / EGP 89,500 ✓, Magdy 4 unpaid ✓, writeoff route 400-without-reason (live, no mutation) ✓, payments 22 rows ✓
+- [ ] Press the **Gift (0 EGP)** button for Magdy in prod (unchanged pending item → unpaid list should drop to 18)
+
+## Data state right now (updated 2026-09-27 post-sync)
+
+- **Local == prod:** code at `f566791`, DB 21 tables identical, local API (5174) serving synced data
+- **Deploys:** main `f566791`; GH Pages bundle `B2HquGAj` (last frontend run 36345820249); Railway `490d81cd` SUCCESS (2026-09-27 19:58 UTC)
+- **Unpaid report (both envs):** 19 players, EGP 89,500 — Magdy gift button still pending
+- **Totos (23):** cycle 2/0, debt 0 ✓ · **Magdy (18):** 4 unpaid private = EGP 4,000 · **Ismail (16):** clean
