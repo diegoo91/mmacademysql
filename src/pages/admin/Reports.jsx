@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Calendar, DollarSign, Download, FileText, AlertTriangle, TrendingUp, Trophy, Users, UserPlus, Clock, Receipt, Ticket } from 'lucide-react'
+import { Calendar, DollarSign, Download, FileText, AlertTriangle, TrendingUp, Trophy, Users, UserPlus, Clock, Receipt, Ticket, Gift } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
+import { giftUnpaidSessions, confirmGift } from '../../lib/gift'
 import { useAuth } from '../../context/AuthContext'
 
 function downloadCSV(filename, headers, rows) {
@@ -64,6 +65,8 @@ export default function Reports() {
   const [coachHours, setCoachHours] = useState(null)
   const [coachBalance, setCoachBalance] = useState(null)
   const [unpaidPlayers, setUnpaidPlayers] = useState(null)
+  const [giftingId, setGiftingId] = useState(null)
+  const [giftMsg, setGiftMsg] = useState('')
   const [remainingSessions, setRemainingSessions] = useState(null)
 
   const fetchReport = () => {
@@ -95,6 +98,27 @@ export default function Reports() {
 
   const fetchUnpaidPlayers = () => {
     api.get('/reports/unpaid').then(setUnpaidPlayers).catch(() => {})
+  }
+
+  const handleGift = async (p) => {
+    if (giftingId) return
+    if (!confirmGift(p.name, p.unpaid_private, p.unpaid_group, p.amount_owed)) return
+    setGiftingId(p.id)
+    setGiftMsg('')
+    try {
+      await giftUnpaidSessions({
+        playerId: p.id,
+        playerName: p.name,
+        unpaidPrivate: p.unpaid_private,
+        unpaidGroup: p.unpaid_group,
+      })
+      setGiftMsg(`Gifted ${p.unpaid_private}P + ${p.unpaid_group}G to ${p.name} — unpaid cleared.`)
+      fetchUnpaidPlayers()
+    } catch (err) {
+      setGiftMsg(`Gift failed for ${p.name}: ${err.message}`)
+    } finally {
+      setGiftingId(null)
+    }
   }
 
   const fetchRemainingSessions = () => {
@@ -304,9 +328,21 @@ export default function Reports() {
                         <div className="text-[10px] text-muted">{p.unpaid_sessions} unpaid ({p.unpaid_private}P + {p.unpaid_group}G)</div>
                       </div>
                     </div>
-                    <span className="px-3 py-1 rounded-full bg-amber-400/10 text-amber-400 text-xs font-bold">EGP {p.amount_owed.toLocaleString()}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 rounded-full bg-amber-400/10 text-amber-400 text-xs font-bold">EGP {p.amount_owed.toLocaleString()}</span>
+                      <button
+                        onClick={() => handleGift(p)}
+                        disabled={giftingId === p.id}
+                        title={`Gift ${p.unpaid_private}P + ${p.unpaid_group}G at 0 EGP — clears them from this report`}
+                        className="px-3 py-1 rounded-full bg-emerald-400/10 text-emerald-500 hover:bg-emerald-400/20 text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <Gift className="w-3 h-3" />
+                        {giftingId === p.id ? 'Gifting…' : 'Gift (0 EGP)'}
+                      </button>
+                    </div>
                   </div>
                 ))}
+                {giftMsg && <div className="px-4 py-2 rounded-lg bg-surface border border-theme text-xs font-semibold text-theme">{giftMsg}</div>}
                 <div className="flex items-center justify-between px-4 py-2 border-t border-theme">
                   <span className="text-xs font-bold text-muted">Total Owed</span>
                   <span className="text-sm font-black text-amber-400">EGP {unpaidPlayers.total_owed.toLocaleString()}</span>

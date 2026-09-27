@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRightLeft, DollarSign, Download, Edit, History, Key, Lock, Mail, Phone, Plus, Settings2, Shield, Trash2, Unlock, AlertCircle, CheckCircle2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, DollarSign, Download, Edit, Gift, History, Key, Lock, Mail, Phone, Plus, Settings2, Shield, Trash2, Unlock, AlertCircle, CheckCircle2, X } from 'lucide-react'
 import { api } from '../../lib/api'
+import { giftUnpaidSessions, confirmGift } from '../../lib/gift'
 import { formatSlotTime } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
 import { UserModal, ConvertModal, HistoryModal, TransferModal } from './Users'
@@ -269,6 +270,7 @@ export default function UserDetail() {
   const [resetResult, setResetResult] = useState(null)
   const [lockConfirm, setLockConfirm] = useState(false)
   const [balanceOpen, setBalanceOpen] = useState(false)
+  const [gifting, setGifting] = useState(false)
 
   const fetchUser = () => {
     setLoading(true)
@@ -291,6 +293,29 @@ export default function UserDetail() {
     fetchUser()
     fetchReport()
     fetchPayments()
+  }
+
+  const unpaidSessions = (report?.sessions || []).filter(s => !s.paid)
+  const unpaidPrivate = unpaidSessions.filter(s => s.session_type !== 'group').length
+  const unpaidGroup = unpaidSessions.filter(s => s.session_type === 'group').length
+
+  const handleGiftUnpaid = async () => {
+    if (gifting) return
+    if (!confirmGift(user?.name || 'this player', unpaidPrivate, unpaidGroup, report?.amount_owed)) return
+    setGifting(true)
+    try {
+      await giftUnpaidSessions({
+        playerId: user.user_id ?? user.id,
+        playerName: user.name,
+        unpaidPrivate,
+        unpaidGroup,
+      })
+      refreshPlayer()
+    } catch (err) {
+      alert(err.message || 'Gift failed')
+    } finally {
+      setGifting(false)
+    }
   }
 
   useEffect(() => { fetchUser() }, [id])
@@ -496,6 +521,11 @@ export default function UserDetail() {
               {amountOwed > 0 && canEdit && (
                 <button onClick={() => setPaymentOpen(true)} className="mt-3 w-full px-3 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1">
                   <Plus className="w-3.5 h-3.5" /> Collect Payment
+                </button>
+              )}
+              {amountOwed > 0 && canEdit && unpaidSessions.length > 0 && (
+                <button onClick={handleGiftUnpaid} disabled={gifting} className="mt-2 w-full px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20 text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-50">
+                  <Gift className="w-3.5 h-3.5" /> {gifting ? 'Gifting…' : `Gift Unpaid at 0 EGP (${unpaidPrivate}P + ${unpaidGroup}G)`}
                 </button>
               )}
             </div>
