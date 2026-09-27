@@ -16,6 +16,7 @@ function BalanceControlModal({ user, onClose, onDone }) {
   })
   const [loading, setLoading] = useState(false)
   const [expireLoading, setExpireLoading] = useState(false)
+  const [writeOffLoading, setWriteOffLoading] = useState(false)
   const [error, setError] = useState('')
   const [msg, setMsg] = useState('')
 
@@ -54,6 +55,24 @@ function BalanceControlModal({ user, onClose, onDone }) {
       setError(err.message || 'Expire failed')
     } finally {
       setExpireLoading(false)
+    }
+  }
+
+  const writeOff = async () => {
+    const reason = prompt(`Write off negative balance for ${user.name}?\n\nCurrent debt: ${user.debt_private} private / ${user.debt_group} group\nA reason is required (it is audit-logged).`)
+    if (reason === null) return
+    if (!reason.trim()) { setError('A reason is required to write off debt.'); return }
+    setWriteOffLoading(true)
+    setError('')
+    setMsg('')
+    try {
+      await api.post(`/users/${user.id}/writeoff`, { reason: reason.trim() })
+      setMsg('Negative balance written off as a gift.')
+      onDone()
+    } catch (err) {
+      setError(err.message || 'Write-off failed')
+    } finally {
+      setWriteOffLoading(false)
     }
   }
 
@@ -102,6 +121,21 @@ function BalanceControlModal({ user, onClose, onDone }) {
               </div>
             </div>
           </div>
+
+          {(user.debt_private > 0 || user.debt_group > 0) && (
+            <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30">
+              <p className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-1">Negative balance (debt)</p>
+              <p className="text-xs text-muted mb-3">Current debt: <span className="font-black text-rose-400">{user.debt_private}P · {user.debt_group}G</span> — forgive it as a gift from the academy (reason required, audit-logged).</p>
+              <button
+                type="button"
+                onClick={writeOff}
+                disabled={writeOffLoading}
+                className="w-full py-2.5 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 hover:bg-rose-500/25 text-sm font-bold disabled:opacity-50"
+              >
+                {writeOffLoading ? 'Writing off…' : 'Write off negative balance (gift)'}
+              </button>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme font-semibold text-sm">Cancel</button>
