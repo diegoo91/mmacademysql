@@ -29,6 +29,7 @@ import adminImportDbRoutes from './routes/admin-import-db.js'
 import rolesRoutes from './routes/roles.js'
 import transfersRoutes from './routes/transfers.js'
 import guestBookingRequestsRoutes from './routes/guest-booking-requests.js'
+import tournamentsRoutes from './routes/tournaments.js'
 import { ensureAdmin } from './ensure-admin.js'
 import { autoAudit } from './middleware/auto-audit.js'
 import { SYSTEM_ROLES } from './utils/modules.js'
@@ -118,6 +119,7 @@ app.use('/api/admin/import-db', adminImportDbRoutes)
 app.use('/api/roles', rolesRoutes)
 app.use('/api/transfers', transfersRoutes)
 app.use('/api/guest-booking-requests', guestBookingRequestsRoutes)
+app.use('/api/tournaments', actionLimiter, tournamentsRoutes)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
 
@@ -327,6 +329,142 @@ try {
   console.log('Migration for payments settlement columns skipped:', err.message)
 }
 
+// Migration: tournament system — 4 tables + payments.tournament_id + the
+// 0-session CHECK. All statements idempotent (IF NOT EXISTS / guarded
+// constraint), so boot is safe on fresh and existing local databases.
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    await knex.raw(`CREATE TABLE IF NOT EXISTS tournaments (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(160) NOT NULL,
+      skill_level VARCHAR(16) NOT NULL,
+      format VARCHAR(20) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'draft',
+      bracket_size INT NOT NULL,
+      groups_count INT,
+      teams_per_group INT,
+      advance_per_group INT,
+      match_format VARCHAR(20) NOT NULL DEFAULT 'short',
+      entry_fee NUMERIC DEFAULT 0,
+      count_to_records SMALLINT NOT NULL DEFAULT 0,
+      registration_open_at TIMESTAMP,
+      registration_close_at TIMESTAMP,
+      notes TEXT,
+      created_by INT,
+      updated_by INT,
+      created_at TIMESTAMP DEFAULT now(),
+      updated_at TIMESTAMP DEFAULT now(),
+      CONSTRAINT chk_tournament_skill CHECK (skill_level IN ('Beginners','Low D','D','Low C','C','B','A','Open')),
+      CONSTRAINT chk_tournament_format CHECK (format IN ('knockout','groups_knockout')),
+      CONSTRAINT chk_tournament_status CHECK (status IN ('draft','registration_open','registration_closed','in_progress','completed','cancelled')),
+      CONSTRAINT chk_tournament_bracket_size CHECK (bracket_size IN (4,8,16,32,64)),
+      CONSTRAINT chk_tournament_match_format CHECK (match_format IN ('short','long','tiebreak')),
+      CONSTRAINT chk_tournament_fee CHECK (entry_fee IS NULL OR entry_fee >= 0)
+    )`)
+    await knex.raw(`CREATE TABLE IF NOT EXISTS tournament_signups (
+      id SERIAL PRIMARY KEY,
+      tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      team_name VARCHAR(160),
+      player1_id INT NOT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+      player2_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      payment_id INT,
+      created_at TIMESTAMP DEFAULT now(),
+      updated_at TIMESTAMP DEFAULT now(),
+      CONSTRAINT chk_signup_status CHECK (status IN ('pending','approved','rejected','withdrawn')),
+      CONSTRAINT chk_signup_distinct_players CHECK (player2_id IS NULL OR player2_id <> player1_id)
+    )`)
+    await knex.raw(`CREATE TABLE IF NOT EXISTS tournament_teams (
+      id SERIAL PRIMARY KEY,
+      tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      team_name VARCHAR(160) NOT NULL,
+      player1_id INT NOT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+      player2_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+      seed INT,
+      group_label VARCHAR(4),
+      source VARCHAR(20) NOT NULL DEFAULT 'signup',
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT now(),
+      updated_at TIMESTAMP DEFAULT now(),
+      CONSTRAINT chk_team_status CHECK (status IN ('active','withdrawn','eliminated')),
+      CONSTRAINT chk_team_source CHECK (source IN ('signup','admin','paired_solo')),
+      CONSTRAINT chk_team_distinct_players CHECK (player2_id IS NULL OR player2_id <> player1_id)
+    )`)
+    await knex.raw(`CREATE TABLE IF NOT EXISTS tournament_matches (
+      id SERIAL PRIMARY KEY,
+      tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      phase VARCHAR(20) NOT NULL,
+      group_label VARCHAR(4),
+      round_no INT NOT NULL DEFAULT 1,
+      slot_index INT NOT NULL DEFAULT 0,
+      next_match_id INT REFERENCES tournament_matches(id) ON DELETE SET NULL,
+      team_a_id INT REFERENCES tournament_teams(id) ON DELETE SET NULL,
+      team_b_id INT REFERENCES tournament_teams(id) ON DELETE SET NULL,
+      format VARCHAR(20),
+      score_a INT,
+      score_b INT,
+      winner_team_id INT REFERENCES tournament_teams(id) ON DELETE SET NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+      court INT,
+      scheduled_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT now(),
+      updated_at TIMESTAMP DEFAULT now(),
+      CONSTRAINT chk_match_phase CHECK (phase IN ('group','knockout')),
+      CONSTRAINT chk_match_status CHECK (status IN ('scheduled','completed','bye','tbd')),
+      CONSTRAINT chk_match_scores CHECK (
+        (score_a IS NULL AND score_b IS NULL)
+        OR (score_a >= 0 AND score_b >= 0 AND score_a <> score_b)
+      )
+    )`)
+    await knex.raw('ALTER TABLE payments ADD COLUMN IF NOT EXISTS tournament_id INT REFERENCES tournaments(id) ON DELETE SET NULL')
+    // tables created by an earlier boot may predate these columns
+    for (const tbl of ['tournament_signups', 'tournament_teams']) {
+      await knex.raw(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT now()`)
+    }
+    await knex.raw(`DO $$ BEGIN
+      ALTER TABLE payments ADD CONSTRAINT chk_tournament_payment_sessions
+        CHECK (tournament_id IS NULL OR (COALESCE(private_sessions,0) = 0 AND COALESCE(group_sessions,0) = 0));
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+    // updated_at triggers (generic update_timestamp() lives in schema.sql; create
+    // it when booting a database that predates tournament tables)
+    await knex.raw(`CREATE OR REPLACE FUNCTION update_timestamp() RETURNS TRIGGER AS $$
+      BEGIN NEW.updated_at = now(); RETURN NEW; END;
+      $$ LANGUAGE plpgsql`)
+    for (const tbl of ['tournaments', 'tournament_signups', 'tournament_teams', 'tournament_matches']) {
+      await knex.raw(`DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '${tbl}_updated_at_trigger') THEN
+          CREATE TRIGGER ${tbl}_updated_at_trigger BEFORE UPDATE ON ${tbl}
+            FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+        END IF;
+      END $$`)
+    }
+    for (const [ix, ddl] of [
+      ['ix_tournaments_status', 'CREATE INDEX IF NOT EXISTS ix_tournaments_status ON tournaments(status)'],
+      ['ix_tournaments_skill', 'CREATE INDEX IF NOT EXISTS ix_tournaments_skill ON tournaments(skill_level)'],
+      ['ix_tsignups_tournament', 'CREATE INDEX IF NOT EXISTS ix_tsignups_tournament ON tournament_signups(tournament_id)'],
+      ['ix_tsignups_player1', 'CREATE INDEX IF NOT EXISTS ix_tsignups_player1 ON tournament_signups(player1_id)'],
+      ['ix_tsignups_player2', 'CREATE INDEX IF NOT EXISTS ix_tsignups_player2 ON tournament_signups(player2_id)'],
+      ['ix_tteams_tournament', 'CREATE INDEX IF NOT EXISTS ix_tteams_tournament ON tournament_teams(tournament_id)'],
+      ['ix_tteams_player1', 'CREATE INDEX IF NOT EXISTS ix_tteams_player1 ON tournament_teams(player1_id)'],
+      ['ix_tteams_player2', 'CREATE INDEX IF NOT EXISTS ix_tteams_player2 ON tournament_teams(player2_id)'],
+      ['ix_tmatches_tournament', 'CREATE INDEX IF NOT EXISTS ix_tmatches_tournament ON tournament_matches(tournament_id)'],
+      ['ix_tmatches_next', 'CREATE INDEX IF NOT EXISTS ix_tmatches_next ON tournament_matches(next_match_id)'],
+      ['ix_tmatches_team_a', 'CREATE INDEX IF NOT EXISTS ix_tmatches_team_a ON tournament_matches(team_a_id)'],
+      ['ix_tmatches_team_b', 'CREATE INDEX IF NOT EXISTS ix_tmatches_team_b ON tournament_matches(team_b_id)'],
+      ['ix_payments_tournament_id', 'CREATE INDEX IF NOT EXISTS ix_payments_tournament_id ON payments(tournament_id)'],
+    ]) {
+      await knex.raw(ddl)
+      void ix
+    }
+    const tExists = await knex.schema.hasTable('tournaments')
+    if (tExists) console.log('Migration: tournament tables ensured')
+  }
+} catch (err) {
+  console.log('Migration for tournament tables skipped:', err.message)
+}
+
 // Cache which tables expose created_by/updated_by (information_schema, once).
 try {
   const cols = await loadActorColumns()
@@ -351,6 +489,25 @@ try {
   setInterval(() => sweepOnce('interval'), 6 * 60 * 60 * 1000) // every 6h
 } catch (err) {
   console.log('Balance cycle sweep init skipped:', err.message)
+}
+
+// ── Tournament registration auto-close sweep (startup + every 6h) ──
+// Flips expired registration_open → registration_closed so signups close
+// themselves at the deadline; the signup endpoint re-checks on every POST.
+try {
+  const { runTournamentSweep } = await import('./utils/tournamentSweep.js')
+  const tSweepOnce = async (label) => {
+    try {
+      const r = await runTournamentSweep()
+      if (r.closed?.length) console.log(`Tournament sweep (${label}): closed ${r.closed.join(', ')}`)
+    } catch (e) {
+      console.error(`Tournament sweep (${label}) failed:`, e.message)
+    }
+  }
+  await tSweepOnce('startup')
+  setInterval(() => tSweepOnce('interval'), 6 * 60 * 60 * 1000) // every 6h
+} catch (err) {
+  console.log('Tournament sweep init skipped:', err.message)
 }
 
 // Admin-triggered rollover endpoint — registered above (before 404 catch-all)

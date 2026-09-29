@@ -23,7 +23,10 @@ export default function Payment() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const booking = location.state || null
-  const { sessionType, sessions = [], totalPrice = 0, sessionCount = 0, mode } = booking || {}
+  const { sessionType, sessions = [], totalPrice = 0, sessionCount = 0, mode,
+    purpose, tournamentName, entryFee, paymentRef, returnTo } = booking || {}
+  const isTournament = purpose === 'tournament'
+  const amount = isTournament ? Number(entryFee || 0) : totalPrice
 
   const [copied, setCopied] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -41,8 +44,14 @@ export default function Payment() {
 
   const handleConfirm = async (e) => {
     e.preventDefault()
-    setIsProcessing(true)
     setError('')
+    if (isTournament) {
+      // entry-fee payment row was created at signup time — nothing to POST
+      setBookingReference(paymentRef || 'Tournament entry')
+      setBookingConfirmed(true)
+      return
+    }
+    setIsProcessing(true)
     try {
       const data = await api.post('/bookings', {
         sessionType,
@@ -61,8 +70,9 @@ export default function Payment() {
 
   if (bookingConfirmed) {
     const playerName = user?.name || 'Player'
-    const sessionList = sessions.map(s => s.label).join('%0A')
-    const waMessage = `Hi MM Padel Academy!%0A%0ABooking Reference: ${bookingReference}%0AName: ${playerName}%0ASessions: ${sessionCount} ${sessionLabel}%0ATotal: ${totalPrice.toLocaleString()} EGP%0A%0APayment has been completed via InstaPay. Please confirm my booking.`
+    const waMessage = isTournament
+      ? `Hi MM Padel Academy!%0A%0APayment Reference: ${bookingReference}%0AName: ${playerName}%0ATournament: ${tournamentName}%0AAmount: ${amount.toLocaleString()} EGP%0A%0APayment has been completed via InstaPay. Please confirm my tournament entry.`
+      : `Hi MM Padel Academy!%0A%0ABooking Reference: ${bookingReference}%0AName: ${playerName}%0ASessions: ${sessionCount} ${sessionLabel}%0ATotal: ${totalPrice.toLocaleString()} EGP%0A%0APayment has been completed via InstaPay. Please confirm my booking.`
     const waUrl = `https://wa.me/201000915244?text=${waMessage}`
 
     return (
@@ -75,24 +85,37 @@ export default function Payment() {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold uppercase tracking-wider mb-2">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Booking Pending Admin Confirmation</span>
+              <span>Payment Pending Admin Confirmation</span>
             </div>
-            <h1 className="font-heading text-3xl font-black text-theme">Booking Submitted!</h1>
-            <p className="text-theme text-sm mt-1">Your booking is pending. Send your payment screenshot on WhatsApp to get confirmed.</p>
+            <h1 className="font-heading text-3xl font-black text-theme">{isTournament ? 'Entry Payment Submitted!' : 'Booking Submitted!'}</h1>
+            <p className="text-theme text-sm mt-1">
+              {isTournament
+                ? 'Your tournament registration is pending. Send your payment screenshot on WhatsApp to get confirmed.'
+                : 'Your booking is pending. Send your payment screenshot on WhatsApp to get confirmed.'}
+            </p>
           </div>
 
           <div className="bg-surface/90 rounded-2xl p-6 border border-theme text-left space-y-4">
             <div className="flex items-center justify-between border-b border-theme pb-3">
               <div>
-                <span className="text-[10px] text-muted uppercase tracking-widest font-semibold block">Booking Reference ID</span>
+                <span className="text-[10px] text-muted uppercase tracking-widest font-semibold block">{isTournament ? 'Payment Reference' : 'Booking Reference ID'}</span>
                 <span className="font-mono text-xl font-extrabold text-brand-text">{bookingReference}</span>
               </div>
               <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 uppercase">Pending</span>
             </div>
             <div className="grid grid-cols-2 gap-4 text-xs">
-              <div><span className="text-muted block">Session Category:</span><span className="text-theme font-bold">{sessionLabel}</span></div>
-              <div><span className="text-muted block">Sessions:</span><span className="text-brand-text font-bold">{sessionCount}</span></div>
-              <div><span className="text-muted block">Total Paid:</span><span className="text-brand-text font-extrabold">{totalPrice.toLocaleString()} EGP</span></div>
+              {isTournament ? (
+                <>
+                  <div><span className="text-muted block">Tournament:</span><span className="text-theme font-bold">{tournamentName}</span></div>
+                  <div><span className="text-muted block">Type:</span><span className="text-theme font-bold">Entry Fee</span></div>
+                </>
+              ) : (
+                <>
+                  <div><span className="text-muted block">Session Category:</span><span className="text-theme font-bold">{sessionLabel}</span></div>
+                  <div><span className="text-muted block">Sessions:</span><span className="text-brand-text font-bold">{sessionCount}</span></div>
+                </>
+              )}
+              <div><span className="text-muted block">Total Paid:</span><span className="text-brand-text font-extrabold">{amount.toLocaleString()} EGP</span></div>
               <div><span className="text-muted block">Confirm on:</span><a href={CONTACT.phoneHref} className="text-theme font-semibold hover:text-brand-text">{CONTACT.phone}</a></div>
             </div>
           </div>
@@ -114,8 +137,8 @@ export default function Payment() {
             <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-surface hover:bg-slate-200 dark:hover:bg-slate-800 text-theme font-bold text-xs border border-theme flex items-center justify-center gap-2 transition-all">
               <Printer className="w-4 h-4" /><span>Print Receipt</span>
             </button>
-            <Link to="/" className="flex-1 py-3 rounded-xl bg-brand hover:bg-brand-hover text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-brand/20 transition-all">
-              <span>Return to Home</span><ArrowRight className="w-4 h-4" />
+            <Link to={isTournament ? (returnTo || '/tournament') : '/'} className="flex-1 py-3 rounded-xl bg-brand hover:bg-brand-hover text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-brand/20 transition-all">
+              <span>{isTournament ? 'Return to Tournament' : 'Return to Home'}</span><ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>
@@ -129,8 +152,8 @@ export default function Payment() {
 
       <div className="max-w-6xl mx-auto relative z-10">
         <div className="flex items-center justify-between mb-8">
-          <button onClick={() => navigate('/book')} className="inline-flex items-center gap-2 text-xs font-bold text-muted hover:text-slate-900 dark:hover:text-white transition-colors">
-            <ArrowLeft className="w-4 h-4" /><span>Back to Booking Selection</span>
+          <button onClick={() => navigate(isTournament ? (returnTo || '/tournament') : '/book')} className="inline-flex items-center gap-2 text-xs font-bold text-muted hover:text-slate-900 dark:hover:text-white transition-colors">
+            <ArrowLeft className="w-4 h-4" /><span>{isTournament ? 'Back to Tournament' : 'Back to Booking Selection'}</span>
           </button>
           <div className="flex items-center gap-2 text-xs text-brand-text bg-brand/10 px-3 py-1.5 rounded-full border border-brand-text/30 font-semibold">
             <Lock className="w-3.5 h-3.5" /><span>Official InstaPay Checkout</span>
@@ -160,7 +183,7 @@ export default function Payment() {
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-[10px] uppercase font-bold tracking-widest text-purple-300">InstaPay Payment Link</span>
-                    <p className="font-heading text-2xl font-black text-theme mt-0.5">{totalPrice.toLocaleString()} <span className="text-sm font-bold text-brand-text">EGP</span></p>
+                    <p className="font-heading text-2xl font-black text-theme mt-0.5">{amount.toLocaleString()} <span className="text-sm font-bold text-brand-text">EGP</span></p>
                   </div>
                   <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300"><Zap className="w-5 h-5" /></div>
                 </div>
@@ -182,10 +205,10 @@ export default function Payment() {
 
               <form onSubmit={handleConfirm} className="space-y-4 pt-2 border-t border-theme">
                 <h3 className="text-sm font-bold text-theme uppercase tracking-wider flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-brand-text" /><span>Confirm Your Reservation</span>
+                  <ShieldCheck className="w-4 h-4 text-brand-text" /><span>{isTournament ? 'Confirm Your Payment' : 'Confirm Your Reservation'}</span>
                 </h3>
                 <p className="text-xs text-muted leading-relaxed">
-                  Complete your payment via InstaPay using the link above, then send your payment screenshot to us on WhatsApp/phone to confirm your booking:{' '}
+                  {isTournament ? 'Complete your payment via InstaPay using the link above, then send your payment screenshot to us on WhatsApp/phone to confirm your tournament entry:' : 'Complete your payment via InstaPay using the link above, then send your payment screenshot to us on WhatsApp/phone to confirm your booking:'}{' '}
                   <a href={CONTACT.phoneHref} className="text-brand-text font-bold hover:underline">{CONTACT.phone}</a>
                 </p>
                 <button type="submit" disabled={isProcessing} className="w-full py-4 rounded-2xl bg-brand hover:bg-brand-hover text-white font-black text-base shadow-xl shadow-brand/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50">
@@ -196,7 +219,7 @@ export default function Payment() {
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
-                      <span>I Have Completed Payment ({totalPrice.toLocaleString()} EGP)</span>
+                      <span>I Have Completed Payment ({amount.toLocaleString()} EGP)</span>
                       <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
                     </span>
                   )}
@@ -208,28 +231,37 @@ export default function Payment() {
               <div className="glass-panel rounded-3xl p-6 border border-theme shadow-2xl space-y-6">
                 <div className="border-b border-theme pb-4">
                   <span className="text-[10px] uppercase font-bold text-brand-text tracking-widest block">Order Summary</span>
-                  <h3 className="font-heading text-lg font-extrabold text-theme mt-0.5">Reservation Breakdown</h3>
+                  <h3 className="font-heading text-lg font-extrabold text-theme mt-0.5">{isTournament ? 'Tournament Entry' : 'Reservation Breakdown'}</h3>
                 </div>
 
                 <div className="space-y-4 text-xs">
                   <div className="p-4 rounded-2xl bg-surface/90 border border-theme space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-theme text-sm">{sessionLabel}</span>
-                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded bg-brand/20 text-brand-text">
-                        {sessionCount} session{sessionCount === 1 ? '' : 's'} • {mode === 'day' ? 'Per Day' : 'Per Week'}
-                      </span>
-                    </div>
-                    <ul className="space-y-1.5 pt-2 border-t border-theme max-h-56 overflow-y-auto pr-1">
-                      {sessions.map((s, i) => (
-                        <li key={i} className="text-muted">• {s.label}</li>
-                      ))}
-                    </ul>
+                    {isTournament ? (
+                      <div className="flex justify-between items-center gap-3">
+                        <span className="font-bold text-theme text-sm truncate">{tournamentName}</span>
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded bg-brand/20 text-brand-text shrink-0">Entry Fee</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-theme text-sm">{sessionLabel}</span>
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded bg-brand/20 text-brand-text">
+                            {sessionCount} session{sessionCount === 1 ? '' : 's'} • {mode === 'day' ? 'Per Day' : 'Per Week'}
+                          </span>
+                        </div>
+                        <ul className="space-y-1.5 pt-2 border-t border-theme max-h-56 overflow-y-auto pr-1">
+                          {sessions.map((s, i) => (
+                            <li key={i} className="text-muted">• {s.label}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </div>
 
                   <div className="pt-2 border-t border-theme flex justify-between items-center">
                     <span className="font-extrabold text-theme text-base">Total Amount Due</span>
                     <div className="text-right">
-                      <span className="font-heading text-3xl font-black text-brand-text">{totalPrice.toLocaleString()}</span>
+                      <span className="font-heading text-3xl font-black text-brand-text">{amount.toLocaleString()}</span>
                       <span className="text-xs font-bold text-theme ml-1">EGP</span>
                     </div>
                   </div>

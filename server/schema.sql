@@ -538,3 +538,146 @@ CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS ix_conv_requests_user_id ON conversion_requests(user_id);
 CREATE INDEX IF NOT EXISTS ix_expenses_created_by ON expenses(created_by);
 CREATE INDEX IF NOT EXISTS ix_app_sessions_user_id ON app_sessions(user_id);
+
+-- ---------------------------------------------------------- tournaments ---
+-- One row per tournament; skill_level is ONE of the 8 values (multi-division
+-- events = separate rows sharing a name prefix). bracket_size is the knockout
+-- target: exactly 4, 8, 16, 32 or 64 (byes fill any unused slots).
+CREATE TABLE tournaments (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    skill_level VARCHAR(16) NOT NULL,
+    format VARCHAR(20) NOT NULL,                 -- 'knockout' | 'groups_knockout'
+    status VARCHAR(30) NOT NULL DEFAULT 'draft', -- draft | registration_open | registration_closed | in_progress | completed | cancelled
+    bracket_size INT NOT NULL,                   -- 4 | 8 | 16 | 32 | 64
+    groups_count INT,                            -- format 'groups_knockout' only
+    teams_per_group INT,                         -- format 'groups_knockout' only
+    advance_per_group INT,                       -- format 'groups_knockout' only
+    match_format VARCHAR(20) NOT NULL DEFAULT 'short', -- short | long | tiebreak
+    entry_fee NUMERIC DEFAULT 0,
+    count_to_records SMALLINT NOT NULL DEFAULT 0, -- 0/1 (app normalizes booleans to 1/0)
+    registration_open_at TIMESTAMP,
+    registration_close_at TIMESTAMP,
+    notes TEXT,
+    created_by INT,
+    updated_by INT,
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    CONSTRAINT chk_tournament_skill CHECK (skill_level IN ('Beginners','Low D','D','Low C','C','B','A','Open')),
+    CONSTRAINT chk_tournament_format CHECK (format IN ('knockout','groups_knockout')),
+    CONSTRAINT chk_tournament_status CHECK (status IN ('draft','registration_open','registration_closed','in_progress','completed','cancelled')),
+    CONSTRAINT chk_tournament_bracket_size CHECK (bracket_size IN (4,8,16,32,64)),
+    CONSTRAINT chk_tournament_match_format CHECK (match_format IN ('short','long','tiebreak')),
+    CONSTRAINT chk_tournament_fee CHECK (entry_fee IS NULL OR entry_fee >= 0)
+);
+
+-- --------------------------------------------------- tournament_signups ---
+-- Raw player entries during the signup window. player2_id NULL = solo signup
+-- (admin pairs two solos at finalize). Locks to a pair after draw = rows are
+-- promoted into tournament_teams and signups are no longer writable.
+CREATE TABLE tournament_signups (
+    id SERIAL PRIMARY KEY,
+    tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    team_name VARCHAR(160),                       -- optional; display name generated if null
+    player1_id INT NOT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+    player2_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending | approved | rejected | withdrawn
+    payment_id INT,                               -- 0-session entry-fee payment (see payments.tournament_id)
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    CONSTRAINT chk_signup_status CHECK (status IN ('pending','approved','rejected','withdrawn')),
+    CONSTRAINT chk_signup_distinct_players CHECK (player2_id IS NULL OR player2_id <> player1_id)
+);
+
+-- ---------------------------------------------------- tournament_teams ---
+-- Finalized teams (from approved signups + admin pairing). Locked once draw
+-- is finalized: no substitutions. seed = knockout seed (1 = strongest, gets
+-- byes first); group_label = 'A','B',... for format 'groups_knockout'.
+CREATE TABLE tournament_teams (
+    id SERIAL PRIMARY KEY,
+    tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    team_name VARCHAR(160) NOT NULL,              -- auto "Name1 & Name2" if none given
+    player1_id INT NOT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+    player2_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+    seed INT,
+    group_label VARCHAR(4),
+    source VARCHAR(20) NOT NULL DEFAULT 'signup', -- signup | admin | paired_solo
+    status VARCHAR(20) NOT NULL DEFAULT 'active', -- active | withdrawn | eliminated
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    CONSTRAINT chk_team_status CHECK (status IN ('active','withdrawn','eliminated')),
+    CONSTRAINT chk_team_source CHECK (source IN ('signup','admin','paired_solo')),
+    CONSTRAINT chk_team_distinct_players CHECK (player2_id IS NULL OR player2_id <> player1_id)
+);
+
+-- -------------------------------------------------- tournament_matches ---
+-- Every fixture for both formats. next_match_id points at the match whose
+-- empty team slot receives this winner (NULL = final / last group match).
+-- phase 'group': group_label set, round_no unused (pairing index = slot_index).
+-- phase 'knockout': round_no 1..n, slot_index within round.
+CREATE TABLE tournament_matches (
+    id SERIAL PRIMARY KEY,
+    tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    phase VARCHAR(20) NOT NULL,                   -- group | knockout
+    group_label VARCHAR(4),
+    round_no INT NOT NULL DEFAULT 1,
+    slot_index INT NOT NULL DEFAULT 0,
+    next_match_id INT REFERENCES tournament_matches(id) ON DELETE SET NULL,
+    team_a_id INT REFERENCES tournament_teams(id) ON DELETE SET NULL,
+    team_b_id INT REFERENCES tournament_teams(id) ON DELETE SET NULL,
+    format VARCHAR(20),                           -- defaults to tournaments.match_format
+    score_a INT,
+    score_b INT,
+    winner_team_id INT REFERENCES tournament_teams(id) ON DELETE SET NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'scheduled', -- scheduled | completed | bye | tbd
+    court INT,
+    scheduled_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    CONSTRAINT chk_match_phase CHECK (phase IN ('group','knockout')),
+    CONSTRAINT chk_match_status CHECK (status IN ('scheduled','completed','bye','tbd')),
+    CONSTRAINT chk_match_scores CHECK (
+        (score_a IS NULL AND score_b IS NULL)
+        OR (score_a >= 0 AND score_b >= 0 AND score_a <> score_b)
+    )
+);
+
+-- payments.tournament_id: entry fees only. Hard DB guarantee that a
+-- tournament payment can NEVER carry sessions (0-session path — the
+-- settle-then-credit creditCycle logic has nothing to act on).
+ALTER TABLE payments ADD COLUMN tournament_id INT REFERENCES tournaments(id) ON DELETE SET NULL;
+ALTER TABLE payments ADD CONSTRAINT chk_tournament_payment_sessions
+    CHECK (tournament_id IS NULL OR (COALESCE(private_sessions,0) = 0 AND COALESCE(group_sessions,0) = 0));
+
+-- ------------------------------------------------ tournament FK Indexes ---
+CREATE INDEX IF NOT EXISTS ix_tournaments_status ON tournaments(status);
+CREATE INDEX IF NOT EXISTS ix_tournaments_skill ON tournaments(skill_level);
+CREATE INDEX IF NOT EXISTS ix_tsignups_tournament ON tournament_signups(tournament_id);
+CREATE INDEX IF NOT EXISTS ix_tsignups_player1 ON tournament_signups(player1_id);
+CREATE INDEX IF NOT EXISTS ix_tsignups_player2 ON tournament_signups(player2_id);
+CREATE INDEX IF NOT EXISTS ix_tteams_tournament ON tournament_teams(tournament_id);
+CREATE INDEX IF NOT EXISTS ix_tteams_player1 ON tournament_teams(player1_id);
+CREATE INDEX IF NOT EXISTS ix_tteams_player2 ON tournament_teams(player2_id);
+CREATE INDEX IF NOT EXISTS ix_tmatches_tournament ON tournament_matches(tournament_id);
+CREATE INDEX IF NOT EXISTS ix_tmatches_next ON tournament_matches(next_match_id);
+CREATE INDEX IF NOT EXISTS ix_tmatches_team_a ON tournament_matches(team_a_id);
+CREATE INDEX IF NOT EXISTS ix_tmatches_team_b ON tournament_matches(team_b_id);
+CREATE INDEX IF NOT EXISTS ix_payments_tournament_id ON payments(tournament_id);
+
+-- Tournament tables share the generic update_timestamp() trigger (created above)
+CREATE TRIGGER tournaments_updated_at_trigger
+    BEFORE UPDATE ON tournaments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+CREATE TRIGGER tournament_matches_updated_at_trigger
+    BEFORE UPDATE ON tournament_matches
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+CREATE TRIGGER tournament_signups_updated_at_trigger
+    BEFORE UPDATE ON tournament_signups
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+CREATE TRIGGER tournament_teams_updated_at_trigger
+    BEFORE UPDATE ON tournament_teams
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();

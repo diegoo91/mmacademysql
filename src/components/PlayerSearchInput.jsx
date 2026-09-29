@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../lib/api'
 
-export default function PlayerSearchInput({ value, onChange, onPlayerSelect, placeholder, strict }) {
+export default function PlayerSearchInput({ value, onChange, onPlayerSelect, placeholder, strict, endpoint, minChars = 3 }) {
   const [query, setQuery] = useState(value || '')
   const [suggestions, setSuggestions] = useState([])
   const [open, setOpen] = useState(false)
@@ -20,9 +20,12 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
   }, [])
 
   const fetchSuggestions = (q) => {
-    if (q.length < 3) { setSuggestions([]); return }
-    api.get(`/users?role=player&search=${encodeURIComponent(q)}&limit=10`).then(data => {
-      setSuggestions(data.players || [])
+    if (q.length < minChars) { setSuggestions([]); return }
+    const url = endpoint
+      ? `${endpoint}${encodeURIComponent(q)}`
+      : `/users?role=player&search=${encodeURIComponent(q)}&limit=10`
+    api.get(url).then(data => {
+      setSuggestions((data.players || []).map(p => ({ ...p, full_name: p.full_name || p.name })))
       setOpen(true)
     }).catch(() => setSuggestions([]))
   }
@@ -77,7 +80,7 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
   }
 
   const items = suggestions.map(s => s.full_name)
-  const showAddNew = !strict && query.length >= 3 && !items.some(n => n.toLowerCase() === query.toLowerCase())
+  const showAddNew = !strict && query.length >= minChars && !items.some(n => n.toLowerCase() === query.toLowerCase())
 
   return (
     <div ref={wrapRef} className="relative">
@@ -85,7 +88,7 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
         type="text"
         value={query}
         onChange={e => handleInput(e.target.value)}
-        onFocus={() => query.length >= 3 && (suggestions.length > 0 || showAddNew) && setOpen(true)}
+        onFocus={() => query.length >= minChars && (suggestions.length > 0 || showAddNew) && setOpen(true)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder || 'e.g. Zain'}
         className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs"

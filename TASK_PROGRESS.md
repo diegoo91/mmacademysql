@@ -268,3 +268,135 @@
 - **Deploys:** main `f566791`; GH Pages bundle `B2HquGAj` (last frontend run 36345820249); Railway `490d81cd` SUCCESS (2026-09-27 19:58 UTC)
 - **Unpaid report (both envs):** 19 players, EGP 89,500 — Magdy gift button still pending
 - **Totos (23):** cycle 2/0, debt 0 ✓ · **Magdy (18):** 4 unpaid private = EGP 4,000 · **Ismail (16):** clean
+
+## Tournament system — Phase 1+2 PAUSED mid-build (2026-09-28) — LOCALHOST ONLY, nothing pushed
+
+**Scope agreed:** knockout + groups→knockout formats, replacing both placeholder shells (`src/pages/Tournament.jsx` public, `src/pages/admin/Tournament.jsx` admin — routes already wired in `App.jsx:120/186`, admin sidebar `AdminLayout.jsx:10`). Full spec = the 16 answered questions + 2 additions (fixed sizes 4/8/16/32/64; skill_level one-per-row from 8 values). **No push, no prod DB, no commits until user approves.**
+
+### DONE (Phase 1a/1b + 2a/2b)
+- [x] **`server/schema.sql`** — appended: `tournaments`, `tournament_signups`, `tournament_teams`, `tournament_matches` (+CHECKs: skill allowlist, format, status, bracket_size ∈ 4/8/16/32/64, match_format, scores never tie, distinct players) + `payments.tournament_id` FK + **`chk_tournament_payment_sessions` (tournament payment MUST be 0-session)** + 13 indexes + `updated_at` triggers (generic `update_timestamp()` already exists in schema.sql:109)
+- [x] **`server/src/index.js`** — import + mount `/api/tournaments` (actionLimiter, line ~121); `ensureTournaments()` idempotent runtime migration (4× `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, CHECK via `DO $$ ... duplicate_object` block, `CREATE OR REPLACE FUNCTION update_timestamp()`, guarded triggers, indexes) placed after payments-settlement migration (~line 329); **tournament sweep hook** (boot + 6h) after balance sweep (~line 460) importing `./utils/tournamentSweep.js` — **file NOT created yet → server will fail boot until 2c/2d done**
+- [x] **`server/src/db.js`** — `TABLES` += 4 tournament tables (after users → correct delete/insert order for export/replaceAll); `DATE_COLS` += tournaments (registration_open_at/close_at), signups, teams, matches (scheduled_at); `DECIMAL_COLS.tournaments = ['entry_fee']`
+- [x] **`server/src/utils/tournament.js`** (pure, no DB) — `BRACKET_SIZES/SKILL_LEVELS/FORMATS/MATCH_FORMATS`, `nextBracketSize`, `standardSeeding` (iterative doubling), `validateTournamentInput` (incl. G×TPG ∈ sizes, G×advance ∈ sizes, advance ≤ TPG), `signupCap`, `knockoutSizeFor`, `nextSlotOf`, `buildKnockoutRows` (seed→position via `seeding.indexOf`, rounds + next links), `roundRobinPairings` (circle method, odd→null pad), `buildGroupRows`, **`evaluateKnockout`** (read-time resolver: round-order, feeders by next links; bye/walkover cascade, dead slots → tbd; scheduled match = `resolved:false` so unplayed feeders don't fake byes), **`computeStandings`** (wins → H2H mini-table → game diff → games won), **`avoidSameGroupR1`** (Kuhn bipartite matching per cross-block, permutes weaker block only), `seedQualifierKnockout` (strength-sorted rank blocks → seeds → same-group fix), `autoDistributeIntoGroups`
+- [x] **Phase 2b verify: `Temp\opencode\verify-tournament.cjs` → 107/107 PASS** (seeding 4–64 permutations/mirror/halves, validation cases, 3-team bye-to-final, 2-team/8 walkover cascade, byes=lowest seeds for n=3,5,7,9,13,17,33, RR completeness n=2–11, standings 4 cases incl. H2H-before-diff + 3-way cycle, adversarial same-group seeding G=2/G=4×2/G=4×4, advance=1)
+- [x] **Key verifications:** `creditCycle(0,0)` = hard no-op (`cycle.js:294`) → existing Payments-tab approve of entry-fee payments is safe; `db.update` strips `updated_at` (needs triggers); `normalizeForPg` coerces boolean→1/0 (⇒ `count_to_records SMALLINT`)
+
+### NOT DONE — resume here
+- [ ] **Phase 2c — `server/src/utils/tournamentSweep.js`**: `runTournamentSweep()` — for `registration_open` with `registration_close_at < now` → status `registration_closed`, notify signed-up players (`/tournament`) + active admins (`/admin/tournament`) via `notifyUsers(ids, {kind, title, body, link})`; return `{closed: [names]}` (index.js expects `r.closed`)
+- [ ] **Phase 2d — `server/src/routes/tournaments.js`** — design decided, not yet written:
+  - Order: public `GET /` (exclude `draft`), `GET /:id` (tournament + teams + matches; hydrate `next_round/next_slot/next_side` from `next_match_id` graph for `evaluateKnockout`; standings via `computeStandings` when group rows exist), `POST /:id/signup` (authenticate), `GET /:id/my-signup` (authenticate) → then `router.use(authenticate)` + `requireRole('superadmin','admin')` for everything below
+  - **Signup:** role must be `player`; status `registration_open`; `now < close`; requester ∈ pair; not already signed up (non-rejected); cap = `signupCap(t)`; fee>0 → insert `payments` row DIRECTLY (ref `PAY-####` via `db.count('payments')+1` like payments.js:21, method `Instapay`, `payment_pending`, `tournament_id`, sessions 0, `private/group_sessions: 0`) + `signup.payment_id` — **never through `POST /payments`, never `creditCycle`**; notify admins (`tournament_signup` + reuse `new_payment` kind when fee>0); `auditCreate(req, 'tournament_signup', ...)`
+  - **Admin:** `POST /` (validateTournamentInput; groups format derives `bracket_size = G×advance`; open+close dates present → status registration_open else draft), `PUT /:id` (reject once teams exist), `POST /:id/open|close` (close = same notify as sweep), `DELETE /:id` (only draft/registration_open/closed-without-teams; FK cascade cleans tables, payments persist with `tournament_id→NULL`), `GET /manage` (all incl. draft + counts), `GET /:id/signups` (names + payment status join), `PUT /signups/:sid` (approve requires payment_approved when fee>0, or rejected), `POST /:id/pair-solos` `{signup_a_id, signup_b_id, team_name?}` (merge: a.player2 = b.player1, b→`withdrawn`; require BOTH payments approved when fee>0; sets a→approved), `POST /:id/teams` (admin add team source `admin`), `PUT/DELETE /teams/:tid` pre-draw
+  - **Draw** `POST /:id/draw` (status must be `registration_closed`; no existing matches; ≥2 teams; ≤cap): materialize teams from approved signups (require `player2_id` set → 400 "pair solos first" if any solo; name = `team_name || "X & Y"`); knockout: `{mode:'manual'|'random', order?:[teamIds]}` → seeds = order/shuffle, `buildKnockoutRows` → insert **descending round order** (next ids exist); groups: `{mode, order?, groups?:{A:[ids]}}` or `autoDistributeIntoGroups` → teams get `group_label` + seed, `buildGroupRows` insert; status→`in_progress`; notify all players (`draw published`, link `/tournament`)
+  - **Result** `PUT /matches/:mid` admin: `{score_a?, score_b?, court?, scheduled_at?}`; scores present → validate ints ≥0 ≠, knockout side resolution via hydrated `evaluateKnockout` (playable only), group via `team_a_id/team_b_id`; set scores/winner/`status='completed'`. Group phase: when ALL group matches completed → `computeStandings` → `seedQualifierKnockout` → `buildKnockoutRows` (bracketSize = G×advance, no byes) → insert (guard: knockout rows absent). Knockout final completed → status `completed` + notify
+  - **Mirror** (only if `count_to_records`): helper writing `results` rows (status `confirmed`, `competition = tournament name`, `format = t.match_format`, `sideA/sideB + sideA_ids/sideB_ids` from teams' players, en-dash `score_text`, `winner_side`, `submitted_by` actor, `court`, `notes = "tournament:<id>:m<matchId>"` marker for dedupe); `PUT /:id/count-to-records {enabled}` (enabling post-completion mirrors now); optional `POST /:id/complete`
+  - Getters hydrate rows: `next_round = linked.round_no`, `next_slot = linked.slot_index`, `next_side = slot_index % 2 === 0 ? 'a' : 'b'`
+- [ ] **Phase 2e** — API smoke (login admin → create → signup window open/full/close rejections → fee payment 0-session + CHECK proof → draw → results → group→knockout auto-build → standings → complete/mirror → sweep auto-close)
+- [ ] **Phase 2f** — oxlint + restart local API (boot currently BROKEN until 2c+2d exist) + health + report for UI approval
+- [ ] Phase 3–5 (after approval): admin UI wizard/signup/draw/result; public UI + `Countdown/BracketView/GroupTable`; final verify + checkpoint; **push only on explicit approval**
+
+### Data state / temp artifacts
+- **Verify script:** `C:\Users\AHMED~1.FOU\AppData\Local\Temp\opencode\verify-tournament.cjs` (107/107, run anywhere — pure module, no DB)
+- **Modified files (uncommitted):** `server/schema.sql`, `server/src/index.js`, `server/src/db.js`, `server/src/utils/tournament.js` (new), `TASK_PROGRESS.md`
+- **Local DB:** has NO tournament tables yet (migration runs on next server boot); prod untouched
+- **Local API on 5174:** running OLD code (pre-tournament) — do NOT assume boot works after restart until 2c+2d complete
+- **Repo state at pause:** HEAD `59d875f` (docs) / working tree dirty with the 4 files above
+
+
+---
+
+### CHECKPOINT 2026-09-28 -- Phase 1+2 COMPLETE (backend), awaiting UI approval
+
+**Status: all backend phases 1a-2e DONE and verified. Phase 2f report delivered. WAITING for user approval before Phase 3-5 (UI). Still NO commits, NO push, NO prod contact until explicit approval.**
+
+**Delivered files:**
+- `server/schema.sql` -- tournaments, tournament_signups (updated_at+trigger), tournament_teams (updated_at+trigger), tournament_matches, payments.tournament_id FK, `chk_tournament_payment_sessions` (0-session proof: direct psql inserts with private_sessions=1 and group_sessions=1 both rejected 23514; private_sessions=0 accepted)
+- `server/src/index.js` -- mount `/api/tournaments` (actionLimiter 100/min), `ensureTournaments()` idempotent migration (CREATE TABLE + ADD COLUMN IF NOT EXISTS for updated_at x4 tables + 4 triggers), sweep hook (boot + every 6h)
+- `server/src/utils/tournament.js` -- pure logic (validation, seeding, brackets, round-robin, standings, evaluator, same-group avoidance, group build, `parseDbTs()`)
+- `server/src/utils/tournamentSweep.js` -- auto-close sweep (parseDbTs deadline), notify players + admins
+- `server/src/routes/tournaments.js` -- full API: public list/detail, signup (fee = direct payments insert, 0-session, never creditCycle), my-signup, manage, signups CRUD, pair-solos, teams CRUD, open/close, draw (knockout + groups), match results, group->knockout auto-build, standings, count-to-records mirror, complete
+- `server/src/db.js` -- TABLES/DATE_COLS updated for all 4 tournament tables (updated_at included)
+
+**Bugs found+fixed during Phase 2e smoke (all regression-covered):**
+1. signups/teams missing `updated_at` column -> 500s (schema + ensure CREATE + ALTER)
+2. timezone-naive deadline parse -> false "deadline passed" (`parseDbTs()` everywhere)
+3. mirrorToResults skipped later knockout rounds (null sides) -> resolve via evaluateKnockout + persist team_a/b_id at record time
+4. `buildGroupRows` emitted ARRAY team ids in round-vs-pair rows -> pg integer cast error (flattened)
+5. evaluateKnockout state-key collision: group rows share round_no=1/slot_index with knockout R1 -> write path fed ALL rows (read path filtered) -> "teams not ready" on playable knockout matches (phase-scoped keys + route filters to knockout)
+6. signup cap did not count pre-drawn teams; NaN param guards added (404/400)
+
+**Test results (all green):**
+- Logic suite `Temp\opencode\verify-tournament.cjs`: **136/136 PASS** (incl. byes regression 4-into-8/7-into-8, avoidSameGroupR1 hole-skip, mixed-row evaluator)
+- API smoke `Temp\opencode\smoke-tournament.mjs` (localhost:5174): **104/104 PASS** -- validation rejects, signups (pair/solo/dup/cap/deadline), fee payment 0-session + settlement untouched balance, pair-solos, close/draw/results/409 conflicts, groups 12 matches -> auto knockout bracket 4 (G2xTPG4, advance 2 => Gxadv=4 qualifiers), standings, count_to_records mirror 3/15 + dedupe, RBAC, draft delete
+- Sweep standalone: **9/9 PASS** (expired closed, future kept, idempotent 2nd run, admin notified)
+- `npx oxlint`: 0 errors (pre-existing warnings only, untouched pages)
+- Local DB cleaned of ALL smoke residue (tournaments/users/payments/results/matches/teams/signups/notifications/audit = 0)
+
+**Gotchas for next session:**
+- Server start: shell-timeout kills Start-Process children; use WMI: `Invoke-CimMethod -ClassName Win32_Process -MethodName Create` with `cmd /c node src/index.js > "%TEMP%\opencode\api-boot.log" 2> "%TEMP%\opencode\api-boot.err"`, cwd=server; check `Get-NetTCPConnection -LocalPort 5174`
+- PowerShell inline `node -e` breaks -- use temp script files; `rg` unavailable
+- actionLimiter = 100/min on /api/tournaments: smoke auto-waits 61s on 429
+- Group knockout size = G x advancePerGroup (NOT max bracket); qualifier count always equals bracket size in normal draws (uneven manual groups could create byes -- handled+tested)
+
+**Next: Phase 3-5 UI (admin wizard + public Tournament page + Countdown/BracketView/GroupTable) -- ONLY after user approves; then final verify; push ONLY on explicit approval.**
+
+
+
+
+### CHECKPOINT 2026-09-28 (2) - Phase 3-5 UI COMPLETE (frontend), full feature done, STILL uncommitted
+
+**Status: tournament system fully built (backend + both UI pages), all test suites green, local DB scrubbed. NOTHING committed/pushed - waiting for user's explicit push approval.**
+
+**New/changed frontend files (uncommitted):**
+- `src/lib/tournament.js` (NEW) - shared constants (SKILL_LEVELS/BRACKET_SIZES/FORMATS/STATUS/SIGNUP/PAYMENT maps), `parseDbTs` (naive-UTC parse, mirrors server), `toApiDateTime` (datetime-local input to ISO; server stores naive UTC), `toInputValue` (DB value to datetime-local), `fmtDateTime/fmtDate`, `signupCap`, `formatSummary`, `statusPill`, `roundLabel`
+- `src/components/TournamentCountdown.jsx` (NEW) - 1s ticker with cleanup, gold pulse, "Registration closed" after deadline
+- `src/components/BracketView.jsx` (NEW) - round columns (Final/Semi/Quarter labels), match cards, winner highlight, bye/tbd/ready badges, champion banner
+- `src/components/GroupStandings.jsx` (NEW) - per-group table (P/W/L/Games +/-/Pts), `highlight` = advance positions (brand tint)
+- `src/components/PlayerSearchInput.jsx` (MOD) - added `endpoint` + `minChars` props (defaults unchanged; public page uses `/tournaments/players/search?q=`)
+- `src/pages/admin/Tournament.jsx` (REWRITTEN, ~1250 lines) - list (manage) + detail with 4 tabs:
+  - Overview: facts, countdown, Edit modal (create/validation mirrored client-side incl. G*TPG and G*ADV in sizes), open/close registration, delete, manual complete, count-to-records toggle (shows mirrored count)
+  - Signups and Teams: table (approve/reject/withdraw, payment badge + fee hint "approve in Payments first"), pair-solos (2 selects + optional name), add team (PlayerSearchInput strict), teams table (inline rename/delete pre-draw)
+  - Draw: checklist (close/pendings/solos), roster preview with seed-order up/down, group-assignment selects (manual groups) or auto/random; buttons send `{order:[player1_ids]}` / `{groups:{A:[player1_ids]}}` / `{mode:'random'}`
+  - Matches: group stage (GroupStandings + per-group rows with ScoreInputs court+scores), knockout (BracketView + result rows, disabled until `playable`), banners for knockout_built/tournament_completed/mirrored
+- `src/pages/Tournament.jsx` (REWRITTEN) - public list (skill chips, cards, countdown, fee/cap) + detail (info grid, notes, registration box: sign-in CTA via openLoginModal, role/deadline/full guards, team name + partner search, my-signup status card, fee payment note), GroupStandings, read-only group matches, BracketView, refresh buttons (repo has no polling)
+
+**New server endpoints/semantics (2 additions, all tested):**
+1. `GET /api/tournaments/players/search?q=` - authenticate only (members), returns max 10 `{id, full_name}` of active players (no email/phone), q<2 returns [], 401 unauthenticated. Needed because `GET /users` is admin/coach-only and public pairs must sign up together.
+2. `POST /:id/draw` extended - `order` accepts team ids OR player1 ids (pre-draw: signups materialize into teams inside the same call); `groups` values accept team ids OR player1 ids (mapped per-id, then validated for exact roster coverage).
+
+**Test results (final, all green against current code):**
+- Logic `verify-tournament.cjs`: **136/136**
+- API smoke `smoke-tournament.mjs`: **104/104**
+- Sweep standalone: **9/9**
+- New UI-API `smoke-ui-api.mjs` (Temp\opencode): **35/35** - search auth/shape/no-match/short, naive-UTC close_at round-trip from datetime-local to ISO to DB, pair signup, player-id order to seeds, player-id groups to group_label, double-draw 409
+- 0-session CHECK proofs (psql): private=1 rejected, group=1 rejected, private=0 accepted
+- `npx oxlint`: **0 errors** (only pre-existing warnings incl. set-state-in-effect on reset-effects)
+- `npm run build`: OK (chunk-size warning pre-existing); `dist/index.html` build side-effect was reverted to keep tree minimal
+- Local DB: ALL test residue deleted (tournaments/test-users/payments/results/matches/teams/signups/notifications = 0)
+
+**Timezone contract (UI and server):** datetime-local input (local tz) -> `toApiDateTime` -> ISO-with-Z -> `normalizeForPg` -> naive UTC in DB; reads are naive UTC -> `parseDbTs` (+Z) -> render local. Verified end-to-end in smoke-ui-api.
+
+**Resume here:** everything ready for review. Possible next steps: (a) user visual review on localhost (backend :5174 already running with latest code; frontend `npm run dev`), (b) commit+push ONLY on explicit approval (single commit or split feat/fix - ask), (c) prod deploy touches Railway+Pages+Supabase - needs separate explicit OK.
+
+---
+
+## Checkpoint: Registration fee -> Payment redirect
+
+**Request:** pressing the sign-up button showing the fee (e.g. 700 EGP) must redirect the player to the payment page with the tournament fee amount.
+
+**What changed:**
+- `server/src/routes/tournaments.js`: signup response now includes `payment: { id, ref, amount }` (null for free tournaments); `GET /:id/my-signup` attaches `payment_ref` + `payment_status` per signup (resume-payment path).
+- `src/pages/Tournament.jsx`: successful signup with `payment_required` now does `navigate('/payment', { state: { purpose: 'tournament', tournamentName, entryFee, paymentRef, paymentId, returnTo: '/tournament' } })`; pending fee signup card got a "Pay {fee} EGP" button (hidden once payment is approved); submit button label -> "Sign up & Pay (700 EGP)".
+- `src/pages/Payment.jsx`: tournament mode via `state.purpose === 'tournament'` - amount shown everywhere = `entryFee` (InstaPay card, Total Amount Due, confirm button, success grid); summary shows "Tournament Entry" + tournament name + Entry Fee badge instead of the session breakdown; "I Have Completed Payment" does NOT POST /bookings (row was created at signup) -> success screen with payment reference + WhatsApp proof message incl. tournament name and amount; back/return go to `/tournament`. Booking mode unchanged (still `location.state`-only, no query params).
+
+**Flow:** signup (fee>0) creates `payment_pending` 0-session row (already existed) -> immediate redirect -> player pays via InstaPay -> "I Have Completed Payment" -> WhatsApp screenshot -> admin approves in Payments -> signup still needs approval in Signups tab. Free tournaments: no redirect (`payment: null` asserted).
+
+**Tests (all green):**
+- New `smoke-pay-redirect.mjs` (Temp\opencode): **22/22** - payment object shape, amount 700, pending status, my-signup ref/status/id match, /payments row notes + tournament_id + 0-session, free-tournament payment null
+- Regression: API smoke **104/104**, UI-API **35/35**, logic **136/136**
+- `npx oxlint`: 0 errors (pre-existing warnings only); `npm run build`: OK (dist/index.html side-effect reverted)
+- Backend restarted (WMI method) with new routes; vite dev :5173 (HMR live) + API :5174 both UP.
+
+**DB note:** test residue scrubbed again (tournaments/test-users/audit = 0). User manual repro restored intact: tournament "Test" (id 38, fee 700), signup 63 pending for Magdy, payment 72 PAY-0023 payment_pending, admin notifications 768-770 (new_payment) + 963-965 (tournament_signup). `payments` also holds 22 pre-existing real historical payments - never touched.
+
+**Resume here:** user reviews on localhost (the "Test" tournament signup or create a new fee tournament). Commit/push ONLY on explicit approval - prod deploy (Railway+Pages+Supabase) needs a separate OK.
