@@ -8,7 +8,7 @@ import { randomBytes } from 'crypto'
 import { unlinkSync } from 'fs'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate } from '../middleware/audit.js'
 import { deductBalance, creditBalance } from '../utils/balance.js'
 
@@ -94,7 +94,7 @@ const upload = multer({
 
 const router = Router()
 router.use(authenticate)
-router.use(requireRole('superadmin', 'admin'))
+router.use(requirePermission('imports'))
 
 function generateCourtTime(raw, format) {
   if (!raw) return raw
@@ -274,10 +274,13 @@ const TEMPLATES = {
                 `A ${sessionType} session on ${date} at ${time} (Court ${court}) has been assigned to you. Please confirm your attendance.`,
                 '/profile')
             }
-          } else {
+          } else if (matched.length > 0) {
+            let allOk = true
             for (const m of matched) {
-              await deductBalance(m.user.id, sessionType)
+              const r = await deductBalance(m.user.id, sessionType)
+              if (!r?.success) allOk = false
             }
+            await db.update('slots', slot.id, { balance_status: allOk ? 'deducted' : 'shortfall' })
           }
         }
         count++

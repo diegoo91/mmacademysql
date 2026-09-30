@@ -4,7 +4,8 @@ import crypto from 'crypto'
 import ExcelJS from 'exceljs'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requireRole, requirePermission, getUserPermissions } from '../middleware/rbac.js'
+import { ALL_MODULES } from '../utils/modules.js'
 import { validateLength, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete, auditRoleChange, auditBalanceChange } from '../middleware/audit.js'
 import { updateUserBalance, ensureCycleFresh, effectivePrivate, effectiveGroupBalance, monthlyDisplay } from '../utils/balance.js'
@@ -100,7 +101,7 @@ async function enrichPlayer(p, allSlots, bookingsById) {
   }
 }
 
-router.get('/', requireRole('superadmin', 'admin', 'coach'), async (req, res) => {
+router.get('/', requirePermission('players'), async (req, res) => {
   try {
     const { search, role, skill, page, limit } = req.query
     const isCoach = req.user.role === 'coach'
@@ -199,7 +200,7 @@ router.get('/export-credentials', requireRole('superadmin'), async (req, res) =>
   }
 })
 
-router.get('/:id', requireRole('superadmin', 'admin', 'coach'), async (req, res) => {
+router.get('/:id', requirePermission('players'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const user = await db.get('users', id)
@@ -218,7 +219,7 @@ router.get('/:id', requireRole('superadmin', 'admin', 'coach'), async (req, res)
   }
 })
 
-router.get('/:id/sessions', requireRole('superadmin', 'admin', 'coach'), async (req, res) => {
+router.get('/:id/sessions', requirePermission('players'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const player = await db.get('users', id)
@@ -236,9 +237,11 @@ router.get('/:id/report', async (req, res) => {
     const id = parseInt(req.params.id)
     const player = await db.get('users', id)
     if (!player || player.role !== 'player') return res.status(404).json({ error: 'Player not found' })
-    const isAdmin = req.user && (req.user.role === 'superadmin' || req.user.role === 'admin')
     const isSelf = req.user && req.user.id === player.id
-    if (!isAdmin && !isSelf) return res.status(403).json({ error: 'Access denied' })
+    if (!isSelf) {
+      const perms = await getUserPermissions(req.user)
+      if (!perms.includes('players')) return res.status(403).json({ error: 'Access denied' })
+    }
     const { sessions, amountOwed } = await computePlayerSessions(player)
     res.json({
       player: { id: player.id, name: player.name, email: player.email, phone: player.phone },
@@ -251,7 +254,7 @@ router.get('/:id/report', async (req, res) => {
   }
 })
 
-router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/', requirePermission('users'), async (req, res) => {
   try {
     const { name, full_name, email, phone, role, password, dob, skill_level, notes, position } = req.body
     const displayName = (full_name || name || '').trim()
@@ -286,12 +289,12 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
   }
 })
 
-router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id', requirePermission('users'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const user = await db.get('users', id)
     if (!user) return res.status(404).json({ error: 'User not found' })
-    const { name, full_name, email, phone, role, skill_level, notes, dob, position } = req.body
+    const { name, full_name, email, phone, role, skill_level, notes, dob, position, permissions } = req.body
     const roleNames = (await db.findAll('roles')).map(r => r.name)
     if (role && !roleNames.includes(role)) return res.status(400).json({ error: 'Invalid role' })
     const resolvedName = full_name || name
@@ -309,6 +312,12 @@ router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
     if (skill_level && !validSkills.includes(skill_level)) return res.status(400).json({ error: 'Invalid skill level' })
     const validPositions = ['Right', 'Left', '']
     if (position !== undefined && position !== null && !validPositions.includes(position)) return res.status(400).json({ error: 'Invalid position' })
+    // Per-user module overrides (Users modal "Module Access") — previously dropped silently
+    if (permissions !== undefined) {
+      if (!Array.isArray(permissions)) return res.status(400).json({ error: 'permissions must be an array of module names' })
+      const invalidPerms = permissions.filter(p => !ALL_MODULES.includes(p))
+      if (invalidPerms.length > 0) return res.status(400).json({ error: `Unknown module(s): ${invalidPerms.join(', ')}` })
+    }
     // Balances are controlled only via POST /:id/balance (profile one-by-one)
     const updates = {
       name: resolvedName || user.name,
@@ -319,6 +328,7 @@ router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
       notes: notes ?? user.notes,
       dob: dob ?? user.dob,
       position: position !== undefined ? position : user.position,
+      ...(permissions !== undefined ? { permissions } : {}),
     }
     const updated = await db.update('users', id, updates)
     const { password_hash, ...safe } = updated
@@ -334,7 +344,7 @@ router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
 
 // Per-user balance control (profile only — one player at a time)
 // body: { cycle_private?, cycle_group?, cycle_expires_at?, expire_now?, private_balance?, group_balance? }
-router.post('/:id/balance', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/:id/balance', requirePermission('users'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     let user = await db.get('users', id)
@@ -479,7 +489,7 @@ router.post('/:id/balance', requireRole('superadmin', 'admin'), async (req, res)
 // debt write-off). Only negative buckets are zeroed: positive legacy and the
 // current cycle are never touched. Reason is mandatory and audit-logged.
 // body: { reason: string }
-router.post('/:id/writeoff', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/:id/writeoff', requirePermission('users'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const user = await db.get('users', id)
@@ -547,7 +557,7 @@ router.post('/:id/writeoff', requireRole('superadmin', 'admin'), async (req, res
   }
 })
 
-router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/:id', requirePermission('users'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' })
@@ -563,7 +573,7 @@ router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   }
 })
 
-router.post('/:id/reset-password', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/:id/reset-password', requirePermission('users'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const target = await db.get('users', id)
@@ -597,7 +607,7 @@ router.patch('/:id/account-status', requireRole('superadmin'), async (req, res) 
   }
 })
 
-router.post('/:id/convert', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/:id/convert', requirePermission('conversions'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const user = await db.get('users', id)

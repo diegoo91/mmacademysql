@@ -2,7 +2,7 @@ import { Router } from 'express'
 import crypto from 'crypto'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
 import { hasEnoughBalance, reverseBalance, effectiveGroup } from '../utils/balance.js'
 import { notifyUser } from '../utils/notify.js'
@@ -26,6 +26,13 @@ async function genPayRef() {
   return `PAY-${String(count + 1).padStart(4, '0')}`
 }
 function parseIfString(v) { return typeof v === 'string' ? JSON.parse(v) : v }
+
+// Group slots display both names ("A / B"); partner is display-only (no billing impact).
+function slotPlayerText(name, sessionType, partner) {
+  const clean = (partner || '').trim()
+  if (sessionType === 'group' && clean) return `${name} / ${clean}`
+  return name
+}
 
 async function notify(userId, kind, title, body, link) {
   if (!userId) return
@@ -91,7 +98,7 @@ router.get('/balance-check', async (req, res) => {
 // POST /from-balance — book directly from balance (skip payment)
 router.post('/from-balance', async (req, res) => {
   try {
-    const { sessionType, sessions } = req.body
+    const { sessionType, sessions, partner } = req.body
     if (!sessionType || !sessions || !Array.isArray(sessions) || sessions.length === 0) {
       return res.status(400).json({ error: 'Missing booking data' })
     }
@@ -119,7 +126,7 @@ router.post('/from-balance', async (req, res) => {
       if (!existingSlot) {
         await db.insert('slots', {
           date: sess.date, time: sess.time, court: sess.court,
-          player_text: req.user.name, booking_id: booking.id,
+          player_text: slotPlayerText(req.user.name, sessionType, partner), booking_id: booking.id,
           user_id: req.user.id, session_type: sessionType, status: STATUS.SCHEDULE_APPROVED,
         })
       }
@@ -143,7 +150,7 @@ router.post('/from-balance', async (req, res) => {
 })
 
 // POST /guest — admin: create booking for walk-in guest (no account needed)
-router.post('/guest', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/guest', requirePermission('bookings'), async (req, res) => {
   try {
     const { guest_name, guest_phone, guest_email, sessionType, sessions } = req.body
     if (!guest_name || !sessionType || !sessions || !Array.isArray(sessions) || sessions.length === 0) {
@@ -185,7 +192,7 @@ router.post('/guest', requireRole('superadmin', 'admin'), async (req, res) => {
 // POST / — create booking + slots + payment (player pays in-app)
 router.post('/', async (req, res) => {
   try {
-    const { sessionType, mode, sessions, totalPrice, method } = req.body
+    const { sessionType, mode, sessions, totalPrice, method, partner } = req.body
     if (!sessionType || !sessions || !totalPrice) return res.status(400).json({ error: 'Missing booking data' })
 
     let ref = genRef()
@@ -204,7 +211,7 @@ router.post('/', async (req, res) => {
         if (!existingSlot) {
           await db.insert('slots', {
             date: sess.date, time: sess.time, court: sess.court,
-            player_text: req.user?.name || 'Player', booking_id: booking.id,
+            player_text: slotPlayerText(req.user?.name || 'Player', sessionType, partner), booking_id: booking.id,
             user_id: req.user?.id || null, session_type: sessionType, status: STATUS.PAYMENT_PENDING,
           })
         }
@@ -249,7 +256,7 @@ router.post('/', async (req, res) => {
 })
 
 // PUT /:id/status — update booking status
-router.put('/:id/status', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/status', requirePermission('bookings'), async (req, res) => {
   try {
     const { status } = req.body
     const valid = ['payment_pending', 'payment_approved', 'schedule_approved', 'player_confirmed', 'cancelled', 'denied']
@@ -273,7 +280,7 @@ router.put('/:id/status', requireRole('superadmin', 'admin'), async (req, res) =
 })
 
 // PUT /:id/sessions — edit booking sessions
-router.put('/:id/sessions', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/sessions', requirePermission('bookings'), async (req, res) => {
   try {
     const booking = await db.get('bookings', parseInt(req.params.id))
     if (!booking) return res.status(404).json({ error: 'Booking not found' })
@@ -318,7 +325,7 @@ router.put('/:id/sessions', requireRole('superadmin', 'admin'), async (req, res)
 })
 
 // DELETE /:id
-router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/:id', requirePermission('bookings'), async (req, res) => {
   try {
     const booking = await db.get('bookings', parseInt(req.params.id))
     if (!booking) return res.status(404).json({ error: 'Booking not found' })

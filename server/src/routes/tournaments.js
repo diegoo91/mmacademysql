@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate, optionalAuth } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 import { notifyUsers } from '../utils/notify.js'
 import {
@@ -213,7 +213,7 @@ async function buildKnockoutFromStandings(t) {
 }
 
 // ── Admin list (before public /:id so 'manage' is not swallowed) ──────────
-router.get('/manage', authenticate, requireRole(...ADMIN_ROLES), async (req, res) => {
+router.get('/manage', authenticate, requirePermission('results'), async (req, res) => {
   try {
     const rows = await db.findAll('tournaments')
     const out = []
@@ -414,7 +414,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
 // ── Everything below is admin-only ────────────────────────────────────────
 router.use(authenticate)
-router.use(requireRole(...ADMIN_ROLES))
+router.use(requirePermission('results'))
 
 router.post('/', async (req, res) => {
   try {

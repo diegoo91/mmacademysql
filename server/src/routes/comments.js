@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { validateLength, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
@@ -42,7 +42,7 @@ router.post('/', authenticate, async (req, res) => {
 })
 
 // Admin: get all comments (any status)
-router.get('/all', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/all', authenticate, requirePermission('comments'), async (req, res) => {
   try {
     const { status } = req.query
     let all = await db.findAll('comments')
@@ -56,7 +56,7 @@ router.get('/all', authenticate, requireRole('superadmin', 'admin'), async (req,
 })
 
 // Admin: approve a comment
-router.put('/:id/approve', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/approve', authenticate, requirePermission('comments'), async (req, res) => {
   try {
     const comment = await db.get('comments', parseInt(req.params.id))
     if (!comment) return res.status(404).json({ error: 'Comment not found' })
@@ -70,7 +70,7 @@ router.put('/:id/approve', authenticate, requireRole('superadmin', 'admin'), asy
 })
 
 // Admin: reject a comment
-router.put('/:id/reject', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/reject', authenticate, requirePermission('comments'), async (req, res) => {
   try {
     const comment = await db.get('comments', parseInt(req.params.id))
     if (!comment) return res.status(404).json({ error: 'Comment not found' })
@@ -84,7 +84,7 @@ router.put('/:id/reject', authenticate, requireRole('superadmin', 'admin'), asyn
 })
 
 // Admin: delete a comment
-router.delete('/:id', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/:id', authenticate, requirePermission('comments'), async (req, res) => {
   try {
     const comment = await db.get('comments', parseInt(req.params.id))
     if (!comment) return res.status(404).json({ error: 'Comment not found' })

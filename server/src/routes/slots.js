@@ -1,10 +1,10 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate, optionalAuth } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { validateLength, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
-import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
+import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, reverseBalance, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
 import { notifyUser as deliverNotification } from '../utils/notify.js'
 
 const router = Router()
@@ -51,6 +51,37 @@ async function resolveAllPlayers(playerText) {
   return { players, unknown, names }
 }
 
+// Deduct all players on a slot and return the resulting balance_status.
+// Handles the deferred-deduct states:
+//   null            → normal deduct (skips if insufficient → 'shortfall')
+//   'deduct_pending' → admin chose "Deduct Anyway" on a future slot — deducts
+//                      even if it drives the balance negative
+//   'free'/'deducted'/'shortfall' → already handled, returned unchanged
+async function deductSlotPlayers(slot) {
+  const bStatus = slot.balance_status
+  if (bStatus === 'free') return 'free'
+  if (bStatus === 'deducted' || bStatus === 'shortfall') return bStatus
+
+  const sessionType = slot.session_type || 'private'
+  const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+  let any = false
+  let allOk = true
+  for (const name of names) {
+    const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
+    if (!user) continue
+    any = true
+    const r = bStatus === 'deduct_pending'
+      ? await deductBalanceAllowNegative(user.id, sessionType)
+      : await deductBalance(user.id, sessionType)
+    if (!r?.success) {
+      allOk = false
+      console.warn(`Slot ${slot.id}: insufficient balance for user ${user.id} (${name}) — session recorded without deduction (balance_status=shortfall)`)
+    }
+  }
+  if (!any) return bStatus || null
+  return allOk ? 'deducted' : 'shortfall'
+}
+
 // Valid slot statuses in order
 const STATUS = {
   AVAILABLE: 'available',
@@ -73,15 +104,10 @@ router.get('/', optionalAuth, async (req, res) => {
     const today = getCairoToday()
     for (const s of all) {
       if (s.date < today && s.status === STATUS.SCHEDULE_APPROVED) {
-        const sessionType = s.session_type || 'private'
-        if (s.balance_status !== 'free' && s.balance_status !== 'deducted') {
-          const names = (s.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
-          for (const name of names) {
-            const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
-            if (user) await deductBalance(user.id, sessionType)
-          }
-        }
-        await db.update('slots', s.id, { status: STATUS.PLAYER_CONFIRMED })
+        const newB = await deductSlotPlayers(s)
+        const upd = { status: STATUS.PLAYER_CONFIRMED }
+        if (newB && newB !== s.balance_status) upd.balance_status = newB
+        await db.update('slots', s.id, upd)
         s.status = STATUS.PLAYER_CONFIRMED
       }
     }
@@ -106,7 +132,7 @@ router.get('/', optionalAuth, async (req, res) => {
 })
 
 // Court defaults — coach assigned per court (standing default)
-router.get('/court-defaults', async (req, res) => {
+router.get('/court-defaults', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const defaults = await db.findAll('court_defaults')
     res.json(defaults)
@@ -116,7 +142,7 @@ router.get('/court-defaults', async (req, res) => {
   }
 })
 
-router.put('/court-defaults', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/court-defaults', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const { court, coach_id } = req.body
     if (!court) return res.status(400).json({ error: 'court is required' })
@@ -138,7 +164,7 @@ router.put('/court-defaults', authenticate, requireRole('superadmin', 'admin'), 
 router.use(authenticate)
 
 // PUT /notify-awaiting — one-time backfill: send notifications for all schedule_approved slots
-router.put('/notify-awaiting', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/notify-awaiting', requirePermission('schedule'), async (req, res) => {
   try {
     const allSlots = await db.findAll('slots')
     const awaiting = allSlots.filter(s => s.status === 'schedule_approved')
@@ -194,7 +220,7 @@ async function findPlayerUserById(userId) {
 
 
 // PUT /:id — generic update (admin edits slot fields)
-router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const slot = await db.get('slots', id)
@@ -219,6 +245,15 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
 
     if (player_text !== undefined) {
       if (!player_text?.trim()) {
+        // Clearing players erases the session — refund if a deduction actually happened
+        if (slot.balance_status === 'deducted') {
+          const oldType = slot.session_type || 'private'
+          const oldNames = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+          for (const n of oldNames) {
+            const u = await db.find('users', x => x.role === 'player' && x.name && x.name.toLowerCase() === n.toLowerCase())
+            if (u) await reverseBalance(u.id, oldType)
+          }
+        }
         updates.status = STATUS.AVAILABLE
         updates.session_type = null
         updates.booking_id = null
@@ -273,7 +308,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
           if (balanceOverride === 'free') {
             updates.balance_status = 'free'
           } else if (balanceOverride === 'deduct') {
-            updates.balance_status = 'deducted'
+            updates.balance_status = 'deduct_pending'
           } else {
             return res.status(409).json({
               error: 'Insufficient balance',
@@ -287,14 +322,15 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
             })
           }
         } else {
-          // All players have balance or override applied
+          // All players have balance (or override applied)
           if (!isFuture && balanceOverride !== 'free') {
             for (const p of resolved.players) {
               await deductBalance(p.id, stype)
             }
+            updates.balance_status = 'deducted'
           }
           if (balanceOverride === 'free') updates.balance_status = 'free'
-          else if (balanceOverride === 'deduct') updates.balance_status = 'deducted'
+          else if (balanceOverride === 'deduct' && isFuture) updates.balance_status = 'deduct_pending'
         }
 
         if (isFuture) {
@@ -333,7 +369,7 @@ router.put('/:id', authenticate, requireRole('superadmin', 'admin'), async (req,
 })
 
 // POST / — create slot (admin manual)
-router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const { date, time, court, player_text, session_type, balanceOverride, coach_id } = req.body
     if (!date || !time || !court) return res.status(400).json({ error: 'Date, time, and court are required' })
@@ -360,15 +396,21 @@ router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, r
         if (!ok) insufficientPlayers.push(p)
       }
 
+      const isFuture = isSlotDateFutureOrToday(date)
       let balanceStatus = null
       if (insufficientPlayers.length > 0) {
         if (balanceOverride === 'free') {
           balanceStatus = 'free'
         } else if (balanceOverride === 'deduct') {
-          for (const p of resolved.players) {
-            await deductBalanceAllowNegative(p.id, slotSessionType)
+          if (isFuture) {
+            // Defer the forced deduction to confirm/mark-attended
+            balanceStatus = 'deduct_pending'
+          } else {
+            for (const p of resolved.players) {
+              await deductBalanceAllowNegative(p.id, slotSessionType)
+            }
+            balanceStatus = 'deducted'
           }
-          balanceStatus = 'deducted'
         } else {
           return res.status(409).json({
             error: 'Insufficient balance',
@@ -381,14 +423,21 @@ router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, r
             needed: insufficientPlayers.length,
           })
         }
+      } else if (balanceOverride === 'free') {
+        balanceStatus = 'free'
+      } else if (isFuture) {
+        // Future slot: deduct on confirm, NOT here (deducting here would double-deduct)
+        if (balanceOverride === 'deduct') balanceStatus = 'deduct_pending'
       } else {
-        // All players have balance — deduct now
+        // Past slot with balance — deduct now
+        let allOk = true
         for (const p of resolved.players) {
-          await deductBalance(p.id, slotSessionType)
+          const r = await deductBalance(p.id, slotSessionType)
+          if (!r?.success) allOk = false
         }
+        balanceStatus = allOk ? 'deducted' : 'shortfall'
       }
 
-      const isFuture = isSlotDateFutureOrToday(date)
       const slot = await db.insert('slots', {
         date, time, court, player_text,
         session_type: slotSessionType,
@@ -423,10 +472,19 @@ router.post('/', authenticate, requireRole('superadmin', 'admin'), async (req, r
 })
 
 // DELETE /:id
-router.delete('/:id', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/:id', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
+    // Refund only if a deduction actually happened
+    if (slot.balance_status === 'deducted') {
+      const oldType = slot.session_type || 'private'
+      const oldNames = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+      for (const n of oldNames) {
+        const u = await db.find('users', x => x.role === 'player' && x.name && x.name.toLowerCase() === n.toLowerCase())
+        if (u) await reverseBalance(u.id, oldType)
+      }
+    }
     await db.remove('slots', parseInt(req.params.id))
     await auditDelete(req, 'slot', slot.id, { date: slot.date, time: slot.time, court: slot.court, player_text: slot.player_text, status: slot.status })
     res.json({ ok: true })
@@ -437,7 +495,7 @@ router.delete('/:id', authenticate, requireRole('superadmin', 'admin'), async (r
 })
 
 // PUT /:id/approve — old approve for pending (now only for payment_approved → schedule_approved per-slot)
-router.put('/:id/approve', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/approve', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -464,7 +522,7 @@ router.put('/:id/approve', authenticate, requireRole('superadmin', 'admin'), asy
 })
 
 // PUT /:id/toggle-type
-router.put('/:id/toggle-type', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/toggle-type', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -510,8 +568,8 @@ router.put('/:id/confirm', async (req, res) => {
     const sessionType = slot.session_type || 'private'
     const bStatus = slot.balance_status
 
-    // If balance already handled at creation (free/deducted), skip deduct on confirm
-    if (bStatus === 'free' || bStatus === 'deducted') {
+    // If balance already handled (free/already deducted/recorded shortfall), skip deduct on confirm
+    if (bStatus === 'free' || bStatus === 'deducted' || bStatus === 'shortfall') {
       const updated = await db.update('slots', slot.id, { status: STATUS.PLAYER_CONFIRMED })
       await auditUpdate(req, 'slot', slot.id, { status: slot.status }, { status: STATUS.PLAYER_CONFIRMED })
       if (slot.user_id) {
@@ -522,26 +580,16 @@ router.put('/:id/confirm', async (req, res) => {
       return res.json(updated)
     }
 
-    // Normal path: deduct all players in player_text
-    const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
-    const players = []
-    for (const name of names) {
-      const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
-      if (user) players.push(user)
-    }
+    // Normal path: deduct all players in player_text (deferred-aware; never blocks confirm,
+    // but an un-deductable session is recorded as balance_status='shortfall' instead of silently skipped)
+    const newB = await deductSlotPlayers(slot)
+    const upd = { status: STATUS.PLAYER_CONFIRMED }
+    if (newB && newB !== bStatus) upd.balance_status = newB
+    const updated = await db.update('slots', slot.id, upd)
 
-    let updated
-    if (players.length > 0) {
-      // Deduct all (conversion-aware; silently skips if insufficient — confirmation is never blocked)
-      for (const p of players) {
-        await deductBalance(p.id, sessionType)
-      }
-      updated = await db.update('slots', slot.id, { status: STATUS.PLAYER_CONFIRMED })
-    } else {
-      updated = await db.update('slots', slot.id, { status: STATUS.PLAYER_CONFIRMED })
-    }
-
-    await auditUpdate(req, 'slot', slot.id, { status: slot.status }, { status: STATUS.PLAYER_CONFIRMED })
+    const auditAfter = { status: STATUS.PLAYER_CONFIRMED }
+    if (upd.balance_status) auditAfter.balance_status = newB
+    await auditUpdate(req, 'slot', slot.id, { status: slot.status }, auditAfter)
 
     if (slot.user_id) {
       await notifyUser(slot.user_id, 'player_confirmed', 'Attendance Confirmed',
@@ -595,7 +643,7 @@ router.put('/:id/decline', async (req, res) => {
 })
 
 // PUT /:id/mark-attended — admin forces schedule_approved → player_confirmed (retroactive deduction)
-router.put('/:id/mark-attended', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/mark-attended', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
@@ -609,24 +657,15 @@ router.put('/:id/mark-attended', authenticate, requireRole('superadmin', 'admin'
     const bStatus = slot.balance_status
     let updated
 
-    // If balance already handled at creation, skip deduct
-    if (bStatus === 'free' || bStatus === 'deducted') {
+    // If balance already handled (free/already deducted/recorded shortfall), skip deduct
+    if (bStatus === 'free' || bStatus === 'deducted' || bStatus === 'shortfall') {
       updated = await db.update('slots', slot.id, { status: STATUS.PLAYER_CONFIRMED })
     } else {
-      // Deduct all players
-      const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
-      const players = []
-      for (const name of names) {
-        const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
-        if (user) players.push(user)
-      }
-
-      if (players.length > 0) {
-        for (const p of players) {
-          await deductBalance(p.id, sessionType)
-        }
-      }
-      updated = await db.update('slots', slot.id, { status: STATUS.PLAYER_CONFIRMED })
+      // Deduct all players (deferred-aware; recorded as shortfall instead of silently skipped)
+      const newB = await deductSlotPlayers(slot)
+      const upd = { status: STATUS.PLAYER_CONFIRMED }
+      if (newB && newB !== bStatus) upd.balance_status = newB
+      updated = await db.update('slots', slot.id, upd)
     }
 
     await auditUpdate(req, 'slot', slot.id, { status: slot.status }, { status: STATUS.PLAYER_CONFIRMED })
@@ -645,7 +684,7 @@ router.put('/:id/mark-attended', authenticate, requireRole('superadmin', 'admin'
 })
 
 // PUT /day/:date/approve — batch approve all payment_approved slots on a date → schedule_approved
-router.put('/day/:date/approve', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/day/:date/approve', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const { date } = req.params
     const slots = await db.findAll('slots', s => s.date === date && s.status === STATUS.PAYMENT_APPROVED)
@@ -673,7 +712,7 @@ router.put('/day/:date/approve', authenticate, requireRole('superadmin', 'admin'
 })
 
 // PUT /day/:date/undo — batch revert schedule_approved slots on a date → payment_approved
-router.put('/day/:date/undo', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/day/:date/undo', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const { date } = req.params
     const slots = await db.findAll('slots', s => s.date === date && s.status === STATUS.SCHEDULE_APPROVED)
@@ -701,7 +740,7 @@ router.put('/day/:date/undo', authenticate, requireRole('superadmin', 'admin'), 
 })
 
 // PUT /auto-confirm-past — auto-confirm all schedule_approved slots with dates before today
-router.put('/auto-confirm-past', authenticate, requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/auto-confirm-past', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
     const today = getCairoToday()
     const slots = await db.findAll('slots', s => s.date < today && s.status === STATUS.SCHEDULE_APPROVED)
@@ -709,19 +748,10 @@ router.put('/auto-confirm-past', authenticate, requireRole('superadmin', 'admin'
 
     let count = 0
     for (const slot of slots) {
-      const sessionType = slot.session_type || 'private'
-      const bStatus = slot.balance_status
-
-      // Deduct if not already handled
-      if (bStatus !== 'free' && bStatus !== 'deducted') {
-        const names = (slot.player_text || '').split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
-        for (const name of names) {
-          const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
-          if (user) await deductBalance(user.id, sessionType)
-        }
-      }
-
-      await db.update('slots', slot.id, { status: STATUS.PLAYER_CONFIRMED })
+      const newB = await deductSlotPlayers(slot)
+      const upd = { status: STATUS.PLAYER_CONFIRMED }
+      if (newB && newB !== slot.balance_status) upd.balance_status = newB
+      await db.update('slots', slot.id, upd)
       count++
     }
 

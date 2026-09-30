@@ -60,9 +60,11 @@ export function requirePermission(module) {
 }
 
 // Async: returns the union of role.permissions + user.permissions (per-user overrides).
-// superadmin short-circuits to ALL_MODULES.
+// superadmin and admin short-circuit to ALL_MODULES (admin = full access by role,
+// preserved exactly as before permission gating existed; the Roles tab drives
+// coach/player access plus per-user overrides).
 export async function getUserPermissions(user) {
-  if (user.role === 'superadmin') return ALL_MODULES
+  if (user.role === 'superadmin' || user.role === 'admin') return ALL_MODULES
   const role = await getRole(user.role)
   const rolePerms = role?.permissions || DEFAULT_ROLE_PERMISSIONS[user.role] || []
   const userPerms = user.permissions || []

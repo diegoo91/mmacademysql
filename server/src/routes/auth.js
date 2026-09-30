@@ -32,6 +32,8 @@ async function safeUserPayload(user) {
     cycle_expires_at: monthly.expires_at,
     legacy_private: monthly.legacy_private,
     legacy_group: monthly.legacy_group,
+    debt_private: Math.max(0, -(Number(u.private_balance) || 0)),
+    debt_group: Math.max(0, -(Number(u.group_balance) || 0)),
     paid_this_cycle: monthly.paid_this_cycle,
     member_code: u.member_code || '',
   }

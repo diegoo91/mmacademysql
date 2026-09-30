@@ -152,6 +152,7 @@ const JSON_COLS = {
   bookings: ['sessions_json'],
   booking_requests: ['payload'],
   roles: ['permissions'],
+  users: ['permissions'],
 }
 const DECIMAL_COLS = {
   bookings: ['total', 'amount_paid'],

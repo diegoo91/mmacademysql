@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission, getUserPermissions } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate } from '../middleware/audit.js'
 import { updateUserBalance, ensureCycleFresh, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
 import { notifyUser } from '../utils/notify.js'
@@ -55,20 +55,68 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.get('/', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/', requirePermission('conversions'), async (req, res) => {
   try {
     const { status } = req.query
     let all = await db.findAll('conversion_requests')
     if (status) all = all.filter(r => r.status === status)
     all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    res.json(all)
+    res.json(all.map(r => ({ ...r, converted_count: r.from === 'private' ? r.count * 2 : r.count })))
   } catch (err) {
     console.error('List conversion requests error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-router.put('/:id/approve', requireRole('superadmin', 'admin'), async (req, res) => {
+// Authoritative conversion quote: mirrors the approval math (legacy buckets only,
+// cycle package stays as-is). Defaults to the caller's own balance; player_id
+// requires the conversions permission.
+router.get('/quote', async (req, res) => {
+  try {
+    const from = req.query.from === 'group' ? 'group' : 'private'
+    const count = Math.max(1, parseInt(req.query.count) || 1)
+    const playerId = req.query.player_id ? parseInt(req.query.player_id) : req.user.id
+    if (playerId !== req.user.id) {
+      const perms = await getUserPermissions(req.user)
+      if (!perms.includes('conversions')) return res.status(403).json({ error: 'Access denied: conversions' })
+    }
+    const stored = await db.get('users', playerId)
+    if (!stored) return res.status(404).json({ error: 'User not found' })
+    const fresh = await ensureCycleFresh(stored, { notify: false })
+    const user = fresh || stored
+
+    const legP = Math.max(0, user.private_balance || 0)
+    const legG = Math.max(0, user.group_balance || 0)
+    const max = from === 'private' ? legP : Math.floor(legG / 2)
+    const yields = from === 'private' ? count * 2 : count
+    const allowed = count >= 1 && count <= max
+
+    let reason = null
+    if (!allowed) {
+      if (max === 0) {
+        const eff = from === 'private' ? effectivePrivate(user) : effectiveGroupBalance(user)
+        reason = eff > 0
+          ? 'Active package credits stay with this cycle — only carryover credits can be converted.'
+          : `No convertible ${from} balance.`
+      } else {
+        reason = `Only ${max} ${from} session${max === 1 ? '' : 's'} can be converted right now.`
+      }
+    }
+
+    res.json({
+      from, to: from === 'private' ? 'group' : 'private', count, yields,
+      max, allowed, reason,
+      legacy_private: legP, legacy_group: legG,
+      effective_private: effectivePrivate(user),
+      effective_group: effectiveGroupBalance(user),
+    })
+  } catch (err) {
+    console.error('Conversion quote error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.put('/:id/approve', requirePermission('conversions'), async (req, res) => {
   try {
     const request = await db.get('conversion_requests', parseInt(req.params.id))
     if (!request) return res.status(404).json({ error: 'Request not found' })
@@ -116,7 +164,7 @@ router.put('/:id/approve', requireRole('superadmin', 'admin'), async (req, res) 
   }
 })
 
-router.put('/:id/reject', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/reject', requirePermission('conversions'), async (req, res) => {
   try {
     const request = await db.get('conversion_requests', parseInt(req.params.id))
     if (!request) return res.status(404).json({ error: 'Request not found' })

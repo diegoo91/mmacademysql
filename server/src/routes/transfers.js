@@ -1,13 +1,13 @@
 import { Router } from 'express'
 import db from '../db.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditLog } from '../middleware/audit.js'
 import { planSettlement } from '../utils/cycle.js'
 
 const router = Router()
 
 // POST /api/transfers — admin: transfer sessions from one player to another
-router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/', requirePermission('conversions'), async (req, res) => {
   try {
     const { from_player_id, to_player_id, session_type, count, notes } = req.body
 
@@ -124,7 +124,7 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
 })
 
 // GET /api/transfers — admin: list transfer history
-router.get('/', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/', requirePermission('conversions'), async (req, res) => {
   try {
     const all = await db.findAll('session_transfers')
     const users = await db.findAll('users')

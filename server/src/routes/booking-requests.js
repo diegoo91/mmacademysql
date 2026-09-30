@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate } from '../middleware/audit.js'
 import { reverseBalance } from '../utils/balance.js'
 import { notifyUser } from '../utils/notify.js'
@@ -109,7 +109,7 @@ router.post('/', async (req, res) => {
 })
 
 // Admin approves/denies a request
-router.put('/:id/decide', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/decide', requirePermission('bookings'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const request = await db.get('booking_requests', id)
@@ -125,10 +125,11 @@ router.put('/:id/decide', requireRole('superadmin', 'admin'), async (req, res) =
       if (request.kind === 'cancel') {
         if (slot) {
           // Set slot back to available
-          await db.update('slots', slot.id, { status: STATUS.AVAILABLE, player_text: '', booking_id: null, session_type: null, user_id: null })
+          await db.update('slots', slot.id, { status: STATUS.AVAILABLE, player_text: '', booking_id: null, session_type: null, user_id: null, balance_status: null })
 
-          // Reverse balance credit using shared helper (conversion-aware)
-          if (slot.user_id && slot.status !== STATUS.PLAYER_CONFIRMED) {
+          // Reverse balance ONLY if a deduction actually happened (balance_status='deducted').
+          // Future/never-deducted slots must not be refunded — that credits phantom sessions.
+          if (slot.user_id && slot.status !== STATUS.PLAYER_CONFIRMED && slot.balance_status === 'deducted') {
             const user = await db.get('users', slot.user_id)
             if (user) {
               const sessionType = slot.session_type || 'private'

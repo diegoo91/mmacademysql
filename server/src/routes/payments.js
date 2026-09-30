@@ -1,14 +1,14 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
 import { creditCycle, ensureCycleFresh } from '../utils/balance.js'
 import { notifyUser } from '../utils/notify.js'
 
 const router = Router()
 router.use(authenticate)
-router.use(requireRole('superadmin', 'admin'))
+router.use(requirePermission('dashboard'))
 
 const STATUS = {
   PAYMENT_PENDING: 'payment_pending',
@@ -217,6 +217,156 @@ router.put('/:id/reject', async (req, res) => {
   }
 })
 
+// Pure: compute the exact reversal of an approved payment's credit.
+//   * settlement rows: take back only what this payment credited (floor at the
+//     current cycle remainder), then reinstate the debt it had forgiven
+//     (legacy may go negative again — that debt is real again).
+//   * pre-settlement rows: legacy behavior — sessions come out of the cycle
+//     first, the legacy remainder is floored at 0.
+// Shared by DELETE (remove row) and PUT edit (reverse + re-credit new values).
+function planPaymentReversal(payment, user) {
+  const hasSettlement = payment.credited_private != null || payment.credited_group != null
+  let cycP = Math.max(0, user.cycle_private || 0)
+  let cycG = Math.max(0, user.cycle_group || 0)
+  const rawLegP = Number(user.private_balance) || 0
+  const rawLegG = Number(user.group_balance) || 0
+  let newLegP, newLegG, reversal
+
+  if (hasSettlement) {
+    const credP = Math.max(0, payment.credited_private || 0)
+    const credG = Math.max(0, payment.credited_group || 0)
+    const backP = Math.min(credP, cycP)
+    const backG = Math.min(credG, cycG)
+    cycP -= backP
+    cycG -= backG
+    newLegP = rawLegP - Math.max(0, payment.settled_private || 0)
+    newLegG = rawLegG - Math.max(0, payment.settled_group || 0)
+    reversal = {
+      cycle: { private: backP, group: backG },
+      reinstated_debt: { private: Math.max(0, payment.settled_private || 0), group: Math.max(0, payment.settled_group || 0) },
+      uncredited_shortfall: { private: credP - backP, group: credG - backG },
+    }
+  } else {
+    const privSessions = payment.private_sessions || 0
+    const grpSessions = payment.group_sessions || 0
+    const takeP = Math.min(privSessions, cycP)
+    const takeG = Math.min(grpSessions, cycG)
+    cycP -= takeP
+    cycG -= takeG
+    newLegP = Math.max(0, Math.max(0, rawLegP) - (privSessions - takeP))
+    newLegG = Math.max(0, Math.max(0, rawLegG) - (grpSessions - takeG))
+    reversal = {
+      cycle: { private: takeP, group: takeG },
+      legacy: { private: privSessions - takeP, group: grpSessions - takeG },
+    }
+  }
+  return { newLegP, newLegG, newCycP: cycP, newCycG: cycG, reversal, hasSettlement }
+}
+
+// PUT /:id — edit a payment (date, amount, method, notes, player, session counts).
+// Approved + credit-affecting changes (player or session counts) are applied by
+// reversing the old credit exactly (same math as DELETE) and re-crediting the
+// new values via creditCycle. Cosmetic edits (date/amount/notes/method) update
+// the row only — no balance churn. Status changes go through approve/reject.
+router.put('/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id)
+    const payment = await db.get('payments', id)
+    if (!payment) return res.status(404).json({ error: 'Payment not found' })
+
+    const { date, player_name, player_id, method, amount, private_sessions, group_sessions, notes } = req.body
+    if (method !== undefined && !['Cash', 'Instapay'].includes(method)) {
+      return res.status(400).json({ error: 'method must be Cash or Instapay' })
+    }
+
+    const edited = {
+      date: date !== undefined && date ? String(date) : payment.date,
+      player_name: player_name !== undefined ? String(player_name).trim() : payment.player_name,
+      player_id: player_id !== undefined ? (player_id ? parseInt(player_id) : null) : payment.player_id,
+      method: method !== undefined ? method : payment.method,
+      amount: amount !== undefined ? Math.max(0, parseFloat(amount) || 0) : payment.amount,
+      private_sessions: private_sessions !== undefined ? Math.max(0, parseInt(private_sessions) || 0) : payment.private_sessions,
+      group_sessions: group_sessions !== undefined ? Math.max(0, parseInt(group_sessions) || 0) : payment.group_sessions,
+      notes: notes !== undefined ? String(notes) : payment.notes,
+    }
+
+    const wasApproved = payment.status === STATUS.PAYMENT_APPROVED
+    const num = (v) => Number(v) || 0
+    const creditChanged = wasApproved && (
+      (edited.player_id ?? null) !== (payment.player_id ?? null) ||
+      num(edited.private_sessions) !== num(payment.private_sessions) ||
+      num(edited.group_sessions) !== num(payment.group_sessions)
+    )
+
+    let userBefore = null
+    let reversal = null
+    let settlement = null
+
+    // 1) Reverse the previous credit (only when the credit itself changes)
+    if (creditChanged && payment.player_id) {
+      const user = await ensureCycleFresh(payment.player_id, { notify: false }) || await db.get('users', payment.player_id)
+      if (user) {
+        userBefore = user
+        const plan = planPaymentReversal(payment, user)
+        await db.update('users', user.id, {
+          private_balance: plan.newLegP, group_balance: plan.newLegG,
+          cycle_private: plan.newCycP, cycle_group: plan.newCycG,
+        })
+        reversal = plan.reversal
+      }
+    }
+
+    // 2) Persist the edited fields
+    const upd = { ...edited }
+    if (wasApproved && (edited.player_id ?? null) === null) {
+      // Credit target removed — nothing credited anymore
+      upd.settled_private = null
+      upd.settled_group = null
+      upd.credited_private = null
+      upd.credited_group = null
+    }
+    await db.update('payments', id, upd)
+
+    // 3) Re-credit the new values (approved payments only; pending credits on approve)
+    let newUserBefore = null
+    if (creditChanged && edited.player_id) {
+      newUserBefore = await db.get('users', edited.player_id)
+      const credit = await creditCycle(edited.player_id, num(edited.private_sessions), num(edited.group_sessions))
+      settlement = credit?.settlement || EMPTY_SETTLEMENT
+      await db.update('payments', id, {
+        settled_private: settlement.settled_private,
+        settled_group: settlement.settled_group,
+        credited_private: settlement.credited_private,
+        credited_group: settlement.credited_group,
+      })
+    }
+
+    const updated = await db.get('payments', id)
+
+    await auditUpdate(req, 'payment', id,
+      { ref: payment.ref, date: payment.date, player_id: payment.player_id, player_name: payment.player_name, method: payment.method, amount: payment.amount, private_sessions: payment.private_sessions, group_sessions: payment.group_sessions, notes: payment.notes, status: payment.status },
+      { ref: updated.ref, date: updated.date, player_id: updated.player_id, player_name: updated.player_name, method: updated.method, amount: updated.amount, private_sessions: updated.private_sessions, group_sessions: updated.group_sessions, notes: updated.notes, status: updated.status, reversal, settlement })
+
+    const snap = (u) => u ? {
+      private_balance: u.private_balance, group_balance: u.group_balance,
+      cycle_private: u.cycle_private, cycle_group: u.cycle_group,
+    } : null
+    if (reversal && userBefore) {
+      const userMid = await db.get('users', payment.player_id)
+      await auditBalanceChange(req, 'user', payment.player_id, snap(userBefore), { ...snap(userMid), reversal }, 'payment.edit.reverse')
+    }
+    if (settlement && edited.player_id) {
+      const userAfter = await db.get('users', edited.player_id)
+      await auditBalanceChange(req, 'user', edited.player_id, snap(newUserBefore), { ...snap(userAfter), settlement }, 'payment.edit.credit')
+    }
+
+    res.json(settlement ? { ...updated, settlement } : updated)
+  } catch (err) {
+    console.error('Edit payment error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // DELETE /:id — reverse the credit exactly:
 //   * settlement rows: take back only what this payment credited (floor at the
 //     current cycle remainder), then reinstate the debt it had forgiven
@@ -232,43 +382,7 @@ router.delete('/:id', async (req, res) => {
     if (payment.status === STATUS.PAYMENT_APPROVED && payment.player_id) {
       const user = await ensureCycleFresh(payment.player_id, { notify: false }) || await db.get('users', payment.player_id)
       if (user) {
-        const hasSettlement = payment.credited_private != null || payment.credited_group != null
-        let cycP = Math.max(0, user.cycle_private || 0)
-        let cycG = Math.max(0, user.cycle_group || 0)
-        const rawLegP = Number(user.private_balance) || 0
-        const rawLegG = Number(user.group_balance) || 0
-        let newLegP, newLegG, reversal
-
-        if (hasSettlement) {
-          const credP = Math.max(0, payment.credited_private || 0)
-          const credG = Math.max(0, payment.credited_group || 0)
-          const backP = Math.min(credP, cycP)
-          const backG = Math.min(credG, cycG)
-          cycP -= backP
-          cycG -= backG
-          newLegP = rawLegP - Math.max(0, payment.settled_private || 0)
-          newLegG = rawLegG - Math.max(0, payment.settled_group || 0)
-          reversal = {
-            cycle: { private: backP, group: backG },
-            reinstated_debt: { private: Math.max(0, payment.settled_private || 0), group: Math.max(0, payment.settled_group || 0) },
-            uncredited_shortfall: { private: credP - backP, group: credG - backG },
-          }
-        } else {
-          const privSessions = payment.private_sessions || 0
-          const grpSessions = payment.group_sessions || 0
-          const takeP = Math.min(privSessions, cycP)
-          const takeG = Math.min(grpSessions, cycG)
-          cycP -= takeP
-          cycG -= takeG
-          newLegP = Math.max(0, Math.max(0, rawLegP) - (privSessions - takeP))
-          newLegG = Math.max(0, Math.max(0, rawLegG) - (grpSessions - takeG))
-          reversal = {
-            cycle: { private: takeP, group: takeG },
-            legacy: { private: privSessions - takeP, group: grpSessions - takeG },
-          }
-        }
-        const newCycP = cycP
-        const newCycG = cycG
+        const { newLegP, newLegG, newCycP, newCycG, reversal, hasSettlement } = planPaymentReversal(payment, user)
 
         await db.transaction(async (tx) => {
           await tx.update('users', user.id, {

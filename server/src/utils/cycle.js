@@ -428,8 +428,10 @@ export async function deductBalanceCycle(userId, sessionType, { allowNegative = 
       user = { ...user, cycle_private: 0, cycle_group: 0, cycle_key: null, cycle_expires_at: null }
     }
 
-    let legP = Math.max(0, user.private_balance || 0)
-    let legG = Math.max(0, user.group_balance || 0)
+    // Legacy balances are raw (may be negative = debt). Flooring here would wipe
+    // existing debt on an allowNegative deduct.
+    let legP = Number(user.private_balance) || 0
+    let legG = Number(user.group_balance) || 0
     let cycP = Math.max(0, user.cycle_private || 0)
     let cycG = Math.max(0, user.cycle_group || 0)
 
@@ -474,8 +476,10 @@ export async function reverseBalanceCycle(userId, sessionType) {
   return db.transaction(async (tx) => {
     const user = await tx.get('users', userId)
     if (!user) return false
-    let legP = Math.max(0, user.private_balance || 0)
-    let legG = Math.max(0, user.group_balance || 0)
+    // Raw legacy: a refund on an indebted player must first repay the debt
+    // (flooring at 0 here would over-credit by the debt amount).
+    let legP = Number(user.private_balance) || 0
+    let legG = Number(user.group_balance) || 0
     let cycP = Math.max(0, user.cycle_private || 0)
     let cycG = Math.max(0, user.cycle_group || 0)
     const cycleLive = user.cycle_key && user.cycle_expires_at && new Date(user.cycle_expires_at) >= new Date()

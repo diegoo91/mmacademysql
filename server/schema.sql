@@ -71,6 +71,7 @@ CREATE TABLE users (
     notes TEXT,
     account_status VARCHAR(20) NOT NULL DEFAULT 'active',
     position VARCHAR(64),
+    permissions JSONB,
     avatar VARCHAR(255),
     created_by INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -1,13 +1,13 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const CATEGORIES = ['Court Booking Fees', 'Equipment', 'Salaries', 'Utilities', 'Other']
 const router = Router()
 router.use(authenticate)
-router.use(requireRole('superadmin', 'admin'))
+router.use(requirePermission('dashboard'))
 
 router.get('/', async (req, res) => {
   try {

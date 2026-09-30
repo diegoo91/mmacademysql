@@ -2,14 +2,14 @@ import { Router } from 'express'
 import ExcelJS from 'exceljs'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { computeUnpaidPlayers } from '../utils/sessionPaid.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const router = Router()
 router.use(authenticate)
 
-router.get('/summary', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/summary', requirePermission('dashboard'), async (req, res) => {
   try {
     const { from, to, preset } = req.query
     let rangeFrom = from || null
@@ -190,7 +190,7 @@ router.get('/summary', requireRole('superadmin', 'admin'), async (req, res) => {
 })
 
 // GET /coach-hours — admin only, total hours worked per coach over date range + balance
-router.get('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/coach-hours', requirePermission('dashboard'), async (req, res) => {
   try {
     const { from, to, preset } = req.query
     let rangeFrom = from || null
@@ -238,7 +238,7 @@ router.get('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) 
 })
 
 // GET /coach-balance — admin: all coaches' running balances (total earned - total paid)
-router.get('/coach-balance', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/coach-balance', requirePermission('dashboard'), async (req, res) => {
   try {
     const coaches = await db.findAll('users', u => u.role === 'coach')
     const allHours = await db.findAll('coach_daily_hours')
@@ -307,7 +307,7 @@ router.get('/coach-hours/my', async (req, res) => {
 })
 
 // PUT /admin/coach-hours — admin: upsert a daily hour record
-router.put('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/coach-hours', requirePermission('dashboard'), async (req, res) => {
   try {
     const { coach_id, date, hours, notes } = req.body
     if (!coach_id || !date || hours === undefined) {
@@ -331,7 +331,7 @@ router.put('/coach-hours', requireRole('superadmin', 'admin'), async (req, res) 
 })
 
 // DELETE /admin/coach-hours/:id — admin: remove a daily hour record
-router.delete('/coach-hours/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/coach-hours/:id', requirePermission('dashboard'), async (req, res) => {
   try {
     const before = await db.get('coach_daily_hours', req.params.id)
     const removed = await db.remove('coach_daily_hours', req.params.id)
@@ -346,7 +346,7 @@ router.delete('/coach-hours/:id', requireRole('superadmin', 'admin'), async (req
 })
 
 // POST /admin/coach-payments — admin: record a payment (hours paid out to coach)
-router.post('/coach-payments', requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/coach-payments', requirePermission('dashboard'), async (req, res) => {
   try {
     const { coach_id, date, hours_deducted, amount, notes } = req.body
     if (!coach_id || !date || !hours_deducted) {
@@ -365,7 +365,7 @@ router.post('/coach-payments', requireRole('superadmin', 'admin'), async (req, r
 })
 
 // GET /admin/coach-payments — admin: list all coach payments
-router.get('/coach-payments', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/coach-payments', requirePermission('dashboard'), async (req, res) => {
   try {
     const { coach_id } = req.query
     let payments = await db.findAll('coach_payments')
@@ -379,7 +379,7 @@ router.get('/coach-payments', requireRole('superadmin', 'admin'), async (req, re
 })
 
 // DELETE /admin/coach-payments/:id — admin: remove a coach payment record
-router.delete('/coach-payments/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/coach-payments/:id', requirePermission('dashboard'), async (req, res) => {
   try {
     const before = await db.get('coach_payments', req.params.id)
     const removed = await db.remove('coach_payments', req.params.id)
@@ -394,7 +394,7 @@ router.delete('/coach-payments/:id', requireRole('superadmin', 'admin'), async (
 })
 
 // GET /reports/unpaid — admin: all players with unpaid sessions
-router.get('/unpaid', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/unpaid', requirePermission('dashboard'), async (req, res) => {
   try {
     const unpaid = await computeUnpaidPlayers()
     res.json({ unpaid_players: unpaid, total_owed: unpaid.reduce((s, p) => s + p.amount_owed, 0) })
@@ -405,7 +405,7 @@ router.get('/unpaid', requireRole('superadmin', 'admin'), async (req, res) => {
 })
 
 // GET /reports/remaining-sessions — admin: paid players with remaining session balances
-router.get('/remaining-sessions', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/remaining-sessions', requirePermission('dashboard'), async (req, res) => {
   try {
     const { ensureCycleFresh, effectivePrivate, effectiveGroupBalance, monthlyDisplay } = await import('../utils/balance.js')
     const players = await db.findAll('users', u => u.role === 'player')
@@ -679,7 +679,7 @@ function addSheet(wb, name, headers, rows) {
 }
 
 // GET /reports/full-export — admin: multi-sheet Excel (one tab per section)
-router.get('/full-export', requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/full-export', requirePermission('dashboard'), async (req, res) => {
   try {
     const { from, to, preset } = req.query
     const { rangeFrom, rangeTo } = resolveRange(from, to, preset)

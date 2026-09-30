@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
+import { authenticate } from '../middleware/auth.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate } from '../middleware/audit.js'
 
 const router = Router()
@@ -41,7 +43,7 @@ router.post('/', async (req, res) => {
 })
 
 // GET /api/guest-booking-requests — admin: list pending guest requests
-router.get('/', async (req, res) => {
+router.get('/', authenticate, requirePermission('bookings'), async (req, res) => {
   try {
     const all = await db.findAll('booking_requests', r => r.kind === 'guest_booking')
     all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))

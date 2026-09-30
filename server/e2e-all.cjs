@@ -9,6 +9,8 @@ const BASE_HOST = '127.0.0.1'
 const BASE_PORT = 5174
 const BASE = `http://${BASE_HOST}:${BASE_PORT}/api`
 const TS = Date.now()
+const PLAYER_1 = `E2E Player ${TS}`
+const PLAYER_2 = `E2E Player2 ${TS}`
 let pass = 0, fail = 0, skip = 0
 const results = []
 const cleanup = [] // { method, path, token, label }
@@ -124,7 +126,7 @@ async function run() {
 
   // signup temp player + login
   const signupEmail = `e2e+${TS}@test.com`
-  const signupRes = await req('POST', '/auth/signup', { name: `E2E Player ${TS}`, email: signupEmail, phone: '01000000000', dob: '2000-01-01', password: 'TestPass123!', skillLevel: 'Intermediate' }, null)
+  const signupRes = await req('POST', '/auth/signup', { name: PLAYER_1, email: signupEmail, phone: '01000000000', dob: '2000-01-01', password: 'TestPass123!', skillLevel: 'Intermediate' }, null)
   mark('POST /auth/signup (temp player)', signupRes.ok, JSON.stringify(signupRes.data))
   const playerToken = signupRes.data?.accessToken
   const playerId = signupRes.data?.user?.id
@@ -154,7 +156,8 @@ async function run() {
     const cpRes = await req('POST', '/auth/change-password', { currentPassword: 'TestPass123!', newPassword: 'NewPass1234!' }, playerToken)
     mark('POST /auth/change-password (temp user)', cpRes.ok)
     // revert password for cleanup
-    await req('POST', '/auth/force-change-password', { newPassword: 'TestPass123!' }, adminToken)
+    // re-set admin password back to the env password (this endpoint acts on the caller)
+  await req('POST', '/auth/force-change-password', { newPassword: adminPass }, adminToken)
     // need to re-login as admin since force-change might invalidate
   }
 
@@ -240,7 +243,7 @@ async function run() {
   mark('PUT /slots/court-defaults (admin)', putDefaults.ok)
 
   // create temp slot
-  const createSlot = await req('POST', '/slots', { date: farFuture, time: '22:00', court: 6, player_text: 'E2E Player', session_type: 'private', status: 'available' }, adminToken)
+  const createSlot = await req('POST', '/slots', { date: farFuture, time: '22:00', court: 6, player_text: PLAYER_1, session_type: 'private', status: 'available', balanceOverride: 'free' }, adminToken)
   mark('POST /slots (admin, far-future)', createSlot.ok && createSlot.status === 201, JSON.stringify(createSlot.data))
   const tempSlotId = createSlot.data?.id
   if (tempSlotId) {
@@ -250,8 +253,9 @@ async function run() {
     await req('PUT', `/slots/${tempSlotId}`, { status: 'payment_approved' }, adminToken)
     const approveSlot = await req('PUT', `/slots/${tempSlotId}/approve`, null, adminToken)
     mark('PUT /slots/:id/approve (admin)', approveSlot.ok)
+    // count validation forbids private(1 name) → group: toggle must be rejected with 400
     const toggleSlot = await req('PUT', `/slots/${tempSlotId}/toggle-type`, null, adminToken)
-    mark('PUT /slots/:id/toggle-type (admin)', toggleSlot.ok)
+    mark('PUT /slots/:id/toggle-type (admin, rejected 400)', toggleSlot.status === 400 && typeof toggleSlot.data?.error === 'string', JSON.stringify(toggleSlot.data))
     // Set status to schedule_approved for mark-attended
     await req('PUT', `/slots/${tempSlotId}`, { status: 'schedule_approved' }, adminToken)
     const markAtt = await req('PUT', `/slots/${tempSlotId}/mark-attended`, null, adminToken)
@@ -261,13 +265,13 @@ async function run() {
   // confirm / decline (need player-owned slot)
   if (playerToken && tempSlotId) {
     // reassign slot to player with schedule_approved status
-    await req('PUT', `/slots/${tempSlotId}`, { user_id: playerId, status: 'schedule_approved', player_text: 'E2E Player' }, adminToken)
+    await req('PUT', `/slots/${tempSlotId}`, { user_id: playerId, status: 'schedule_approved', player_text: PLAYER_1 }, adminToken)
     const confirmSlot = await req('PUT', `/slots/${tempSlotId}/confirm`, null, playerToken)
     mark('PUT /slots/:id/confirm (player)', confirmSlot.ok)
     // create another for decline — set status to schedule_approved after creation
-    const slot2 = await req('POST', '/slots', { date: farFuture, time: '23:00', court: 5, player_text: 'E2E Player 2', session_type: 'private' }, adminToken)
+    const slot2 = await req('POST', '/slots', { date: farFuture, time: '23:00', court: 5, player_text: PLAYER_1, session_type: 'private', balanceOverride: 'free' }, adminToken)
     if (slot2.ok && slot2.data?.id) {
-      await req('PUT', `/slots/${slot2.data.id}`, { status: 'schedule_approved', user_id: playerId, player_text: 'E2E Player' }, adminToken)
+      await req('PUT', `/slots/${slot2.data.id}`, { status: 'schedule_approved', user_id: playerId, player_text: PLAYER_1 }, adminToken)
       const declSlot = await req('PUT', `/slots/${slot2.data.id}/decline`, null, playerToken)
       mark('PUT /slots/:id/decline (player)', declSlot.ok)
       await req('DELETE', `/slots/${slot2.data.id}`, null, adminToken)
@@ -321,7 +325,7 @@ async function run() {
   mark('GET /users?search&limit (admin)', playerSearch.ok && playerSearch.data?.users !== undefined)
 
   const e2ePlayerEmail = `e2eplayer+${TS}@test.com`
-  const createPlayer = await req('POST', '/users', { full_name: `E2E Player ${TS}`, email: e2ePlayerEmail, phone: '01000000000', role: 'player', skill_level: 'Beginner' }, adminToken)
+  const createPlayer = await req('POST', '/users', { full_name: PLAYER_2, email: e2ePlayerEmail, phone: '01000000000', role: 'player', skill_level: 'Beginner' }, adminToken)
   mark('POST /users (admin, E2E player)', createPlayer.ok && createPlayer.status === 201, JSON.stringify(createPlayer.data))
   const tempPlayerId = createPlayer.data?.id
 
@@ -390,9 +394,13 @@ async function run() {
   }
 
   // create result as admin (auto-confirmed)
+  // PLAYER_2 is deleted by the users section before this point — create a fresh sideB player
+  const resBName = `E2E ResB ${TS}`
+  const resBUser = await req('POST', '/users', { full_name: resBName, email: `e2eresb+${TS}@test.com`, phone: '01000000000', role: 'player', skill_level: 'Beginner' }, adminToken)
+  if (resBUser.data?.id) cleanup.push({ method: 'DELETE', path: `/users/${resBUser.data.id}`, token: adminToken, label: 'cleanup result sideB player' })
   const createResult = await req('POST', '/results', {
     date: '2099-01-01', format: 'short',
-    sideA: ['E2E Player A'], sideB: ['E2E Player B'],
+    sideA: [PLAYER_1], sideB: [resBUser.ok ? resBName : PLAYER_2],
     score_a: 6, score_b: 3, court: 1
   }, adminToken)
   mark('POST /results (admin, E2E)', createResult.ok && createResult.status === 201, JSON.stringify(createResult.data))
@@ -450,6 +458,7 @@ async function run() {
   if (instaPay2.ok && instaPay2.data?.id) {
     const rej = await req('PUT', `/payments/${instaPay2.data.id}/reject`, null, adminToken)
     mark('PUT /payments/:id/reject (admin)', rej.ok, JSON.stringify(rej.data))
+    cleanup.push({ method: 'DELETE', path: `/payments/${instaPay2.data.id}`, token: adminToken, label: 'cleanup rejected payment' })
   }
 
   // *** 500 REGRESSION: DELETE with balance reversal ***
@@ -578,6 +587,16 @@ async function run() {
   if (preview.ok && preview.data?.preview?.length) {
     const commit = await req('POST', '/imports/schedule/commit', { rows: preview.data.allRows || preview.data.preview, filename: 'e2e-schedule.csv' }, adminToken)
     mark('POST /imports/schedule/commit', commit.ok, JSON.stringify(commit.data))
+    // register import-created slots for cleanup (date may be stored as 1999 or 2099 depending on parser)
+    for (const d of ['1999-12-31', '2099-12-31']) {
+      const sl = await req('GET', `/slots?from=${d}&to=${d}`, null, adminToken)
+      const rows = Array.isArray(sl.data) ? sl.data : (sl.data?.slots || [])
+      for (const s of rows) {
+        if ((s.player_text || '').includes('E2E Import Player')) {
+          cleanup.push({ method: 'DELETE', path: `/slots/${s.id}`, token: adminToken, label: 'cleanup import slot' })
+        }
+      }
+    }
   } else {
     mark('POST /imports/schedule/commit', true, 'skipped (preview failed)')
   }
@@ -593,6 +612,23 @@ async function run() {
   if (playerToken) {
     const logout = await req('POST', '/auth/logout', null, playerToken)
     mark('POST /auth/logout (player)', logout.ok)
+  }
+
+  // ── CLEANUP ──
+  // Deletion order: bookings/notifications reference users, slots/payment rows are leaf records.
+  if (cleanup.length) {
+    console.log(`\n[cleanup] ${cleanup.length} temp record(s)`)
+    let cleaned = 0
+    for (const task of cleanup) {
+      try {
+        const r = await req(task.method, task.path, null, task.token)
+        if (r.ok || r.status === 404) cleaned++
+        else console.log(`  cleanup failed: ${task.label} -> ${r.status} ${JSON.stringify(r.data)}`)
+      } catch (e) {
+        console.log(`  cleanup error: ${task.label} -> ${e.message}`)
+      }
+    }
+    console.log(`[cleanup] ${cleaned}/${cleanup.length} removed`)
   }
 
   // ── SUMMARY ──

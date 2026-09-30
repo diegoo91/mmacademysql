@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireRole } from '../middleware/rbac.js'
+import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const router = Router()
@@ -64,7 +64,7 @@ router.get('/:id', async (req, res) => {
   }
 })
 
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('results'), async (req, res) => {
   try {
     const { date, format, sideA, sideB, sideA_ids, sideB_ids, score_a, score_b, court, competition, notes } = req.body
     if (!date || !format || !sideA || !sideB) {
@@ -125,7 +125,7 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.put('/:id/confirm', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id/confirm', requirePermission('results'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const result = await db.get('results', id)
@@ -139,7 +139,7 @@ router.put('/:id/confirm', requireRole('superadmin', 'admin'), async (req, res) 
   }
 })
 
-router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.put('/:id', requirePermission('results'), async (req, res) => {
   try {
     const id = parseInt(req.params.id)
     const result = await db.get('results', id)
@@ -188,7 +188,7 @@ router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   }
 })
 
-router.delete('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
+router.delete('/:id', requirePermission('results'), async (req, res) => {
   try {
     const result = await db.get('results', parseInt(req.params.id))
     if (!result) return res.status(404).json({ error: 'Result not found' })
