@@ -104,13 +104,9 @@ export default function Schedule() {
   const fetchSlots = () => {
     setLoading(true)
     setError('')
-    const today = new Date()
-    const from = new Date(today)
-    from.setDate(today.getDate() - 30)
-    const to = new Date(today)
-    to.setDate(today.getDate() + 30)
-
-    api.get(`/slots?from=${toLocalDateStr(from)}&to=${toLocalDateStr(to)}&visible_only=1`)
+    // All slots - a fixed today+/-30 window (computed once on mount) hid any day
+    // you navigate outside it (e.g. browsing back past 31/08), even when slots exist.
+    api.get('/slots?visible_only=1')
       .then(setSlots)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))

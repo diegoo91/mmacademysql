@@ -161,12 +161,9 @@ export default function ScheduleManager() {
 
   const fetchSlots = () => {
     setLoading(true)
-    const today = new Date()
-    const start = new Date(today)
-    start.setDate(today.getDate() - 30)
-    const end = new Date(today)
-    end.setDate(today.getDate() + 30)
-    api.get(`/slots?from=${toLocalDateStr(start)}&to=${toLocalDateStr(end)}`)
+    // Fetch ALL slots - a fixed today+/-30 window (computed once on mount) hid
+    // any day you navigate outside it, e.g. 31/08 dropped out of the window.
+    api.get('/slots')
       .then(setSlots)
       .catch(() => {})
       .finally(() => setLoading(false))
