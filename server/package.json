@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "test": "node --test",
+    "audit": "node audit-invariants.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

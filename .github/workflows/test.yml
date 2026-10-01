@@ -1,0 +1,50 @@
+name: Tests
+
+# Regression gate for the payment / balance / unpaid-report logic:
+#   - lint + frontend build (catches broken imports before deploy)
+#   - server unit tests: package pricing, coverage math, frontend/server pricing parity
+# The prod read-only invariant audit (server/audit-invariants.mjs) needs the
+# PROD_DATABASE_URL secret and live data, so it stays a manual step:
+#   cd server && npm run audit
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Server unit tests (pricing / coverage / parity)
+        run: npm test
+        working-directory: server
