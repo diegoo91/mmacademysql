@@ -5,7 +5,10 @@ let swPromise = null
 export function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return Promise.resolve(null)
   if (swPromise) return swPromise
-  swPromise = navigator.serviceWorker.register('./sw.js', { scope: './' })
+  // Resolve against the app base, not the current page — on a deep link like
+  // /admin/payments a relative './sw.js' would 404 at /admin/sw.js.
+  const base = import.meta.env.BASE_URL || '/'
+  swPromise = navigator.serviceWorker.register(`${base}sw.js`, { scope: base })
     .then((reg) => reg)
     .catch((err) => {
       console.warn('Service worker registration failed:', err)

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { FeedbackProvider } from './context/FeedbackContext'
 import { api } from './lib/api'
 import Layout from './components/Layout'
 import Home from './pages/Home'
@@ -203,11 +204,13 @@ export default function App() {
   const basename = baseUrl === '/' ? '/' : baseUrl.replace(/\/+$/, '')
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter basename={basename}>
-          <AppRoutes />
-        </BrowserRouter>
-      </AuthProvider>
+      <FeedbackProvider>
+        <AuthProvider>
+          <BrowserRouter basename={basename}>
+            <AppRoutes />
+          </BrowserRouter>
+        </AuthProvider>
+      </FeedbackProvider>
     </ThemeProvider>
   )
 }
