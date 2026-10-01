@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRightLeft, DollarSign, Download, Edit, Gift, History, Key, Lock, Mail, Phone, Plus, Settings2, Shield, Trash2, Unlock, AlertCircle, CheckCircle2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, DollarSign, Download, Edit, Gift, History, Key, LayoutDashboard, Lock, Mail, Phone, Plus, Settings2, Shield, Trash2, TrendingUp, Unlock, Wallet, AlertCircle, CheckCircle2, X } from 'lucide-react'
 import { api } from '../../lib/api'
 import { giftUnpaidSessions, confirmGift } from '../../lib/gift'
-import { formatSlotTime } from '../../lib/time'
+import { formatSlotTime, formatDateMed } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
+import { useFeedback } from '../../context/FeedbackContext'
+import { useEscapeKey } from '../../lib/hooks'
+import { useAllocationPreview } from '../../lib/allocation'
+import { AllocationHint } from '../../components/AllocationHint'
 import { UserModal, ConvertModal, HistoryModal, TransferModal } from './Users'
+import { JourneyTab } from '../../components/Journey'
 
 function BalanceControlModal({ user, onClose, onDone }) {
+  const { confirm, prompt } = useFeedback()
   const [form, setForm] = useState({
     cycle_private: user.cycle_private ?? 0,
     cycle_group: user.cycle_group ?? 0,
@@ -20,6 +26,12 @@ function BalanceControlModal({ user, onClose, onDone }) {
   const [writeOffLoading, setWriteOffLoading] = useState(false)
   const [error, setError] = useState('')
   const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -44,7 +56,13 @@ function BalanceControlModal({ user, onClose, onDone }) {
   }
 
   const expireNow = async () => {
-    if (!confirm('Expire this player\'s monthly package now? Unused this-month sessions will be zeroed.')) return
+    const ok = await confirm({
+      title: 'Expire package now?',
+      description: `Expire this player's monthly package now? Unused this-month sessions will be zeroed.`,
+      confirmLabel: 'Expire now',
+      tone: 'danger',
+    })
+    if (!ok) return
     setExpireLoading(true)
     setError('')
     setMsg('')
@@ -60,7 +78,14 @@ function BalanceControlModal({ user, onClose, onDone }) {
   }
 
   const writeOff = async () => {
-    const reason = prompt(`Write off negative balance for ${user.name}?\n\nCurrent debt: ${user.debt_private} private / ${user.debt_group} group\nA reason is required (it is audit-logged).`)
+    const reason = await prompt({
+      title: `Write off negative balance for ${user.name}?`,
+      description: `Current debt: ${user.debt_private} private / ${user.debt_group} group. A reason is required (it is audit-logged).`,
+      label: 'Reason',
+      placeholder: 'e.g. Month-start write-off',
+      confirmLabel: 'Write off debt',
+      tone: 'danger',
+    })
     if (reason === null) return
     if (!reason.trim()) { setError('A reason is required to write off debt.'); return }
     setWriteOffLoading(true)
@@ -78,11 +103,11 @@ function BalanceControlModal({ user, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="balance-control-title" onClick={onClose}>
+      <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-xl font-bold text-theme">Balance Control</h3>
+            <h3 id="balance-control-title" className="text-xl font-bold text-theme">Balance Control</h3>
             <p className="text-xs text-muted mt-0.5">One player only — {user.name}</p>
           </div>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
@@ -159,6 +184,7 @@ function BalanceControlModal({ user, onClose, onDone }) {
 }
 
 function PaymentModal({ user, onClose, onDone }) {
+  useEscapeKey(onClose)
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     method: 'Cash',
@@ -169,6 +195,18 @@ function PaymentModal({ user, onClose, onDone }) {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [countsTouched, setCountsTouched] = useState(false)
+  // Amount drives the session counts (package priced against unpaid sessions);
+  // typing into the count fields switches to a manual override.
+  const { allocation } = useAllocationPreview({ playerId: user.id, amount: form.amount })
+  useEffect(() => {
+    if (countsTouched || !allocation) return
+    setForm(f => ({
+      ...f,
+      private_sessions: String(allocation.private_sessions ?? 0),
+      group_sessions: String(allocation.group_sessions ?? 0),
+    }))
+  }, [allocation, countsTouched])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -176,14 +214,12 @@ function PaymentModal({ user, onClose, onDone }) {
     setSubmitting(true)
     setError('')
     try {
-      await api.post('/payments', {
-        ...form,
-        player_id: user.id,
-        player_name: user.name,
-        amount: parseFloat(form.amount),
-        private_sessions: form.private_sessions ? parseInt(form.private_sessions) : 0,
-        group_sessions: form.group_sessions ? parseInt(form.group_sessions) : 0,
-      })
+      const body = { ...form, player_id: user.id, player_name: user.name, amount: parseFloat(form.amount) }
+      if (!countsTouched) {
+        delete body.private_sessions
+        delete body.group_sessions
+      }
+      await api.post('/payments', body)
       onDone()
     } catch (err) {
       setError(err.message || 'Failed to create payment')
@@ -193,11 +229,11 @@ function PaymentModal({ user, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-xl font-bold text-theme flex items-center gap-2"><DollarSign className="w-5 h-5 text-brand-text" /> Add Payment</h3>
+            <h3 id="modal-title-0" className="text-xl font-bold text-theme flex items-center gap-2"><DollarSign className="w-5 h-5 text-brand-text" /> Add Payment</h3>
             <p className="text-xs text-muted mt-1">For {user.name}</p>
           </div>
           <button onClick={onClose} className="p-2 text-muted hover:text-theme hover:bg-surface rounded-lg"><X className="w-5 h-5" /></button>
@@ -224,13 +260,14 @@ function PaymentModal({ user, onClose, onDone }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Private Sessions</label>
-              <input type="number" min="0" value={form.private_sessions} onChange={e => setForm({ ...form, private_sessions: e.target.value })} placeholder="0" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+              <input type="number" min="0" value={form.private_sessions} onChange={e => { setCountsTouched(true); setForm({ ...form, private_sessions: e.target.value }) }} placeholder="0" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Group Sessions</label>
-              <input type="number" min="0" value={form.group_sessions} onChange={e => setForm({ ...form, group_sessions: e.target.value })} placeholder="0" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+              <input type="number" min="0" value={form.group_sessions} onChange={e => { setCountsTouched(true); setForm({ ...form, group_sessions: e.target.value }) }} placeholder="0" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
           </div>
+          <AllocationHint allocation={countsTouched ? null : allocation} />
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Notes</label>
             <input type="text" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="e.g. 3 Private + 2 Group" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
@@ -251,8 +288,11 @@ function PaymentModal({ user, onClose, onDone }) {
 export default function UserDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { isAdmin, user: me } = useAuth()
-  const canEdit = isAdmin || me?.role === 'superadmin' || me?.role === 'admin'
+  const { hasPermission } = useAuth()
+  const { confirm, prompt, toast } = useFeedback()
+  const canEdit = hasPermission('users')
+  const canPay = hasPermission('dashboard')
+  const canConvert = hasPermission('conversions')
   const [user, setUser] = useState(null)
   const [report, setReport] = useState(null)
   const [payments, setPayments] = useState([])
@@ -271,6 +311,14 @@ export default function UserDetail() {
   const [lockConfirm, setLockConfirm] = useState(false)
   const [balanceOpen, setBalanceOpen] = useState(false)
   const [gifting, setGifting] = useState(false)
+  const [tab, setTab] = useState('overview')
+
+  useEscapeKey(() => {
+    setDeleteConfirm(false)
+    setResetConfirm(false)
+    setLockConfirm(false)
+    setResetResult(null)
+  }, deleteConfirm || resetConfirm || lockConfirm || resetResult)
 
   const fetchUser = () => {
     setLoading(true)
@@ -282,7 +330,7 @@ export default function UserDetail() {
   }
 
   const fetchPayments = () => {
-    if (!canEdit) return
+    if (!canPay) return
     api.get('/payments').then(data => {
       const arr = Array.isArray(data) ? data : []
       setPayments(arr.filter(p => p.player_id === parseInt(id)))
@@ -301,7 +349,13 @@ export default function UserDetail() {
 
   const handleGiftUnpaid = async () => {
     if (gifting) return
-    if (!confirmGift(user?.name || 'this player', unpaidPrivate, unpaidGroup, report?.amount_owed)) return
+    const ok = await confirmGift(confirm, {
+      playerName: user?.name || 'this player',
+      priv: unpaidPrivate,
+      grp: unpaidGroup,
+      amountOwed: report?.amount_owed,
+    })
+    if (!ok) return
     setGifting(true)
     try {
       await giftUnpaidSessions({
@@ -312,7 +366,7 @@ export default function UserDetail() {
       })
       refreshPlayer()
     } catch (err) {
-      alert(err.message || 'Gift failed')
+      toast.error(err.message || 'Gift failed')
     } finally {
       setGifting(false)
     }
@@ -328,12 +382,12 @@ export default function UserDetail() {
 
   useEffect(() => {
     fetchPayments()
-    if (!canEdit) return
+    if (!canConvert) return
     api.get('/users').then(data => {
       const arr = Array.isArray(data) ? data : data.users || []
       setAllPlayers(arr.filter(u => u.role === 'player'))
     }).catch(() => {})
-  }, [id, canEdit])
+  }, [id, canConvert])
 
   const handleDownloadPDF = async () => {
     if (!report) return
@@ -343,7 +397,7 @@ export default function UserDetail() {
   }
 
   const handleDelete = async () => {
-    try { await api.del(`/users/${id}`); navigate('/admin/users') } catch (err) { alert(err.message || 'Delete failed') }
+    try { await api.del(`/users/${id}`); navigate('/admin/users') } catch (err) { toast.error(err.message || 'Delete failed') }
   }
 
   const handleResetPassword = async () => {
@@ -351,7 +405,7 @@ export default function UserDetail() {
       const data = await api.post(`/users/${id}/reset-password`)
       setResetConfirm(false)
       setResetResult(data)
-    } catch (err) { alert(err.message || 'Reset failed') }
+    } catch (err) { toast.error(err.message || 'Reset failed') }
   }
 
   const handleToggleStatus = async () => {
@@ -360,24 +414,28 @@ export default function UserDetail() {
       await api.patch(`/users/${id}/account-status`, { status: newStatus })
       setLockConfirm(false)
       fetchUser()
-    } catch (err) { alert(err.message || 'Status update failed') }
+    } catch (err) { toast.error(err.message || 'Status update failed') }
   }
 
   const handleWriteOff = async () => {
     const debtP = user.debt_private ?? 0
     const debtG = user.debt_group ?? 0
     if (!debtP && !debtG) return
-    const reason = prompt(
-      `Write off negative balance for ${user.name}?\n\nCurrent debt: ${debtP} private / ${debtG} group\nA reason is required (it is audit-logged).`,
-      'Month-start write-off'
-    )
+    const reason = await prompt({
+      title: `Write off negative balance for ${user.name}?`,
+      description: `Current debt: ${debtP} private / ${debtG} group. A reason is required (it is audit-logged).`,
+      label: 'Reason',
+      defaultValue: 'Month-start write-off',
+      confirmLabel: 'Write off debt',
+      tone: 'danger',
+    })
     if (reason === null) return
-    if (!reason.trim()) { alert('A reason is required.'); return }
+    if (!reason.trim()) { toast.error('A reason is required.'); return }
     try {
       await api.post(`/users/${id}/writeoff`, { reason: reason.trim() })
       refreshPlayer()
     } catch (err) {
-      alert(err.message || 'Write-off failed')
+      toast.error(err.message || 'Write-off failed')
     }
   }
 
@@ -421,7 +479,7 @@ export default function UserDetail() {
                 <Shield className="w-3 h-3" /> {user.role}
               </span>
               {user.member_code && <span className="font-mono font-bold text-brand-text">#{user.member_code}</span>}
-              <span>Joined {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</span>
+              <span>Joined {formatDateMed(user.created_at)}</span>
             </div>
           </div>
         </div>
@@ -431,7 +489,7 @@ export default function UserDetail() {
               <Edit className="w-4 h-4" /> Edit
             </button>
           )}
-          {canEdit && isPlayer && (
+          {canPay && isPlayer && (
             <button onClick={() => setPaymentOpen(true)} className="px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-bold flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Payment
             </button>
@@ -441,17 +499,17 @@ export default function UserDetail() {
               <Settings2 className="w-4 h-4" /> Balance Control
             </button>
           )}
-          {canEdit && isPlayer && (
+          {canConvert && isPlayer && (
             <button onClick={() => setConvertOpen(true)} className="px-4 py-2 rounded-xl bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 text-sm font-bold flex items-center gap-2">
               <ArrowRightLeft className="w-4 h-4 rotate-45" /> Convert
             </button>
           )}
-          {canEdit && isPlayer && (
+          {canConvert && isPlayer && (
             <button onClick={() => setTransferOpen(true)} className="px-4 py-2 rounded-xl bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 text-sm font-bold flex items-center gap-2">
               <ArrowRightLeft className="w-4 h-4" /> Transfer
             </button>
           )}
-          {canEdit && isPlayer && (
+          {isPlayer && (
             <button onClick={() => setHistoryOpen(true)} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-800">
               <History className="w-4 h-4" /> Sessions
             </button>
@@ -509,7 +567,7 @@ export default function UserDetail() {
 
       {isPlayer && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className={`glass-panel rounded-2xl p-5 border ${amountOwed > 0 ? 'border-amber-400/40 bg-amber-400/5' : 'border-theme'}`}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-xl bg-amber-400/10"><DollarSign className="w-5 h-5 text-amber-400" /></div>
@@ -518,12 +576,12 @@ export default function UserDetail() {
               <p className={`font-heading text-3xl font-black ${amountOwed > 0 ? 'text-amber-400' : 'text-theme'}`}>
                 EGP {amountOwed.toLocaleString()}
               </p>
-              {amountOwed > 0 && canEdit && (
+              {amountOwed > 0 && canPay && (
                 <button onClick={() => setPaymentOpen(true)} className="mt-3 w-full px-3 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1">
                   <Plus className="w-3.5 h-3.5" /> Collect Payment
                 </button>
               )}
-              {amountOwed > 0 && canEdit && unpaidSessions.length > 0 && (
+              {amountOwed > 0 && canPay && unpaidSessions.length > 0 && (
                 <button onClick={handleGiftUnpaid} disabled={gifting} className="mt-2 w-full px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20 text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-50">
                   <Gift className="w-3.5 h-3.5" /> {gifting ? 'Gifting…' : `Gift Unpaid at 0 EGP (${unpaidPrivate}P + ${unpaidGroup}G)`}
                 </button>
@@ -537,34 +595,51 @@ export default function UserDetail() {
               <p className="font-heading text-3xl font-black text-theme">EGP {totalPaid.toLocaleString()}</p>
               <p className="text-[10px] text-muted mt-2">{payments.length} payment{payments.length !== 1 ? 's' : ''} on record</p>
             </div>
+            <div className="glass-panel rounded-2xl p-5 border border-theme text-center">
+              <div className="flex items-center justify-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-brand/10"><ArrowRightLeft className="w-5 h-5 text-brand-text" /></div>
+                <span className="text-xs font-bold text-muted uppercase">Remaining Private / Group</span>
+              </div>
+              <p className="font-heading text-3xl font-black">
+                <span className="text-brand-text">{user.private_balance ?? 0}P</span>
+                <span className="text-muted"> · </span>
+                <span className="text-purple-400">{user.group_balance ?? 0}G</span>
+              </p>
+              <p className="text-[10px] text-muted mt-2">1P = 2G · this month {user.cycle_private ?? 0}P / {user.cycle_group ?? 0}G</p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="flex items-center gap-2 bg-surface p-1.5 rounded-2xl border border-theme w-fit" role="tablist" aria-label="Player sections">
+            {[
+              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+              { id: 'balances', label: 'Balances', icon: Wallet },
+              { id: 'sessions', label: 'Sessions', icon: History },
+              { id: 'journey', label: 'Journey', icon: TrendingUp },
+              ...(canPay ? [{ id: 'payments', label: 'Payments', icon: DollarSign }] : []),
+            ].map(t => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`px-5 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 ${tab === t.id ? 'bg-brand text-white shadow-md' : 'text-muted hover:text-theme'}`}>
+                <t.icon className="w-4 h-4" /><span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {tab === 'overview' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {[
               { label: 'Used Sessions', value: user.used_sessions ?? 0, cls: 'text-brand-text' },
               { label: 'Used Private', value: user.used_private ?? 0, cls: 'text-blue-400' },
               { label: 'Used Group', value: user.used_group ?? 0, cls: 'text-purple-400' },
-              {
-                label: 'Remaining Private / Group',
-                cls: '',
-                full: true,
-                value: (
-                  <span>
-                    <span className="text-brand-text">{user.private_balance ?? 0}P</span>
-                    <span className="text-muted"> · </span>
-                    <span className="text-purple-400">{user.group_balance ?? 0}G</span>
-                  </span>
-                ),
-              },
               { label: 'This Month Private', value: user.cycle_private ?? 0, cls: 'text-brand-text' },
             ].map(s => (
-              <div key={s.label} className={`glass-panel rounded-2xl p-4 border border-theme text-center ${s.full ? 'col-span-2 sm:col-span-1' : ''}`}>
+              <div key={s.label} className="glass-panel rounded-2xl p-4 border border-theme text-center">
                 <p className={`font-heading text-2xl font-black ${s.cls}`}>{s.value}</p>
                 <p className="text-[10px] text-muted uppercase tracking-wider mt-1 font-semibold">{s.label}</p>
               </div>
             ))}
           </div>
+          )}
 
+          {tab === 'balances' && (
           <div className="glass-panel rounded-2xl p-5 border border-theme">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2 rounded-xl bg-brand/10"><History className="w-5 h-5 text-brand-text" /></div>
@@ -602,7 +677,7 @@ export default function UserDetail() {
               {user.cycle_expires_at && (
                 <div className="flex justify-between text-xs">
                   <span className="text-muted">Package expires</span>
-                  <span className="font-bold text-amber-400">{new Date(user.cycle_expires_at).toLocaleDateString()}</span>
+                  <span className="font-bold text-amber-400">{formatDateMed(user.cycle_expires_at)}</span>
                 </div>
               )}
             </div>
@@ -612,17 +687,22 @@ export default function UserDetail() {
               </button>
             )}
           </div>
+          )}
         </>
       )}
 
-      {isPlayer && user.notes && (
+      {isPlayer && tab === 'journey' && (
+        <JourneyTab userId={id} />
+      )}
+
+      {isPlayer && tab === 'overview' && user.notes && (
         <div className="glass-panel rounded-2xl p-5 border border-theme">
           <span className="text-xs font-semibold text-muted uppercase tracking-wider">Notes</span>
           <p className="text-sm text-theme mt-1">{user.notes}</p>
         </div>
       )}
 
-      {isPlayer && canEdit && payments.length > 0 && (
+      {isPlayer && canPay && tab === 'payments' && (
         <div className="glass-panel rounded-2xl border border-theme p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
@@ -632,6 +712,10 @@ export default function UserDetail() {
               <Plus className="w-3.5 h-3.5" /> Add Payment
             </button>
           </div>
+          {payments.length === 0 && (
+            <p className="text-sm text-muted text-center py-6">No payments yet.</p>
+          )}
+          {payments.length > 0 && (
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-surface">
@@ -670,10 +754,11 @@ export default function UserDetail() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
-      {isPlayer && (
+      {isPlayer && tab === 'sessions' && (
         <div className="glass-panel rounded-2xl border border-theme p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
@@ -777,10 +862,10 @@ export default function UserDetail() {
       )}
 
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-1">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <AlertCircle className="w-12 h-12 text-rose-400 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-theme mb-2">Delete User?</h3>
+            <h3 id="modal-title-1" className="text-lg font-bold text-theme mb-2">Delete User?</h3>
             <p className="text-muted text-sm mb-6">Are you sure you want to delete {user.name}? This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
@@ -791,10 +876,10 @@ export default function UserDetail() {
       )}
 
       {resetConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-2">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <Key className="w-12 h-12 text-amber-400 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-theme mb-2">Reset Password?</h3>
+            <h3 id="modal-title-2" className="text-lg font-bold text-theme mb-2">Reset Password?</h3>
             <p className="text-muted text-sm mb-6">A temporary password will be generated for {user.name}. They will be required to change it on next login.</p>
             <div className="flex gap-3">
               <button onClick={() => setResetConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
@@ -805,10 +890,10 @@ export default function UserDetail() {
       )}
 
       {resetResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-3">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <CheckCircle2 className="w-12 h-12 text-brand-text mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-theme mb-2">Password Reset</h3>
+            <h3 id="modal-title-3" className="text-lg font-bold text-theme mb-2">Password Reset</h3>
             <p className="text-muted text-sm mb-2">Temporary password:</p>
             <code className="block p-3 rounded-xl bg-surface border border-theme text-brand-text font-mono text-lg font-bold mb-4">{resetResult.tempPassword}</code>
             <p className="text-muted text-xs mb-4">Share this password securely. The user will be forced to change it on next login.</p>
@@ -818,10 +903,10 @@ export default function UserDetail() {
       )}
 
       {lockConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-4">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             {isLocked ? <Lock className="w-12 h-12 text-rose-400 mx-auto mb-4" /> : <Unlock className="w-12 h-12 text-emerald-400 mx-auto mb-4" />}
-            <h3 className="text-lg font-bold text-theme mb-2">{isLocked ? 'Lock Account?' : 'Unlock Account?'}</h3>
+            <h3 id="modal-title-4" className="text-lg font-bold text-theme mb-2">{isLocked ? 'Lock Account?' : 'Unlock Account?'}</h3>
             <p className="text-muted text-sm mb-6">
               {isLocked
                 ? `${user.name} will not be able to log in until you unlock their account.`

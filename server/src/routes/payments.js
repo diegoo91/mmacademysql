@@ -3,7 +3,8 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
-import { creditCycle, ensureCycleFresh } from '../utils/balance.js'
+import { creditCycle, settleDebtWith, ensureCycleFresh } from '../utils/balance.js'
+import { computePaymentAllocation } from '../utils/paymentAllocation.js'
 import { notifyUser } from '../utils/notify.js'
 
 const router = Router()
@@ -28,6 +29,38 @@ async function notify(userId, kind, title, body, link) {
   await notifyUser({ userId, kind, title, body, link })
 }
 
+/**
+ * Apply a money-driven allocation to a player's balance:
+ *   1. the covered part settles EXISTING unpaid sessions (legacy debt goes up,
+ *      nothing enters the cycle — those sessions are consumed by the slots
+ *      they pay for),
+ *   2. the leftover part is credited through creditCycle (which settles any
+ *      remaining debt first, then fills the cycle).
+ * Returns the combined settlement stored on the payment row.
+ */
+async function applyAllocation(playerId, allocation) {
+  if (!allocation) return null
+  const settled = await settleDebtWith(playerId, allocation.covered_private, allocation.covered_group)
+  const credit = await creditCycle(playerId, allocation.credit_private, allocation.credit_group)
+  const creditSettlement = credit?.settlement || EMPTY_SETTLEMENT
+  const settledPart = settled?.settlement || EMPTY_SETTLEMENT
+  return {
+    settled_private: (settledPart.settled_private || 0) + (creditSettlement.settled_private || 0),
+    settled_group: (settledPart.settled_group || 0) + (creditSettlement.settled_group || 0),
+    credited_private: creditSettlement.credited_private || 0,
+    credited_group: creditSettlement.credited_group || 0,
+  }
+}
+
+async function storeSettlement(paymentId, settlement) {
+  await db.update('payments', paymentId, {
+    settled_private: settlement.settled_private,
+    settled_group: settlement.settled_group,
+    credited_private: settlement.credited_private,
+    credited_group: settlement.credited_group,
+  })
+}
+
 // List payments (supports ?status filter)
 router.get('/', async (req, res) => {
   const { status } = req.query
@@ -35,6 +68,32 @@ router.get('/', async (req, res) => {
   if (status) payments = payments.filter(p => p.status === status)
   payments.sort((a, b) => new Date(b.date) - new Date(a.date))
   res.json(payments)
+})
+
+// GET /preview?player_id=&amount=&exclude_id= — dry-run of the money-driven
+// allocation: what the amount covers (existing unpaid sessions, package priced)
+// and what it credits as new sessions. Never writes anything.
+router.get('/preview', async (req, res) => {
+  try {
+    const playerId = parseInt(req.query.player_id)
+    const amount = parseFloat(req.query.amount) || 0
+    const excludeId = parseInt(req.query.exclude_id) || null
+    if (!playerId) return res.status(400).json({ error: 'player_id is required' })
+    const player = await db.get('users', playerId)
+    if (!player) return res.status(404).json({ error: 'Player not found' })
+
+    const countsProvided = req.query.private_sessions !== undefined || req.query.group_sessions !== undefined
+    const allocation = await computePaymentAllocation(player, {
+      amount,
+      private_sessions: countsProvided ? req.query.private_sessions : undefined,
+      group_sessions: countsProvided ? req.query.group_sessions : undefined,
+      excludePaymentId: excludeId,
+    })
+    res.json(allocation)
+  } catch (err) {
+    console.error('Payment preview error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
 })
 
 // POST / — create payment (admin manual or from player booking)
@@ -52,64 +111,77 @@ router.post('/', async (req, res) => {
   // Cash = admin received money externally → credit immediately
   // Instapay = player paid in-app → pending until admin approves
   const isCash = method === 'Cash'
+  const playerId = player_id ? parseInt(player_id) : null
+  const player = playerId ? await db.get('users', playerId) : null
+
+  // Money-driven allocation (manual payments only — booking-linked payments
+  // are settled slot-by-slot by their own booking slots):
+  //   amount  → settles EXISTING unpaid sessions first (package priced)
+  //   leftover → new sessions credited to the balance
+  // Admin-entered session counts override the derived totals.
+  let allocation = null
+  if (player && !booking_id) {
+    allocation = await computePaymentAllocation(player, { amount, private_sessions, group_sessions })
+  }
+  const rowPrivate = allocation ? allocation.private_sessions : (parseInt(private_sessions) || 0)
+  const rowGroup = allocation ? allocation.group_sessions : (parseInt(group_sessions) || 0)
 
   let payment
   let settlement = null
-  if (isCash && player_id) {
+  if (isCash && playerId) {
     payment = await db.insert('payments', {
       ref,
       date,
       player_name: player_name.trim(),
-      player_id: player_id || null,
+      player_id: playerId,
       method,
       amount: parseFloat(amount) || 0,
-      private_sessions: parseInt(private_sessions) || 0,
-      group_sessions: parseInt(group_sessions) || 0,
+      private_sessions: rowPrivate,
+      group_sessions: rowGroup,
       notes: notes || '',
       status: STATUS.PAYMENT_APPROVED,
       booking_id: booking_id || null,
       created_by: req.user?.id || null,
     })
-    // Settle legacy debt first, then credit the remainder into the monthly
-    // cycle (creditCycle opens its own tx — must stay outside any other tx)
-    const userBefore = await db.get('users', player_id)
-    const credit = await creditCycle(player_id, parseInt(private_sessions) || 0, parseInt(group_sessions) || 0)
-    settlement = credit?.settlement || EMPTY_SETTLEMENT
-    await db.update('payments', payment.id, {
-      settled_private: settlement.settled_private,
-      settled_group: settlement.settled_group,
-      credited_private: settlement.credited_private,
-      credited_group: settlement.credited_group,
-    })
-    payment = { ...payment, settled_private: settlement.settled_private, settled_group: settlement.settled_group, credited_private: settlement.credited_private, credited_group: settlement.credited_group }
-    const userAfter = await db.get('users', player_id)
+    const userBefore = await db.get('users', playerId)
+    // Covered part settles old debt, leftover goes through the cycle
+    // (creditCycle opens its own tx — must stay outside any other tx)
+    if (allocation) {
+      settlement = await applyAllocation(playerId, allocation)
+    } else {
+      const credit = await creditCycle(playerId, rowPrivate, rowGroup)
+      settlement = credit?.settlement || EMPTY_SETTLEMENT
+    }
+    await storeSettlement(payment.id, settlement)
+    payment = { ...payment, ...settlement }
+    const userAfter = await db.get('users', playerId)
     const snap = (u) => u ? {
       private_balance: u.private_balance,
       group_balance: u.group_balance,
       cycle_private: u.cycle_private,
       cycle_group: u.cycle_group,
     } : null
-    await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id, private_sessions, group_sessions, settlement })
-    await auditBalanceChange(req, 'user', player_id, snap(userBefore), { ...snap(userAfter), settlement }, 'payment.credit.cycle')
+    await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id: playerId, private_sessions: rowPrivate, group_sessions: rowGroup, allocation, settlement })
+    await auditBalanceChange(req, 'user', playerId, snap(userBefore), { ...snap(userAfter), settlement }, 'payment.credit.cycle')
   } else {
     payment = await db.insert('payments', {
       ref,
       date,
       player_name: player_name.trim(),
-      player_id: player_id || null,
+      player_id: playerId,
       method,
       amount: parseFloat(amount) || 0,
-      private_sessions: parseInt(private_sessions) || 0,
-      group_sessions: parseInt(group_sessions) || 0,
+      private_sessions: rowPrivate,
+      group_sessions: rowGroup,
       notes: notes || '',
       status: isCash ? STATUS.PAYMENT_APPROVED : STATUS.PAYMENT_PENDING,
       booking_id: booking_id || null,
       created_by: req.user?.id || null,
     })
-    await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id, status: payment.status })
+    await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id: playerId, status: payment.status, allocation })
   }
 
-  res.status(201).json(settlement ? { ...payment, settlement } : payment)
+  res.status(201).json(settlement ? { ...payment, settlement, ...(allocation ? { allocation } : {}) } : { ...payment, ...(allocation ? { allocation } : {}) })
 })
 
 // PUT /:id/approve — approve payment, credit balance, move linked slots to payment_approved
@@ -141,23 +213,39 @@ router.put('/:id/approve', async (req, res) => {
       }
     })
 
-    // Settle legacy debt first, then credit the remainder into the monthly
-    // cycle after tx commit (does not stack on legacy)
+    // Money-driven: re-derive the split now (the unpaid state may have moved
+    // since the payment was recorded) — covered part settles old debt, the
+    // leftover is credited after tx commit (does not stack on legacy)
     let settlement = null
+    let allocation = null
+    if (payment.player_id && !payment.booking_id) {
+      const player = await db.get('users', payment.player_id)
+      if (player) {
+        allocation = await computePaymentAllocation(player, { amount: payment.amount, excludePaymentId: payment.id })
+        if (
+          allocation.private_sessions !== (parseInt(payment.private_sessions) || 0) ||
+          allocation.group_sessions !== (parseInt(payment.group_sessions) || 0)
+        ) {
+          await db.update('payments', payment.id, {
+            private_sessions: allocation.private_sessions,
+            group_sessions: allocation.group_sessions,
+          })
+        }
+      }
+    }
     if (payment.player_id) {
-      const privateAdd = parseInt(payment.private_sessions) || 0
-      const groupAdd = parseInt(payment.group_sessions || 0)
-      const credit = await creditCycle(payment.player_id, privateAdd, groupAdd)
-      settlement = credit?.settlement || EMPTY_SETTLEMENT
-      await db.update('payments', payment.id, {
-        settled_private: settlement.settled_private,
-        settled_group: settlement.settled_group,
-        credited_private: settlement.credited_private,
-        credited_group: settlement.credited_group,
-      })
+      if (allocation) {
+        settlement = await applyAllocation(payment.player_id, allocation)
+      } else {
+        const privateAdd = parseInt(payment.private_sessions) || 0
+        const groupAdd = parseInt(payment.group_sessions) || 0
+        const credit = await creditCycle(payment.player_id, privateAdd, groupAdd)
+        settlement = credit?.settlement || EMPTY_SETTLEMENT
+      }
+      await storeSettlement(payment.id, settlement)
     }
 
-    await auditUpdate(req, 'payment', payment.id, { status: payment.status }, { status: STATUS.PAYMENT_APPROVED, ref: payment.ref })
+    await auditUpdate(req, 'payment', payment.id, { status: payment.status }, { status: STATUS.PAYMENT_APPROVED, ref: payment.ref, allocation, settlement })
     if (payment.player_id) {
       const userAfter = await db.get('users', payment.player_id)
       await auditBalanceChange(req, 'user', payment.player_id,
@@ -170,11 +258,11 @@ router.put('/:id/approve', async (req, res) => {
 
     if (payment.player_id && !payment.booking_id) {
       await notify(payment.player_id, 'payment_approved', 'Payment Approved',
-        `Your payment ${payment.ref} has been approved. ${payment.private_sessions + payment.group_sessions} session(s) credited to your balance.`,
+        `Your payment ${payment.ref} has been approved. ${(updated.private_sessions || 0) + (updated.group_sessions || 0)} session(s) credited to your balance.`,
         '/profile')
     }
 
-    res.json(settlement ? { ...updated, settlement } : updated)
+    res.json(settlement ? { ...updated, settlement, ...(allocation ? { allocation } : {}) } : updated)
   } catch (err) {
     console.error('Approve payment error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -264,10 +352,13 @@ function planPaymentReversal(payment, user) {
 }
 
 // PUT /:id — edit a payment (date, amount, method, notes, player, session counts).
-// Approved + credit-affecting changes (player or session counts) are applied by
-// reversing the old credit exactly (same math as DELETE) and re-crediting the
-// new values via creditCycle. Cosmetic edits (date/amount/notes/method) update
-// the row only — no balance churn. Status changes go through approve/reject.
+// The amount is the source of truth: without explicit session counts the row
+// totals and the covered/credit split are re-derived (package priced) from it.
+// Approved + credit-affecting changes (player, session counts, or amount when
+// money-driven) are applied by reversing the old credit exactly (same math as
+// DELETE) and re-applying the new one. Purely cosmetic edits (date/notes/
+// method, amount on booking-linked payments) update the row only. Status
+// changes go through approve/reject.
 router.put('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id)
@@ -292,11 +383,37 @@ router.put('/:id', async (req, res) => {
 
     const wasApproved = payment.status === STATUS.PAYMENT_APPROVED
     const num = (v) => Number(v) || 0
-    const creditChanged = wasApproved && (
-      (edited.player_id ?? null) !== (payment.player_id ?? null) ||
-      num(edited.private_sessions) !== num(payment.private_sessions) ||
+    const countsProvided = private_sessions !== undefined || group_sessions !== undefined
+
+    // Money-driven re-derivation (manual payments): the amount decides the
+    // totals and the covered/credit split unless the admin typed session
+    // counts. excludePaymentId keeps this row's own credit from paying for
+    // the very sessions it is covering. Booking-linked payments keep the
+    // counts entered on the row.
+    let allocation = null
+    if (edited.player_id && !payment.booking_id) {
+      const target = await db.get('users', edited.player_id)
+      if (target) {
+        allocation = await computePaymentAllocation(target, {
+          amount: edited.amount,
+          private_sessions: countsProvided ? edited.private_sessions : undefined,
+          group_sessions: countsProvided ? edited.group_sessions : undefined,
+          excludePaymentId: id,
+        })
+        if (!countsProvided) {
+          edited.private_sessions = allocation.private_sessions
+          edited.group_sessions = allocation.group_sessions
+        }
+      }
+    }
+
+    const playerChanged = (edited.player_id ?? null) !== (payment.player_id ?? null)
+    const totalsChanged = num(edited.private_sessions) !== num(payment.private_sessions) ||
       num(edited.group_sessions) !== num(payment.group_sessions)
-    )
+    const amountChanged = amount !== undefined && (Math.max(0, parseFloat(amount) || 0)) !== (parseFloat(payment.amount) || 0)
+    // Amount edits only churn balances when they can change the split
+    // (money-driven allocation); otherwise date/notes/method stay cosmetic.
+    const creditChanged = wasApproved && (playerChanged || totalsChanged || (amountChanged && !!allocation))
 
     let userBefore = null
     let reversal = null
@@ -331,21 +448,20 @@ router.put('/:id', async (req, res) => {
     let newUserBefore = null
     if (creditChanged && edited.player_id) {
       newUserBefore = await db.get('users', edited.player_id)
-      const credit = await creditCycle(edited.player_id, num(edited.private_sessions), num(edited.group_sessions))
-      settlement = credit?.settlement || EMPTY_SETTLEMENT
-      await db.update('payments', id, {
-        settled_private: settlement.settled_private,
-        settled_group: settlement.settled_group,
-        credited_private: settlement.credited_private,
-        credited_group: settlement.credited_group,
-      })
+      if (allocation) {
+        settlement = await applyAllocation(edited.player_id, allocation)
+      } else {
+        const credit = await creditCycle(edited.player_id, num(edited.private_sessions), num(edited.group_sessions))
+        settlement = credit?.settlement || EMPTY_SETTLEMENT
+      }
+      await storeSettlement(id, settlement)
     }
 
     const updated = await db.get('payments', id)
 
     await auditUpdate(req, 'payment', id,
       { ref: payment.ref, date: payment.date, player_id: payment.player_id, player_name: payment.player_name, method: payment.method, amount: payment.amount, private_sessions: payment.private_sessions, group_sessions: payment.group_sessions, notes: payment.notes, status: payment.status },
-      { ref: updated.ref, date: updated.date, player_id: updated.player_id, player_name: updated.player_name, method: updated.method, amount: updated.amount, private_sessions: updated.private_sessions, group_sessions: updated.group_sessions, notes: updated.notes, status: updated.status, reversal, settlement })
+      { ref: updated.ref, date: updated.date, player_id: updated.player_id, player_name: updated.player_name, method: updated.method, amount: updated.amount, private_sessions: updated.private_sessions, group_sessions: updated.group_sessions, notes: updated.notes, status: updated.status, allocation, reversal, settlement })
 
     const snap = (u) => u ? {
       private_balance: u.private_balance, group_balance: u.group_balance,
@@ -360,7 +476,7 @@ router.put('/:id', async (req, res) => {
       await auditBalanceChange(req, 'user', edited.player_id, snap(newUserBefore), { ...snap(userAfter), settlement }, 'payment.edit.credit')
     }
 
-    res.json(settlement ? { ...updated, settlement } : updated)
+    res.json({ ...updated, ...(settlement ? { settlement } : {}), ...(allocation ? { allocation } : {}) })
   } catch (err) {
     console.error('Edit payment error:', err)
     res.status(500).json({ error: 'Internal server error' })

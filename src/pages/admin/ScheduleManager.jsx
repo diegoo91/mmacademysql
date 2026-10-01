@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Calendar as CalendarIcon, Check, Clock, Download, Ellipsis, FileSpreadsheet, Plus, Trash2, Upload, X, ArrowRightLeft, Undo2, UserCheck, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Calendar as CalendarIcon, Check, Clock, Download, Ellipsis, FileSpreadsheet, Plus, Trash2, Upload, X, Undo2, UserCheck, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
+import { useFeedback } from '../../context/FeedbackContext'
+import { useEscapeKey } from '../../lib/hooks'
 import PlayerSearchInput from '../../components/PlayerSearchInput'
-import { TIME_LABELS, canonTime, formatSlotTime } from '../../lib/time'
+import { TIME_LABELS, canonTime, formatSlotTime, formatDateShort } from '../../lib/time'
+import { ALL_TIMES, suggestNextSlotTime, timeToMin } from '../../lib/slotTime'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const ALL_TIMES = ['14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00']
 
 const STATUS_COLORS = {
   available: 'bg-brand/5 text-brand-text',
@@ -34,10 +37,9 @@ function toLocalDateStr(d) {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
-function formatDateShort(d) { const [,m,day] = d.split('-'); return `${Number(day)}/${Number(m)}` }
 function getDayName(d) { return DAY_NAMES[new Date(d + 'T00:00:00').getDay()] }
 
-function CellActionMenu({ slot, onApprove, onAttend, onToggle, onEdit, onDelete }) {
+function CellActionMenu({ slot, onApprove, onAttend, onEdit, onDelete }) {
   const [open, setOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [pos, setPos] = useState({ left: 0, top: 0 })
@@ -45,7 +47,7 @@ function CellActionMenu({ slot, onApprove, onAttend, onToggle, onEdit, onDelete 
   const openMenu = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
     const MENU_W = 176
-    const MENU_H = confirmDelete ? 120 : 210
+    const MENU_H = confirmDelete ? 120 : 170
     let left = Math.min(r.right, window.innerWidth - MENU_W - 8)
     let top = r.bottom + 4
     if (top + MENU_H > window.innerHeight - 8) top = Math.max(8, r.top - MENU_H)
@@ -55,14 +57,28 @@ function CellActionMenu({ slot, onApprove, onAttend, onToggle, onEdit, onDelete 
   }
 
   const close = () => { setOpen(false); setConfirmDelete(false) }
+
+  // Portal leaves the table's scroll context — close when anything scrolls/resizes
+  // so the menu can't end up pointing at a moved trigger.
+  useEffect(() => {
+    if (!open) return
+    const onClose = () => close()
+    window.addEventListener('scroll', onClose, true)
+    window.addEventListener('resize', onClose)
+    return () => {
+      window.removeEventListener('scroll', onClose, true)
+      window.removeEventListener('resize', onClose)
+    }
+  }, [open])
+
   const itemCls = 'w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold text-left hover:bg-black/10 dark:hover:bg-white/10 transition-colors'
 
   return (
     <>
-      <button onClick={openMenu} title="Slot actions" aria-label="Slot actions" className="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 shrink-0 text-current opacity-60 hover:opacity-100">
-        <Ellipsis className="w-4 h-4" />
+      <button onClick={openMenu} title="Slot actions" aria-label="Slot actions" className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 shrink-0 text-current">
+        <Ellipsis className="w-5 h-5" />
       </button>
-      {open && (
+      {open && createPortal(
         <>
           <div className="fixed inset-0 z-40" onClick={close} />
           <div className="fixed z-50 w-44 rounded-xl bg-surface border border-theme shadow-2xl overflow-hidden py-1" style={{ left: pos.left, top: pos.top }} role="menu">
@@ -86,11 +102,6 @@ function CellActionMenu({ slot, onApprove, onAttend, onToggle, onEdit, onDelete 
                     <UserCheck className="w-3.5 h-3.5" /> Mark Attended
                   </button>
                 )}
-                {slot.status !== 'available' && slot.status !== 'player_confirmed' && (
-                  <button role="menuitem" onClick={() => { onToggle(); close() }} className={`${itemCls} text-amber-400`}>
-                    <ArrowRightLeft className="w-3.5 h-3.5" /> Toggle Private/Group
-                  </button>
-                )}
                 <button role="menuitem" onClick={() => { onEdit(); close() }} className={`${itemCls} text-blue-400`}>
                   <CalendarIcon className="w-3.5 h-3.5" /> Edit
                 </button>
@@ -101,15 +112,17 @@ function CellActionMenu({ slot, onApprove, onAttend, onToggle, onEdit, onDelete 
               </>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </>
   )
 }
 
 export default function ScheduleManager() {
-  const { isAdmin, isSuperAdmin } = useAuth()
-  const canEdit = isAdmin
+  const { hasPermission, isSuperAdmin } = useAuth()
+  const { toast } = useFeedback()
+  const canEdit = hasPermission('schedule')
   const [activeTab, setActiveTab] = useState('schedule')
   const [view, setView] = useState('day')
   const [date, setDate] = useState(() => toLocalDateStr(new Date()))
@@ -139,6 +152,12 @@ export default function ScheduleManager() {
   const [courtDefaults, setCourtDefaults] = useState([])
   const [courtDefaultsDraft, setCourtDefaultsDraft] = useState({})
   const [courtDefaultsSaving, setCourtDefaultsSaving] = useState(false)
+
+  useEscapeKey(() => {
+    setAddSlot(null)
+    setBalanceWarning(null)
+    setPendingOverride(null)
+  }, !!addSlot || !!balanceWarning || !!pendingOverride)
 
   const fetchSlots = () => {
     setLoading(true)
@@ -183,10 +202,54 @@ export default function ScheduleManager() {
       await Promise.all(updates.map(u => api.put('/slots/court-defaults', u)))
       await fetchCoachesAndDefaults()
     } catch (err) {
-      alert('Failed to save court defaults')
+      toast.error(err.message || 'Failed to save court defaults')
     }
     setCourtDefaultsSaving(false)
   }
+
+  // ── Court Coach Defaults + auto hours for the Add Slot form ──────
+  const defaultCoachFor = (court) =>
+    courtDefaults.find(cd => Number(cd.court) === Number(court))?.coach_id || null
+
+  // Open Add Slot: the court's default coach is selected, and the time
+  // continues after the existing schedule. A pinned time (row/week "+ Add")
+  // still wins if it is later than the suggestion — never moved backwards.
+  const openAddSlot = (preset = {}) => {
+    setAddForm(prev => {
+      const court = preset.court ?? prev.court
+      const coachId = preset.coach_id !== undefined ? preset.coach_id : (defaultCoachFor(court) ?? prev.coach_id)
+      const next = { ...prev, ...preset, court, coach_id: coachId }
+      const suggested = suggestNextSlotTime({ date: next.date, court, coachId, slots })
+      const pinnedMin = preset.time != null ? timeToMin(preset.time) : null
+      if (suggested && (pinnedMin == null || timeToMin(suggested) > pinnedMin)) next.time = suggested
+      return next
+    })
+    setAddSlot(true)
+  }
+
+  // Inside the modal: changing date/court/coach re-applies the court's default
+  // coach (court change) and the next free hour after the last slot of that
+  // court AND of that coach. Picking a time manually is never overwritten.
+  const patchAddForm = (patch) => {
+    setAddForm(prev => {
+      const next = { ...prev, ...patch }
+      if (patch.court !== undefined && patch.coach_id === undefined) {
+        const def = defaultCoachFor(next.court)
+        if (def) next.coach_id = def
+      }
+      if (patch.date !== undefined || patch.court !== undefined || patch.coach_id !== undefined) {
+        const suggested = suggestNextSlotTime({ date: next.date, court: next.court, coachId: next.coach_id, slots })
+        if (suggested) next.time = suggested
+      }
+      return next
+    })
+  }
+
+  // The hour the auto-calculation picked — shown under the Time field so the
+  // admin can see why the time moved (and override it freely).
+  const autoSuggestion = addSlot
+    ? suggestNextSlotTime({ date: addForm.date, court: addForm.court, coachId: addForm.coach_id, slots })
+    : null
 
   const checkPlayerBalance = (player) => {
     if (!player || isSuperAdmin) return null
@@ -261,7 +324,7 @@ export default function ScheduleManager() {
   }, [date, slotsByDate])
 
   const handleDeleteSlot = async (id) => {
-    try { await api.del(`/slots/${id}`); fetchSlots() } catch {}
+    try { await api.del(`/slots/${id}`); fetchSlots() } catch (err) { toast.error(err.message || 'Failed to delete slot') }
   }
 
   const handleApproveSlot = async (id) => {
@@ -269,26 +332,17 @@ export default function ScheduleManager() {
       await api.put(`/slots/${id}/approve`)
       fetchSlots()
     } catch (err) {
-      alert(err.message || 'Failed to approve')
-    }
-  }
-
-  const handleToggleType = async (slot) => {
-    try {
-      await api.put(`/slots/${slot.id}/toggle-type`)
-      fetchSlots()
-    } catch (err) {
-      alert(err.message || 'Failed to toggle type')
+      toast.error(err.message || 'Failed to approve')
     }
   }
 
   const handleApproveDay = async () => {
     setDayActionLoading('approve')
     try {
-      const result = await api.put(`/slots/day/${date}/approve`)
+      await api.put(`/slots/day/${date}/approve`)
       fetchSlots()
     } catch (err) {
-      alert(err.message || 'Failed to approve day')
+      toast.error(err.message || 'Failed to approve day')
     }
     setDayActionLoading(null)
   }
@@ -296,10 +350,10 @@ export default function ScheduleManager() {
   const handleUndoDay = async () => {
     setDayActionLoading('undo')
     try {
-      const result = await api.put(`/slots/day/${date}/undo`)
+      await api.put(`/slots/day/${date}/undo`)
       fetchSlots()
     } catch (err) {
-      alert(err.message || 'Failed to undo day approval')
+      toast.error(err.message || 'Failed to undo day approval')
     }
     setDayActionLoading(null)
   }
@@ -309,7 +363,7 @@ export default function ScheduleManager() {
       await api.put(`/slots/${id}/mark-attended`)
       fetchSlots()
     } catch (err) {
-      alert(err.message || 'Failed to mark attended')
+      toast.error(err.message || 'Failed to mark attended')
     }
   }
 
@@ -354,7 +408,7 @@ export default function ScheduleManager() {
         }
         setPendingOverride({ payload: { ...addForm, player_text: joinedNames }, players: insufficient, sessionType: stype })
       } else {
-        alert(msg || 'Failed to add slot')
+        toast.error(msg || 'Failed to add slot')
       }
     }
   }
@@ -363,7 +417,9 @@ export default function ScheduleManager() {
     try {
       await api.put(`/conversion-requests/${id}/${action}`)
       fetchConversionRequests()
-    } catch {}
+    } catch (err) {
+      toast.error(err.message || 'Failed to update request')
+    }
   }
 
   const handleOverrideConfirm = async (mode) => {
@@ -378,7 +434,7 @@ export default function ScheduleManager() {
       setSelectedPlayers([])
       fetchSlots()
     } catch (err) {
-      alert(err.message || 'Failed to add slot')
+      toast.error(err.message || 'Failed to add slot')
     }
   }
 
@@ -457,7 +513,6 @@ export default function ScheduleManager() {
         slot={slot}
         onApprove={() => handleApproveSlot(slot.id)}
         onAttend={() => handleMarkAttended(slot.id)}
-        onToggle={() => handleToggleType(slot)}
         onEdit={() => setEditSlot(slot)}
         onDelete={() => handleDeleteSlot(slot.id)}
       />
@@ -535,7 +590,7 @@ export default function ScheduleManager() {
                 <ChevronRight className="w-4 h-4" />
               </button>
               {canEdit && (
-                <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date }) }} className="px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1">
+                <button onClick={() => openAddSlot({ date })} className="px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1">
                   <Plus className="w-4 h-4" /> Add Slot
                 </button>
               )}
@@ -632,7 +687,7 @@ export default function ScheduleManager() {
                               if (exists) return null
                               if (!canEdit) return null
                               return (
-                                <button key={court} onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date, time: row.time, court }) }} className="px-2 py-1 text-[10px] font-bold rounded bg-brand/10 text-brand-text hover:bg-brand/20 border border-brand-text/30">
+                                <button key={court} onClick={() => openAddSlot({ date, time: row.time, court })} className="px-2 py-1 text-[10px] font-bold rounded bg-brand/10 text-brand-text hover:bg-brand/20 border border-brand-text/30">
                                   +C{court}
                                 </button>
                               )
@@ -680,7 +735,7 @@ export default function ScheduleManager() {
                         return (
                            <div key={d} className={`p-2.5 rounded-xl border text-[11px] font-bold text-center leading-snug ${weekColor}`}>
                             {empty ? (
-                              canEdit ? <button onClick={() => { setAddSlot(true); setAddForm({ ...addForm, date: d, time }) }} className="text-brand-text hover:underline">+ Add</button> : 'Available'
+                              canEdit ? <button onClick={() => openAddSlot({ date: d, time })} className="text-brand-text hover:underline">+ Add</button> : 'Available'
                             ) : (
                               <>
                                 <span className="block">{[s1 && `C1: ${s1.player_text}`, s2 && `C2: ${s2.player_text}`, s3 && `C3: ${s3.player_text}`].filter(Boolean).join(' / ')}</span>
@@ -819,7 +874,7 @@ export default function ScheduleManager() {
                       }`}>{r.status}</span>
                     </div>
                     <p className="text-xs text-muted">
-                      Convert {r.count} {r.from} → {r.to} ({r.from === 'private' ? r.count * 2 : r.count} {r.to} sessions)
+                      Convert {r.count} {r.from} → {r.to} ({r.converted_count ?? r.count} {r.to} sessions)
                     </p>
                     <p className="text-[10px] text-muted mt-0.5">{r.created_at?.slice(0, 16)}</p>
                   </div>
@@ -841,30 +896,31 @@ export default function ScheduleManager() {
       )}
 
       {addSlot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-theme">Add Slot</h3>
+              <h3 id="modal-title-0" className="text-lg font-bold text-theme">Add Slot</h3>
               <button onClick={() => setAddSlot(null)} className="p-2 text-muted hover:text-theme hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase mb-1">Date</label>
-                <input type="date" value={addForm.date} onChange={e => setAddForm({ ...addForm, date: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs" />
+                <input type="date" value={addForm.date} onChange={e => patchAddForm({ date: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase mb-1">Time</label>
                 <select value={addForm.time} onChange={e => setAddForm({ ...addForm, time: e.target.value })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs">
                   {ALL_TIMES.map(t => <option key={t} value={t}>{TIME_LABELS[t]}</option>)}
                 </select>
+                {autoSuggestion && addForm.time === autoSuggestion && (
+                  <p className="mt-1 text-[10px] font-semibold text-brand-text">
+                    Auto: the next hour after the last slot for Court {addForm.court}{addForm.coach_id ? ' / this coach' : ''} on this day
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase mb-1">Court</label>
-                <select value={addForm.court} onChange={e => {
-                  const court = parseInt(e.target.value)
-                  const def = courtDefaults.find(cd => cd.court === court)
-                  setAddForm({ ...addForm, court, coach_id: def?.coach_id || addForm.coach_id })
-                }} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs">
+                <select value={addForm.court} onChange={e => patchAddForm({ court: parseInt(e.target.value) })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs">
                   <option value={1}>Court 1</option>
                   <option value={2}>Court 2</option>
                   <option value={3}>Court 3</option>
@@ -913,7 +969,7 @@ export default function ScheduleManager() {
               {coaches.length > 0 && (
                 <div>
                   <label className="block text-xs font-semibold text-theme uppercase mb-1">Coach</label>
-                  <select value={addForm.coach_id || ''} onChange={e => setAddForm({ ...addForm, coach_id: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs">
+                  <select value={addForm.coach_id || ''} onChange={e => patchAddForm({ coach_id: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs">
                     <option value="">None</option>
                     {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
@@ -933,7 +989,7 @@ export default function ScheduleManager() {
       )}
 
       {balanceWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-1">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <div className={`w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center ${balanceWarning.type === 'blocked' ? 'bg-rose-500/20' : 'bg-amber-500/20'}`}>
               {balanceWarning.type === 'blocked' ? (
@@ -942,7 +998,7 @@ export default function ScheduleManager() {
                 <span className="text-amber-400 text-2xl font-bold">!</span>
               )}
             </div>
-            <h3 className="text-lg font-bold text-theme mb-2">
+            <h3 id="modal-title-1" className="text-lg font-bold text-theme mb-2">
               {balanceWarning.type === 'blocked' ? 'Player Blocked' : 'Low Balance Warning'}
             </h3>
             <p className="text-muted text-sm mb-4">
@@ -964,12 +1020,12 @@ export default function ScheduleManager() {
       )}
 
       {pendingOverride && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-2">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center bg-amber-500/20">
               <span className="text-amber-400 text-2xl font-bold">!</span>
             </div>
-            <h3 className="text-lg font-bold text-theme mb-2">Insufficient Balance</h3>
+            <h3 id="modal-title-2" className="text-lg font-bold text-theme mb-2">Insufficient Balance</h3>
             <p className="text-muted text-sm mb-4">
               {pendingOverride.players.length === 1
                 ? <>{pendingOverride.players[0].name} has {pendingOverride.players[0].remaining} remaining {pendingOverride.sessionType} session(s), needs 1.</>
@@ -990,11 +1046,22 @@ export default function ScheduleManager() {
 }
 
 function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
+  const { toast } = useFeedback()
   const existingParts = (slot.player_text || '').split(/\s*\/\s*/)
   const [form, setForm] = useState({ player_text: existingParts[0] || '', date: slot.date, time: canonTime(slot.time), court: slot.court, session_type: slot.session_type || null, coach_id: slot.coach_id || null })
   const [players, setPlayers] = useState(existingParts.length > 0 ? existingParts : [''])
   const [loading, setLoading] = useState(false)
   const [pendingOverride, setPendingOverride] = useState(null)
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      if (pendingOverride) setPendingOverride(null)
+      else onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, pendingOverride])
 
   const handleSave = async (balanceOverride) => {
     setLoading(true)
@@ -1015,7 +1082,7 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
           remaining: 0,
         })
       } else {
-        alert(err.message || 'Failed to save')
+        toast.error(err.message || 'Failed to save')
       }
     }
     setLoading(false)
@@ -1031,15 +1098,15 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
       setPendingOverride(null)
       onSaved()
     } catch (err) {
-      alert(err.message || 'Failed to save')
+      toast.error(err.message || 'Failed to save')
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="edit-slot-title" onClick={onClose}>
+      <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-theme">Edit Slot</h3>
+          <h3 id="edit-slot-title" className="text-lg font-bold text-theme">Edit Slot</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-theme hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <div className="space-y-3">
@@ -1121,12 +1188,12 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
       </div>
 
       {pendingOverride && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-3">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center bg-amber-500/20">
               <span className="text-amber-400 text-2xl font-bold">!</span>
             </div>
-            <h3 className="text-lg font-bold text-theme mb-2">Insufficient Balance</h3>
+            <h3 id="modal-title-3" className="text-lg font-bold text-theme mb-2">Insufficient Balance</h3>
             <p className="text-muted text-sm mb-4">
               {pendingOverride.player} has {pendingOverride.remaining} remaining {pendingOverride.sessionType} session(s), needs 1.
               Add this slot anyway as a <span className="text-brand-text font-bold">free/bonus session</span>?

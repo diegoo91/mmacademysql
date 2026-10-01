@@ -1,13 +1,17 @@
 import db from '../db.js'
+import { packagePrice } from './pricing.js'
 
 /**
  * Shared paid-FIFO engine — single source of truth for per-slot paid status.
  * Extracted from players.js to be reusable by player reports, unpaid reports, etc.
  *
- * Returns { sessions: [...], amountOwed: number }
+ * Returns { sessions: [...], amountOwed, unpaidPrivate, unpaidGroup }
  * Each session: { date, time, court, session_type, paid, paid_via, booking_ref, status }
+ *
+ * opts.excludePaymentId — ignore one payment row (used when re-deriving a
+ * payment's own coverage while editing it: its credit must not pay for itself).
  */
-export async function computePlayerSessions(player) {
+export async function computePlayerSessions(player, { excludePaymentId = null } = {}) {
   const playerName = (player.name || '').toLowerCase()
 
   const allSlots = await db.findAll('slots')
@@ -21,6 +25,7 @@ export async function computePlayerSessions(player) {
 
   const payments = (await db.findAll('payments'))
     .filter(p => p.player_id === player.id && p.status === 'payment_approved')
+    .filter(p => p.id !== excludePaymentId)
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
 
   let poolPriv = 0, poolGrp = 0
@@ -33,13 +38,18 @@ export async function computePlayerSessions(player) {
   for (const s of playerSlots) {
     const booking = s.booking_id ? await db.get('bookings', s.booking_id) : null
     const directPayment = booking
-      ? await db.find('payments', p => p.booking_id === booking.id && p.status === 'payment_approved')
+      ? await db.find('payments', p => p.booking_id === booking.id && p.status === 'payment_approved' && p.id !== excludePaymentId)
       : null
     const sessionType = s.session_type || (booking ? booking.session_type : null) || 'private'
 
     let paid = false
     let paidVia = null
     if (directPayment || booking?.paid) {
+      paid = true
+      paidVia = 'payment'
+    } else if (s.status === 'payment_approved') {
+      // Slot-level payment already approved (slot carries the payment, e.g. a
+      // player swap left no booking link) — attended or not, it is paid.
       paid = true
       paidVia = 'payment'
     } else {
@@ -61,11 +71,12 @@ export async function computePlayerSessions(player) {
 
   sessions.reverse()
 
-  const amountOwed = sessions
-    .filter(s => !s.paid)
-    .reduce((sum, s) => sum + (s.session_type === 'private' ? 1000 : 500), 0)
+  const unpaidPrivate = sessions.filter(s => !s.paid && s.session_type !== 'group').length
+  const unpaidGroup = sessions.filter(s => !s.paid && s.session_type === 'group').length
+  // Package priced: 16 private = 14,000 + 3 group = 1,500 → 15,500 (not 17,500).
+  const amountOwed = packagePrice(unpaidPrivate, unpaidGroup)
 
-  return { sessions, amountOwed }
+  return { sessions, amountOwed, unpaidPrivate, unpaidGroup }
 }
 
 /**
@@ -77,23 +88,19 @@ export async function computeUnpaidPlayers() {
   const results = []
 
   for (const player of players) {
-    const { sessions, amountOwed } = await computePlayerSessions(player)
-    const unpaid = sessions.filter(s => !s.paid)
-    if (unpaid.length === 0) continue
-
-    const unpaidPrivate = unpaid.filter(s => s.session_type === 'private').length
-    const unpaidGroup = unpaid.filter(s => s.session_type === 'group').length
+    const { sessions, amountOwed, unpaidPrivate, unpaidGroup } = await computePlayerSessions(player)
+    if (unpaidPrivate + unpaidGroup === 0) continue
 
     results.push({
       id: player.id,
       name: player.name,
       email: player.email,
       phone: player.phone,
-      unpaid_sessions: unpaid.length,
+      unpaid_sessions: unpaidPrivate + unpaidGroup,
       unpaid_private: unpaidPrivate,
       unpaid_group: unpaidGroup,
       amount_owed: amountOwed,
-      sessions: unpaid,
+      sessions: sessions.filter(s => !s.paid),
     })
   }
 

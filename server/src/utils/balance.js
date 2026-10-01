@@ -24,6 +24,7 @@ export {
   effectiveGroupBalance,
   ensureCycleFresh,
   creditCycle,
+  settleDebtWith,
   monthlyDisplay,
   hasActiveCycle,
   hasLegacyBalance,

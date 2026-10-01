@@ -30,3 +30,17 @@ export function formatSlotTime(t) {
   }
   return s
 }
+
+export function formatDateShort(dateStr) {
+  if (!dateStr) return ''
+  const [, m, d] = String(dateStr).split('-')
+  if (!m || !d) return String(dateStr)
+  return `${Number(d)}/${Number(m)}`
+}
+
+export function formatDateMed(dateStr) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}

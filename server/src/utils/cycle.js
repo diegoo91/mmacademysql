@@ -281,6 +281,46 @@ export function planSettlement(privateAdd, groupAdd, rawLegP, rawLegG) {
 }
 
 /**
+ * Settle (part of) the player's NEGATIVE legacy balance with `privateAdd` /
+ * `groupAdd` sessions WITHOUT crediting anything to the cycle.
+ *
+ * Used for the part of a payment that pays for sessions already played:
+ * those sessions are consumed by the slots they cover, so nothing may enter
+ * the cycle — but any debt they offset must actually disappear.
+ * Returns { ok, settlement } where settlement.credited_* is meaningless here
+ * (it is dropped on purpose).
+ */
+export async function settleDebtWith(userId, privateAdd = 0, groupAdd = 0) {
+  const pAdd = Math.max(0, parseInt(privateAdd, 10) || 0)
+  const gAdd = Math.max(0, parseInt(groupAdd, 10) || 0)
+  const empty = {
+    settled_private: 0, settled_group: 0,
+    credited_private: 0, credited_group: 0,
+    debt_before: { private: 0, group: 0 }, debt_after: { private: 0, group: 0 },
+  }
+  if (pAdd === 0 && gAdd === 0) return { ok: true, settlement: empty }
+
+  return db.transaction(async (tx) => {
+    const user = await tx.get('users', userId)
+    if (!user) return { ok: false, settlement: empty }
+
+    const settlement = planSettlement(pAdd, gAdd, user.private_balance, user.group_balance)
+    if (settlement.settled_private > 0 || settlement.settled_group > 0) {
+      const newLegP = (Number(user.private_balance) || 0) + settlement.settled_private
+      const newLegG = (Number(user.group_balance) || 0) + settlement.settled_group
+      const live = user.cycle_key && user.cycle_expires_at && new Date(user.cycle_expires_at) >= new Date()
+      const liveCycP = live ? Math.max(0, user.cycle_private || 0) : 0
+      const liveCycG = live ? Math.max(0, user.cycle_group || 0) : 0
+      const zeroSince = (newLegP === 0 && newLegG === 0 && liveCycP === 0 && liveCycG === 0)
+        ? new Date().toISOString()
+        : null
+      await tx.update('users', userId, { private_balance: newLegP, group_balance: newLegG, balance_zero_since: zeroSince })
+    }
+    return { ok: true, settlement }
+  })
+}
+
+/**
  * Credit a NEW payment into the cycle path (never onto legacy).
  * - First settles any negative legacy debt with the incoming credit
  *   (see planSettlement); the remainder — possibly 0 — enters the cycle.
