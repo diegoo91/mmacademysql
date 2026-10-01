@@ -144,17 +144,48 @@ router.get('/court-defaults', authenticate, requirePermission('schedule'), async
 
 router.put('/court-defaults', authenticate, requirePermission('schedule'), async (req, res) => {
   try {
-    const { court, coach_id } = req.body
+    const { court, coach_id, applyToFuture } = req.body
     if (!court) return res.status(400).json({ error: 'court is required' })
+    const newCoachId = coach_id || null
     const existing = await db.find('court_defaults', cd => cd.court === parseInt(court))
+    const oldCoachId = existing ? (existing.coach_id || null) : null
+
+    let updated
     if (existing) {
-      const updated = await db.update('court_defaults', existing.id, { coach_id: coach_id || null })
-      await auditUpdate(req, 'court_default', existing.id, { coach_id: existing.coach_id }, { coach_id })
-      return res.json(updated)
+      updated = await db.update('court_defaults', existing.id, { coach_id: newCoachId })
+      await auditUpdate(req, 'court_default', existing.id, { coach_id: existing.coach_id }, { coach_id: newCoachId })
+    } else {
+      updated = await db.insert('court_defaults', { court: parseInt(court), coach_id: newCoachId })
+      await auditCreate(req, 'court_default', updated.id, { court: parseInt(court), coach_id: newCoachId })
     }
-    const created = await db.insert('court_defaults', { court: parseInt(court), coach_id: coach_id || null })
-    await auditCreate(req, 'court_default', created.id, { court: parseInt(court), coach_id })
-    res.json(created)
+
+    // Apply the new default to existing future slots on this court.
+    // Manual overrides are kept: only slots whose coach was NULL or the
+    // previous default coach for this court are rewritten. Past slots,
+    // cancelled/denied slots, and manually-assigned coaches are untouched.
+    let updatedSlots = 0
+    if (applyToFuture) {
+      const today = getCairoToday()
+      const targets = await db.findAll('slots', s =>
+        Number(s.court) === parseInt(court) &&
+        s.date >= today &&
+        s.status !== 'cancelled' &&
+        s.status !== 'denied' &&
+        (s.coach_id == null || s.coach_id === oldCoachId)
+      )
+      for (const s of targets) {
+        if ((s.coach_id || null) === newCoachId) continue
+        await db.update('slots', s.id, { coach_id: newCoachId })
+        updatedSlots++
+      }
+      if (updatedSlots > 0) {
+        await auditUpdate(req, 'slots', null,
+          { court: parseInt(court), action: 'apply_court_default', count: updatedSlots, coach_id: oldCoachId },
+          { court: parseInt(court), action: 'apply_court_default', count: updatedSlots, coach_id: newCoachId })
+      }
+    }
+
+    res.json({ ...updated, updatedSlots })
   } catch (err) {
     console.error('Update court defaults error:', err)
     res.status(500).json({ error: 'Internal server error' })

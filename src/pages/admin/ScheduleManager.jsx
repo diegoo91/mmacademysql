@@ -152,6 +152,7 @@ export default function ScheduleManager() {
   const [courtDefaults, setCourtDefaults] = useState([])
   const [courtDefaultsDraft, setCourtDefaultsDraft] = useState({})
   const [courtDefaultsSaving, setCourtDefaultsSaving] = useState(false)
+  const [applyFutureDefaults, setApplyFutureDefaults] = useState(true)
 
   useEscapeKey(() => {
     setAddSlot(null)
@@ -161,7 +162,7 @@ export default function ScheduleManager() {
 
   const fetchSlots = () => {
     setLoading(true)
-    // Fetch ALL slots - a fixed today+/-30 window (computed once on mount) hid
+    // Fetch ALL slots — a fixed today±30 window (computed once on mount) hid
     // any day you navigate outside it, e.g. 31/08 dropped out of the window.
     api.get('/slots')
       .then(setSlots)
@@ -195,9 +196,19 @@ export default function ScheduleManager() {
       const updates = [1, 2, 3].map(court => ({
         court,
         coach_id: courtDefaultsDraft[court] ? parseInt(courtDefaultsDraft[court]) : null,
+        applyToFuture: applyFutureDefaults,
       }))
-      await Promise.all(updates.map(u => api.put('/slots/court-defaults', u)))
+      const results = await Promise.all(updates.map(u => api.put('/slots/court-defaults', u)))
       await fetchCoachesAndDefaults()
+      await fetchSlots()
+      const total = results.reduce((sum, r) => sum + (r?.updatedSlots || 0), 0)
+      if (applyFutureDefaults) {
+        toast.success(total > 0
+          ? `Defaults saved — ${total} future slot${total === 1 ? '' : 's'} updated`
+          : 'Defaults saved — no future slots needed updating')
+      } else {
+        toast.success('Defaults saved')
+      }
     } catch (err) {
       toast.error(err.message || 'Failed to save court defaults')
     }
@@ -542,6 +553,15 @@ export default function ScheduleManager() {
             <h3 className="text-sm font-bold text-theme">Court Coach Defaults</h3>
           </div>
           <p className="text-[11px] text-muted mb-3">Default coach auto-fills when adding a slot to that court (overridable per slot).</p>
+          <label className="flex items-center gap-2 mb-3 cursor-pointer select-none w-fit">
+            <input
+              type="checkbox"
+              checked={applyFutureDefaults}
+              onChange={e => setApplyFutureDefaults(e.target.checked)}
+              className="w-3.5 h-3.5 rounded accent-brand"
+            />
+            <span className="text-[11px] text-muted">Apply to existing future slots on that court (keeps manual coach overrides, skips past/cancelled)</span>
+          </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[1, 2, 3].map(court => (
               <div key={court}>
