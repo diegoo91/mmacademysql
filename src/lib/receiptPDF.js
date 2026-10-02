@@ -207,7 +207,7 @@ function nextStepBox(doc, y, advice, amountOwed) {
 
   const splitOption = advice.nearest !== advice.roundUp
   const estRemainder = Math.max(0, Math.round((Number(amountOwed) || 0) - advice.nearestPrice))
-  const h = splitOption ? 32 : 27
+  const h = splitOption ? 27 : 22
   drawBox(h)
 
   doc.setFont('helvetica', 'bold')
@@ -230,9 +230,6 @@ function nextStepBox(doc, y, advice, amountOwed) {
   doc.text(`${covers}${extra}.`, M + 5, y + 18.5)
   if (splitOption) {
     doc.text(`Or the ${advice.nearest}-Session Package — ${egp(advice.nearestPrice)} now (about ${egp(estRemainder)} still due after).`, M + 5, y + 23.5)
-    doc.text('Or pay any amount — the uncovered balance simply carries to next month.', M + 5, y + 28.5)
-  } else {
-    doc.text('Or pay any amount — the uncovered balance simply carries to next month.', M + 5, y + 23.5)
   }
   return y + h + 3
 }

@@ -45,8 +45,6 @@ const checks = [
   'Or the 8-Session Package',
   'EGP 7,000',
   'about EGP 1,400 still due after',
-  'Or pay any amount',
-  'carries to next month',
   'YOUR SESSIONS',
   'TIME & COURT',
   'Unpaid',
@@ -76,7 +74,7 @@ for (let i = 0; i < 40; i++) {
   many.push({ date: d.toISOString().slice(0, 10), time: '18:00', court: (i % 4) + 1, session_type: 'private', status: 'payment_approved', paid: i < 30 })
 }
 const t2 = run('many', { player: { name: 'Multi Page Player' }, sessions: many, amount_owed: 10000 }, 'server/backups/_receipt_smoke2.pdf')
-for (const s of ['Page 2 of 2', 'continued', 'Paid', 'Unpaid', 'EGP 10,000', 'Or pay any amount']) {
+for (const s of ['Page 2 of 2', 'continued', 'Paid', 'Unpaid', 'EGP 10,000']) {
   const ok = t2.includes(s)
   if (!ok) miss++
   console.log((ok ? 'OK  ' : 'MISS') + ' | multi: ' + JSON.stringify(s))
@@ -134,6 +132,13 @@ for (const s of ['16 + singles', 'Or pay any amount', 'extra sessions credited']
   const absent = !t4.includes(s)
   if (!absent) miss++
   console.log((absent ? 'OK  ' : 'MISS') + ' | multipack-absent: ' + JSON.stringify(s))
+}
+for (const [lbl, txt] of [['yasin', t], ['multi', t2], ['empty', t3], ['multipack', t4]]) {
+  for (const s of ['Or pay any amount', 'carries to next month']) {
+    const absent = !txt.includes(s)
+    if (!absent) miss++
+    console.log((absent ? 'OK  ' : 'MISS') + ` | ${lbl}-absent: ` + JSON.stringify(s))
+  }
 }
 
 console.log(miss ? `${miss} MISSING` : 'ALL PRESENT')
