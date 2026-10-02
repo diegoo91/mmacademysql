@@ -5,6 +5,7 @@ import { formatDateMed } from '../lib/time'
 import {
   Rocket, ClipboardList, Send, Save, ArrowLeft, CheckCircle2, RotateCcw,
   Eye, EyeOff, PlayCircle, CalendarPlus, TrendingUp, Target, ListChecks,
+  ChevronDown, Minus, Plus, RefreshCw, AlertTriangle,
 } from 'lucide-react'
 
 const STATUS_LABELS = {
@@ -32,6 +33,13 @@ const PILLAR_DOT = {
   4: 'bg-gold',
 }
 
+const PILLAR_BAR = {
+  1: 'bg-brand',
+  2: 'bg-rose-400',
+  3: 'bg-blue-400',
+  4: 'bg-gold',
+}
+
 function monthLabel(ym) {
   if (!ym) return ''
   const [y, m] = String(ym).split('-').map(Number)
@@ -41,6 +49,16 @@ function monthLabel(ym) {
 
 function scoreOf(v) {
   return v === null || v === undefined || v === '' ? null : Number(v)
+}
+
+// After "Fill finals", move focus to the first final score that is still empty (R3).
+function focusFirstEmptyFinal(tableId) {
+  requestAnimationFrame(() => {
+    const sel = `[data-skills="${tableId}"] input[data-field="final"]`
+    const inputs = [...document.querySelectorAll(sel)].filter(el => el.offsetParent !== null)
+    const target = inputs.find(el => el.value === '') || inputs[0]
+    if (target) { target.focus(); target.select() }
+  })
 }
 
 function StatusPill({ status, label }) {
@@ -60,6 +78,68 @@ function ScoreBadge({ value }) {
     <span className={`font-heading font-black ${color}`}>
       {v}<span className="text-[10px] font-bold text-muted">/10</span>
     </span>
+  )
+}
+
+// SVG score ring — theme-safe colors (stroke-brand from @theme, neutral track).
+function ScoreRing({ value, size = 88 }) {
+  const v = scoreOf(value)
+  const stroke = 7
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const pct = v === null ? 0 : Math.max(0, Math.min(10, v)) / 10
+  return (
+    <div className="relative shrink-0" role="img" style={{ width: size, height: size }} aria-label={v === null ? 'No score yet' : `Overall score: ${v}/10`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke} className="text-black/10 dark:text-white/10" />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={stroke}
+          strokeLinecap="round" className="text-brand transition-all duration-500"
+          strokeDasharray={`${pct * c} ${c}`}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-heading font-black text-theme leading-none" style={{ fontSize: Math.round(size * 0.26) }}>
+          {v ?? '—'}<span className="text-[10px] font-bold text-muted">/10</span>
+        </span>
+        <span className="text-[8px] font-bold uppercase tracking-wider text-muted mt-0.5">Overall</span>
+      </div>
+    </div>
+  )
+}
+
+// Loading skeleton (R6) — replaces bare spinners.
+function SkeletonPanel() {
+  const bar = 'rounded-lg bg-black/10 dark:bg-white/10 animate-pulse'
+  return (
+    <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8 space-y-5" role="status" aria-busy="true" aria-label="Loading journey">
+      <div className={`h-7 w-52 ${bar}`} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[0, 1, 2, 3].map(i => <div key={i} className={`h-20 rounded-2xl ${bar}`} />)}
+      </div>
+      <div className={`h-2 w-full rounded-full ${bar}`} />
+      <div className="space-y-2.5">
+        {[0, 1, 2].map(i => <div key={i} className={`h-5 ${bar}`} style={{ width: `${92 - i * 14}%` }} />)}
+      </div>
+    </div>
+  )
+}
+
+// Actionable error state with retry (R6).
+function ErrorPanel({ message, onRetry }) {
+  return (
+    <div className="glass-panel rounded-3xl border border-theme p-8 text-center">
+      <AlertTriangle className="w-8 h-8 mx-auto text-amber-500 mb-3" />
+      <p className="text-sm font-bold text-theme">Could not load the journey</p>
+      <p className="text-xs text-muted mt-1.5 max-w-md mx-auto">{message || 'Something went wrong while fetching the data.'}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm inline-flex items-center gap-2 transition-all"
+      >
+        <RefreshCw className="w-4 h-4" /> Try again
+      </button>
+    </div>
   )
 }
 
@@ -103,19 +183,31 @@ function SummaryCards({ summary }) {
   )
 }
 
+// Pillar averages as mini bars (R2) — value shown as text, color is never the only signal.
 function PillarRow({ pillarAverages, pillars }) {
   const list = pillars || []
   const entries = list.filter(p => pillarAverages && pillarAverages[p.id] !== null && pillarAverages[p.id] !== undefined)
   if (!entries.length) return null
   return (
-    <div className="flex flex-wrap gap-2">
-      {entries.map(p => (
-        <span key={p.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface border border-theme text-xs">
-          <span className={`w-2 h-2 rounded-full ${PILLAR_DOT[p.id] || 'bg-brand-text'}`} />
-          <span className="text-muted font-semibold">{p.label}</span>
-          <span className="font-heading font-black text-theme">{pillarAverages[p.id]}/10</span>
-        </span>
-      ))}
+    <div className="grid sm:grid-cols-2 gap-2.5">
+      {entries.map(p => {
+        const v = scoreOf(pillarAverages[p.id])
+        const pct = v === null ? 0 : (Math.max(0, Math.min(10, v)) / 10) * 100
+        return (
+          <div key={p.id} className="rounded-xl border border-theme bg-white/50 dark:bg-slate-900/40 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${PILLAR_DOT[p.id] || 'bg-brand-text'}`} />
+                <span className="text-[11px] font-bold text-muted truncate">{p.label}</span>
+              </span>
+              <span className="font-heading font-black text-theme text-xs shrink-0">{v}/10</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+              <div className={`h-full rounded-full ${PILLAR_BAR[p.id] || 'bg-brand'} transition-all duration-500`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -146,105 +238,260 @@ function useGroupedTemplates(templates) {
 // Pillar labels come from the API; keep a local fallback for safety.
 const PILLAR_FALLBACK = { 1: 'Shots', 2: 'Fitness & Physical Capability', 3: 'Movement & Footwork', 4: 'Situation & Game Intelligence' }
 
-function ScoreInput({ value, onChange, disabled }) {
+function ScoreInput({ value, onChange, disabled, field }) {
+  const n = scoreOf(value)
+  const bump = (delta) => {
+    const base = n ?? 0
+    onChange(Math.min(10, Math.max(1, base + delta)))
+  }
+  const onKeyDown = (e) => {
+    if (e.key !== 'Enter') return
+    const root = e.currentTarget.closest('[data-skills]')
+    if (!root) return
+    const inputs = [...root.querySelectorAll('input[data-score-input]')].filter(el => el.offsetParent !== null)
+    const next = inputs[inputs.indexOf(e.currentTarget) + 1]
+    if (next) { e.preventDefault(); next.focus(); next.select() }
+  }
   return (
-    <input
-      type="number"
-      min="1"
-      max="10"
-      step="1"
-      disabled={disabled}
-      value={value === null || value === undefined ? '' : value}
-      onChange={(e) => {
-        const raw = e.target.value
-        if (raw === '') { onChange(null); return }
-        const n = parseInt(raw, 10)
-        if (Number.isNaN(n)) return
-        onChange(Math.min(10, Math.max(1, n)))
-      }}
-      className="w-16 px-2 py-1.5 rounded-lg bg-surface border border-theme text-theme text-xs font-black text-center focus:border-brand-text focus:outline-none disabled:opacity-50"
-      aria-label="Score out of 10"
-    />
+    <span className="flex w-full items-center gap-1">
+      <button
+        type="button"
+        onClick={() => bump(-1)}
+        disabled={disabled || n === null || n <= 1}
+        aria-label="Decrease score"
+        className="sm:hidden shrink-0 min-w-[42px] min-h-[42px] rounded-lg bg-white dark:bg-slate-900 border border-theme text-theme disabled:opacity-40"
+      >
+        <Minus className="w-4 h-4 mx-auto" />
+      </button>
+      <input
+        type="number"
+        min="1"
+        max="10"
+        step="1"
+        disabled={disabled}
+        data-score-input=""
+        data-field={field}
+        value={n === null ? '' : n}
+        onChange={(e) => {
+          const raw = e.target.value
+          if (raw === '') { onChange(null); return }
+          const num = parseInt(raw, 10)
+          if (Number.isNaN(num)) return
+          onChange(Math.min(10, Math.max(1, num)))
+        }}
+        onKeyDown={onKeyDown}
+        className="flex-1 min-w-0 px-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-theme text-theme text-xs font-black text-center focus:border-brand-text focus:outline-none disabled:opacity-50"
+        aria-label="Score out of 10"
+      />
+      <button
+        type="button"
+        onClick={() => bump(1)}
+        disabled={disabled || (n !== null && n >= 10)}
+        aria-label="Increase score"
+        className="sm:hidden shrink-0 min-w-[42px] min-h-[42px] rounded-lg bg-white dark:bg-slate-900 border border-theme text-theme disabled:opacity-40"
+      >
+        <Plus className="w-4 h-4 mx-auto" />
+      </button>
+    </span>
   )
 }
 
-// skills grouped + score inputs per mode.
+// Dense skills table (R1): collapsible pillar blocks with sticky headers + live
+// counters, compact desktop rows, mobile stepper cards, Enter → next input.
 //   mode 'user'  → user_score + user_comment
 //   mode 'admin' → admin_score + final_score + admin_comment
 //   mode 'view'  → read-only
-function SkillsList({ grouped, pillars, values, mode, onChange, showUserComments, showAdminComments }) {
+const ROW_GRID = {
+  user: 'grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_110px_minmax(0,1fr)] gap-x-3 gap-y-1 items-center',
+  admin: 'grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_56px_72px_72px_minmax(0,1fr)] gap-x-3 gap-y-1 items-center',
+  view: 'grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_72px] gap-x-3 gap-y-1 items-center',
+}
+const HEAD_GRID = {
+  user: 'hidden sm:grid sm:grid-cols-[minmax(0,1fr)_110px_minmax(0,1fr)] gap-x-3 px-2 pt-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted',
+  admin: 'hidden sm:grid sm:grid-cols-[minmax(0,1fr)_56px_72px_72px_minmax(0,1fr)] gap-x-3 px-2 pt-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted',
+  view: 'hidden sm:grid sm:grid-cols-[minmax(0,1fr)_72px] gap-x-3 px-2 pt-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted',
+}
+const HEAD_LABELS = {
+  user: ['Skill', 'Your score', 'Comment'],
+  admin: ['Skill', 'Player', 'Admin', 'Final', 'Note'],
+  view: ['Skill', 'Score'],
+}
+const HEAD_ALIGN = {
+  user: ['', 'text-center', ''],
+  admin: ['', 'text-center', 'text-center', 'text-center', ''],
+  view: ['', 'text-right'],
+}
+const ROW_CLS = 'px-2 py-1.5 border-b border-black/5 dark:border-white/[0.06]'
+
+function SkillsList({ grouped, pillars, values, mode, onChange, showUserComments, showAdminComments, tableId }) {
   const pillarLabel = (p) => pillars?.find(x => x.id === p)?.label || PILLAR_FALLBACK[p] || `Pillar ${p}`
+  const [collapsed, setCollapsed] = useState(() => {
+    const set = new Set()
+    if (mode === 'view') return set
+    for (const g of grouped) {
+      const items = g.sections.flatMap(s => s.items)
+      const done = items.every(t => {
+        const v = values[t.id] || {}
+        return mode === 'admin'
+          ? scoreOf(v.admin_score) !== null && scoreOf(v.final_score) !== null
+          : scoreOf(v.user_score) !== null
+      })
+      if (done) set.add(g.pillar)
+    }
+    return set
+  })
+
+  const togglePillar = (p) => setCollapsed(prev => {
+    const next = new Set(prev)
+    if (next.has(p)) next.delete(p); else next.add(p)
+    return next
+  })
+
+  const pillarCounts = (items) => {
+    const c = { user: 0, admin: 0, final: 0, total: items.length }
+    for (const t of items) {
+      const v = values[t.id] || {}
+      if (scoreOf(v.user_score) !== null) c.user++
+      if (scoreOf(v.admin_score) !== null) c.admin++
+      if (scoreOf(v.final_score) !== null) c.final++
+    }
+    return c
+  }
+
+  const nameCls = 'col-span-2 sm:col-span-1 min-w-0'
+  const commentCls = 'col-span-2 sm:col-span-1 min-w-0'
+
   return (
-    <div className="space-y-5">
-      {grouped.map(g => (
-        <div key={g.pillar}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${PILLAR_DOT[g.pillar] || 'bg-brand-text'}`} />
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-theme">Pillar {g.pillar}: {pillarLabel(g.pillar)}</h4>
-          </div>
-          <div className="space-y-3">
-            {g.sections.map(sec => (
-              <div key={sec.name} className="rounded-xl border border-theme bg-white/50 dark:bg-slate-900/40 p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">{sec.name}</p>
-                <div className="space-y-1.5">
-                  {sec.items.map(t => {
-                    const v = values[t.id] || {}
-                    const userComment = v.user_comment || ''
-                    const adminComment = v.admin_comment || ''
-                    return (
-                      <div key={t.id} className="rounded-lg bg-surface/60 border border-theme px-3 py-2">
-                        <div className="flex items-center gap-3">
-                          <span className="flex-1 text-xs font-semibold text-theme min-w-0">{t.name}</span>
-                          {mode === 'view' && <ScoreBadge value={scoreOf(v.final_score) ?? scoreOf(v.user_score) ?? scoreOf(v.admin_score)} />}
-                          {mode === 'user' && <ScoreInput value={scoreOf(v.user_score)} onChange={(n) => onChange(t.id, 'user_score', n)} />}
-                          {mode === 'admin' && (
-                            <>
-                              <span className="text-[10px] font-black text-muted shrink-0 hidden sm:inline" title="Player's own self-score">
-                                player {scoreOf(v.user_score) ?? '—'}
-                              </span>
-                              <ScoreInput value={scoreOf(v.admin_score)} onChange={(n) => onChange(t.id, 'admin_score', n)} />
-                              <span className="text-[10px] text-muted font-bold">final</span>
-                              <ScoreInput value={scoreOf(v.final_score)} onChange={(n) => onChange(t.id, 'final_score', n)} />
-                            </>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          {mode === 'user' && (
-                            <input
-                              type="text"
-                              value={userComment}
-                              maxLength={200}
-                              onChange={(e) => onChange(t.id, 'user_comment', e.target.value)}
-                              placeholder="Comment (optional)"
-                              className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-surface border border-theme text-[11px] text-theme placeholder:text-muted focus:border-brand-text focus:outline-none"
-                            />
-                          )}
-                          {(mode === 'view' || mode === 'admin') && showUserComments && userComment && (
-                            <span className="text-[11px] text-muted italic truncate max-w-[45%] shrink" title={userComment}>Player: {userComment}</span>
-                          )}
-                          {mode === 'admin' && (
+    <div data-skills={tableId || mode} className="space-y-4">
+      {mode === 'admin' && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold text-muted">
+          <span><span className="text-theme font-extrabold">Player</span> — self-assessment, read-only</span>
+          <span><span className="text-theme font-extrabold">Admin</span> — your working score</span>
+          <span><span className="text-brand-text font-extrabold">Final</span> — published score</span>
+        </div>
+      )}
+      {grouped.map(g => {
+        const allItems = g.sections.flatMap(s => s.items)
+        const counts = pillarCounts(allItems)
+        const isCollapsed = collapsed.has(g.pillar)
+        const counter = mode === 'admin'
+          ? `Admin ${counts.admin}/${counts.total} · Final ${counts.final}/${counts.total}`
+          : mode === 'user'
+            ? `${counts.user}/${counts.total} scored`
+            : `${counts.total} skills`
+        return (
+          <section key={g.pillar} className="rounded-xl border border-theme bg-white/50 dark:bg-slate-900/40">
+            <button
+              type="button"
+              onClick={() => togglePillar(g.pillar)}
+              aria-expanded={!isCollapsed}
+              className={`w-full sticky ${mode === 'admin' ? 'top-0' : 'top-20'} z-20 flex items-center gap-2 px-3 py-2.5 rounded-t-xl bg-white dark:bg-slate-900 border-b border-theme text-left hover:bg-slate-100/70 dark:hover:bg-slate-800/70 transition-colors`}
+            >
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${PILLAR_DOT[g.pillar] || 'bg-brand-text'}`} />
+              <span className="text-xs font-extrabold uppercase tracking-wider text-theme truncate">
+                Pillar {g.pillar}: {pillarLabel(g.pillar)}
+              </span>
+              <span className="ml-auto shrink-0 text-[10px] font-bold text-muted">{counter}</span>
+              <ChevronDown className={`w-4 h-4 shrink-0 text-muted transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+            </button>
+            {!isCollapsed && (
+              <div className="pb-1">
+                <div className={HEAD_GRID[mode]}>
+                  {HEAD_LABELS[mode].map((l, i) => (
+                    <span key={l} className={HEAD_ALIGN[mode][i] || ''}>{l}</span>
+                  ))}
+                </div>
+                {g.sections.map(sec => (
+                  <div key={sec.name}>
+                    <p className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted">{sec.name}</p>
+                    {sec.items.map(t => {
+                      const v = values[t.id] || {}
+                      const userComment = v.user_comment || ''
+                      const adminComment = v.admin_comment || ''
+                      if (mode === 'view') {
+                        return (
+                          <div key={t.id} className={`${ROW_GRID.view} ${ROW_CLS}`}>
+                            <div className={nameCls}>
+                              <span className="text-xs font-semibold text-theme block truncate" title={t.name}>{t.name}</span>
+                              {showUserComments && userComment && (
+                                <span className="block text-[11px] text-muted italic truncate" title={userComment}>Player: {userComment}</span>
+                              )}
+                              {showAdminComments && adminComment && (
+                                <span className="block text-[11px] text-brand-text truncate" title={adminComment}>Coach: {adminComment}</span>
+                              )}
+                            </div>
+                            <div className="justify-self-end">
+                              <ScoreBadge value={scoreOf(v.final_score) ?? scoreOf(v.user_score) ?? scoreOf(v.admin_score)} />
+                            </div>
+                          </div>
+                        )
+                      }
+                      if (mode === 'user') {
+                        return (
+                          <div key={t.id} className={`${ROW_GRID.user} ${ROW_CLS}`}>
+                            <div className={nameCls}>
+                              <span className="text-xs font-semibold text-theme block truncate" title={t.name}>{t.name}</span>
+                            </div>
+                            <div>
+                              <span className="sm:hidden block text-[10px] font-bold uppercase tracking-wider text-muted mb-0.5">Your score</span>
+                              <ScoreInput value={scoreOf(v.user_score)} onChange={(n) => onChange(t.id, 'user_score', n)} field="user" />
+                            </div>
+                            <div className={commentCls}>
+                              <input
+                                type="text"
+                                value={userComment}
+                                maxLength={200}
+                                onChange={(e) => onChange(t.id, 'user_comment', e.target.value)}
+                                placeholder="Comment (optional)"
+                                className="w-full min-h-[42px] sm:min-h-0 px-2 py-1.5 rounded-lg bg-surface border border-theme text-[11px] text-theme placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-text/50"
+                              />
+                            </div>
+                          </div>
+                        )
+                      }
+                      // mode === 'admin'
+                      return (
+                        <div key={t.id} className={`${ROW_GRID.admin} ${ROW_CLS}`}>
+                          <div className={nameCls}>
+                            <span className="text-xs font-semibold text-theme block truncate" title={t.name}>{t.name}</span>
+                            <span className="sm:hidden block text-[10px] font-bold text-muted truncate">
+                              Player: {scoreOf(v.user_score) ?? '—'}{showUserComments && userComment ? ` · ${userComment}` : ''}
+                            </span>
+                            {showUserComments && userComment && (
+                              <span className="hidden sm:block text-[10px] text-muted italic truncate" title={userComment}>Player: {userComment}</span>
+                            )}
+                          </div>
+                          <div className="hidden sm:block text-center text-[10px] font-black text-muted" title="Player's own self-score">
+                            {scoreOf(v.user_score) ?? '—'}
+                          </div>
+                          <div>
+                            <span className="sm:hidden block text-[10px] font-bold uppercase tracking-wider text-muted mb-0.5">Admin</span>
+                            <ScoreInput value={scoreOf(v.admin_score)} onChange={(n) => onChange(t.id, 'admin_score', n)} field="admin" />
+                          </div>
+                          <div>
+                            <span className="sm:hidden block text-[10px] font-bold uppercase tracking-wider text-muted mb-0.5">Final</span>
+                            <ScoreInput value={scoreOf(v.final_score)} onChange={(n) => onChange(t.id, 'final_score', n)} field="final" />
+                          </div>
+                          <div className={commentCls}>
                             <input
                               type="text"
                               value={adminComment}
                               maxLength={200}
                               onChange={(e) => onChange(t.id, 'admin_comment', e.target.value)}
-                              placeholder="Coach comment (optional)"
-                              className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-surface border border-theme text-[11px] text-theme placeholder:text-muted focus:border-brand-text focus:outline-none"
+                              placeholder="Coach note (optional)"
+                              className="w-full min-h-[42px] sm:min-h-0 px-2 py-1.5 rounded-lg bg-surface border border-theme text-[11px] text-theme placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-text/50"
                             />
-                          )}
-                          {mode === 'view' && showAdminComments && adminComment && (
-                            <span className="text-[11px] text-brand-text truncate">Coach: {adminComment}</span>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      ))}
+            )}
+          </section>
+        )
+      })}
     </div>
   )
 }
@@ -310,11 +557,14 @@ function ReportMeta({ report }) {
 function Timeline({ timeline }) {
   if (!timeline?.length) return null
   return (
-    <div>
-      <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted mb-2 flex items-center gap-1.5">
-        <ListChecks className="w-3.5 h-3.5" /> Journey timeline
-      </h4>
-      <ol className="space-y-2 border-l-2 border-theme ml-2 pl-4">
+    <details className="group rounded-2xl border border-theme bg-white/60 dark:bg-slate-900/50">
+      <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-muted hover:text-theme transition-colors [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-1.5">
+          <ListChecks className="w-3.5 h-3.5" /> Journey history ({timeline.length})
+        </span>
+        <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+      </summary>
+      <ol className="space-y-2 border-l-2 border-theme ml-4 pl-4 pb-4 pr-4">
         {timeline.map((e, i) => (
           <li key={i} className="relative">
             <span className={`absolute -left-[22px] top-1.5 w-2.5 h-2.5 rounded-full ${e.status === 'published' ? 'bg-emerald-400' : e.status === 'returned' ? 'bg-rose-400' : 'bg-brand-text'}`} />
@@ -323,13 +573,13 @@ function Timeline({ timeline }) {
           </li>
         ))}
       </ol>
-    </div>
+    </details>
   )
 }
 
 function EmptyJourney({ summary, onStart, busy }) {
   return (
-    <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-theme bg-surface/50">
+    <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-theme bg-white/50 dark:bg-slate-900/40">
       <Rocket className="w-9 h-9 mx-auto text-brand-text mb-3" />
       <h3 className="font-heading text-lg font-black text-theme">Your coaching journey starts here</h3>
       <p className="text-xs text-muted max-w-md mx-auto mt-2 leading-relaxed">
@@ -364,7 +614,7 @@ function EmptyJourney({ summary, onStart, busy }) {
 function ReportCard({ open, onToggle, header, status, statusLabel, children }) {
   return (
     <div className="rounded-2xl border border-theme bg-white/60 dark:bg-slate-900/50 overflow-hidden">
-      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface/60 transition-all">
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-all">
         {header}
         <span className="flex items-center gap-2 shrink-0">
           <StatusPill status={status} label={statusLabel} />
@@ -384,6 +634,7 @@ export default function MyJourneySection() {
   const { toast } = useFeedback()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [busy, setBusy] = useState('')
   const [view, setView] = useState('main') // main | assessment | report:<id>
   const [openId, setOpenId] = useState(null)
@@ -395,6 +646,7 @@ export default function MyJourneySection() {
 
   const load = useCallback(() => {
     return api.get('/journey').then((d) => {
+      setError(null)
       setData(d)
       const assessment = d.assessment
       if (assessment && ['draft', 'returned'].includes(assessment.status)) {
@@ -409,6 +661,7 @@ export default function MyJourneySection() {
       setOpenId(returned?.id ?? latestPublished?.id ?? null)
       return d
     }).catch((err) => {
+      setError(err)
       toast.error(err.message || 'Failed to load your journey')
       throw err
     })
@@ -417,6 +670,12 @@ export default function MyJourneySection() {
   useEffect(() => {
     load().finally(() => setLoading(false))
   }, [load])
+
+  const retry = () => {
+    setError(null)
+    setLoading(true)
+    load().finally(() => setLoading(false))
+  }
 
   const setField = (tplId, field, val) => setDraft(prev => ({
     ...prev,
@@ -486,19 +745,14 @@ export default function MyJourneySection() {
     setGeneralComment(r?.general_user_comment || '')
   }
 
-  if (loading) {
-    return (
-      <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8">
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <SkeletonPanel />
+  if (error && !data) return <ErrorPanel message={error.message} onRetry={retry} />
   if (!data) return null
 
   const { summary, pillars } = data
   const assessment = data.assessment
+  const assessScored = Object.values(values).filter(v => scoreOf(v.user_score) !== null).length
+  const assessEditable = !!assessment && ['draft', 'returned'].includes(assessment.status)
 
   if (view === 'assessment' && assessment) {
     const editable = ['draft', 'returned'].includes(assessment.status)
@@ -543,10 +797,11 @@ export default function MyJourneySection() {
           mode={editable ? 'user' : 'view'}
           onChange={setField}
           showUserComments
+          tableId="assessment"
         />
 
         {editable && (
-          <div className="flex flex-wrap gap-3">
+          <div className="sticky bottom-0 z-30 -mx-6 sm:-mx-8 -mb-6 sm:-mb-8 px-6 sm:px-8 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-theme rounded-b-3xl flex flex-wrap gap-3 items-center">
             <button
               onClick={() => saveAssessment(false)}
               disabled={busy !== ''}
@@ -561,6 +816,7 @@ export default function MyJourneySection() {
             >
               <Send className="w-4 h-4" /> {busy === 'submit' ? 'Submitting…' : 'Submit for review'}
             </button>
+            <span className="text-[11px] text-muted font-semibold">{scored}/33 scored — all 33 required to submit</span>
           </div>
         )}
         {assessment.general_admin_comment && <CommentsBlock report={assessment} />}
@@ -609,9 +865,10 @@ export default function MyJourneySection() {
             onChange={setField}
             showUserComments
             showAdminComments
+            tableId={`report-${report.id}`}
           />
           {editable && (
-            <div className="flex flex-wrap gap-3">
+            <div className="sticky bottom-0 z-30 -mx-6 sm:-mx-8 -mb-6 sm:-mb-8 px-6 sm:px-8 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-theme rounded-b-3xl flex flex-wrap gap-3 items-center">
               <button
                 onClick={() => resubmitReport(report.id)}
                 disabled={busy !== ''}
@@ -619,7 +876,7 @@ export default function MyJourneySection() {
               >
                 <Send className="w-4 h-4" /> {busy === `submit-${report.id}` ? 'Submitting…' : 'Resubmit for review'}
               </button>
-              <span className="text-[11px] text-muted self-center">{scored}/33 self-scores set — all 33 required</span>
+              <span className="text-[11px] text-muted font-semibold">{scored}/33 self-scores set — all 33 required</span>
             </div>
           )}
         </div>
@@ -634,6 +891,38 @@ export default function MyJourneySection() {
           <TrendingUp className="w-5 h-5 text-brand-text" /> My Journey
         </h2>
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Coaching progress reports</span>
+      </div>
+
+      {/* Hero: score ring + current status + primary CTA (R2/R4) */}
+      <div className="flex flex-col sm:flex-row items-center gap-5 rounded-2xl border border-theme bg-white/60 dark:bg-slate-900/50 p-5">
+        <ScoreRing value={summary.overall_score} size={92} />
+        <div className="flex-1 w-full min-w-0 flex flex-col items-center sm:items-start gap-2.5 text-center sm:text-left">
+          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+            <span className="font-heading text-lg font-black text-theme">
+              Report {summary.report_position ?? 0} of {summary.max_reports ?? 10}
+            </span>
+            {summary.active_report
+              ? <StatusPill status={summary.active_report.status} label={summary.active_report.status_label} />
+              : assessment && <StatusPill status={assessment.status} label={assessment.status_label} />}
+          </div>
+          <p className="text-xs text-muted leading-relaxed">
+            {assessEditable
+              ? `Your initial assessment is ${assessment.status === 'returned' ? 'returned for changes' : 'in progress'} — ${assessScored}/33 skills scored.`
+              : summary.journey_complete
+                ? 'All reports in this journey are published.'
+                : 'Your coach scores every skill from 1 to 10 in each monthly report.'}
+          </p>
+          {assessEditable && (
+            <button
+              onClick={() => setView('assessment')}
+              disabled={busy !== ''}
+              className="mt-0.5 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm inline-flex items-center gap-2 transition-all disabled:opacity-60"
+            >
+              <Rocket className="w-4 h-4" />
+              {assessScored >= 33 ? `Review & submit (${assessScored}/33)` : `Continue scoring (${assessScored}/33)`}
+            </button>
+          )}
+        </div>
       </div>
 
       <SummaryCards summary={summary} />
@@ -654,6 +943,7 @@ export default function MyJourneySection() {
                 <ClipboardList className="w-4 h-4 text-brand-text shrink-0" />
                 <span className="text-sm font-extrabold text-theme truncate">Initial Assessment</span>
                 <span className="text-[10px] text-muted font-semibold hidden sm:inline">Baseline · 33 skills</span>
+                <span className="text-[10px] font-black text-theme hidden md:inline">· {assessment.overall_score ?? '—'}/10</span>
               </span>
             }
           >
@@ -697,6 +987,7 @@ export default function MyJourneySection() {
                         Report {r.report_number} of {r.maximum_reports}
                       </span>
                       <span className="text-[10px] text-muted font-semibold hidden sm:inline">{monthLabel(r.report_month)}</span>
+                      <span className="text-[10px] font-black text-theme hidden md:inline">· {r.overall_score ?? '—'}/10</span>
                     </span>
                   }
                 >
@@ -741,6 +1032,7 @@ export function JourneyTab({ userId }) {
   const { toast, prompt } = useFeedback()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [busy, setBusy] = useState('')
   const [openId, setOpenId] = useState(null)
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
@@ -752,6 +1044,7 @@ export function JourneyTab({ userId }) {
 
   const load = useCallback(() => {
     return api.get(`/journey/${userId}`).then((d) => {
+      setError(null)
       setData(d)
       const active = d.summary.active_report
       const latest = [...d.reports].reverse().find(r => r.status === 'published')
@@ -761,6 +1054,7 @@ export function JourneyTab({ userId }) {
       setAssessmentValues(valuesFromItems(d.assessment?.items ?? []))
       return d
     }).catch((err) => {
+      setError(err)
       toast.error(err.message || 'Failed to load journey')
       throw err
     })
@@ -769,6 +1063,12 @@ export function JourneyTab({ userId }) {
   useEffect(() => {
     load().finally(() => setLoading(false))
   }, [load])
+
+  const retry = () => {
+    setError(null)
+    setLoading(true)
+    load().finally(() => setLoading(false))
+  }
 
   const setAdminField = (tplId, field, val) => setAdminValues(prev => ({
     ...prev,
@@ -854,7 +1154,7 @@ export function JourneyTab({ userId }) {
     }
   }
 
-  const fillFinalsFromAdmin = () => {
+  const fillFinalsFromAdmin = (tableId) => {
     setAdminValues(prev => {
       const out = { ...prev }
       for (const [k, v] of Object.entries(out)) {
@@ -864,17 +1164,11 @@ export function JourneyTab({ userId }) {
       return out
     })
     toast.info('Final scores filled from admin scores where empty — review, then save')
+    focusFirstEmptyFinal(tableId)
   }
 
-  if (loading) {
-    return (
-      <div className="glass-panel rounded-2xl border border-theme p-6">
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 border-2 border-brand-text border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <SkeletonPanel />
+  if (error && !data) return <ErrorPanel message={error.message} onRetry={retry} />
   if (!data) return null
 
   const { summary, pillars, assessment } = data
@@ -892,6 +1186,9 @@ export function JourneyTab({ userId }) {
       )
     }
     if (report.status === 'in-review') {
+      const missing = Object.entries(values).filter(
+        ([k, v]) => k !== '__general' && (scoreOf(v.admin_score) === null || scoreOf(v.final_score) === null)
+      ).length
       return (
         <>
           <ActionButton busy={busyKey('return')} onClick={() => returnReport(report)} icon={RotateCcw} label="Return for changes" tone="rose" />
@@ -900,8 +1197,8 @@ export function JourneyTab({ userId }) {
             onClick={() => action(report.id, 'reviewed')}
             icon={CheckCircle2}
             label="Mark reviewed"
-            disabled={Object.values(values).some(v => scoreOf(v.admin_score) === null || scoreOf(v.final_score) === null)}
-            title={Object.values(values).some(v => scoreOf(v.admin_score) === null || scoreOf(v.final_score) === null) ? 'Every skill needs an admin + final score first' : ''}
+            disabled={missing > 0}
+            title={missing > 0 ? `${missing} skill${missing === 1 ? '' : 's'} still need an admin + final score` : ''}
           />
         </>
       )
@@ -911,6 +1208,12 @@ export function JourneyTab({ userId }) {
     }
     return null
   }
+
+  // Finals that can be filled right now: admin score set, final still empty (R3).
+  const emptyFinals = (values) =>
+    Object.entries(values).filter(([k, v]) => k !== '__general' && scoreOf(v.admin_score) !== null && scoreOf(v.final_score) === null).length
+  const assessEmptyFinals = emptyFinals(assessmentValues)
+  const reportEmptyFinals = emptyFinals(adminValues)
 
   return (
     <div className="space-y-6">
@@ -925,7 +1228,7 @@ export function JourneyTab({ userId }) {
         <PillarRow pillarAverages={summary.pillar_averages} pillars={pillars} />
 
         {/* create next monthly report */}
-        <div className="rounded-xl border border-theme bg-surface/60 p-4 flex flex-wrap items-end gap-3">
+        <div className="rounded-xl border border-theme bg-white/50 dark:bg-slate-900/40 p-4 flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[160px]">
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted block mb-1" htmlFor="journey-month">New monthly report</label>
             <input
@@ -962,9 +1265,7 @@ export function JourneyTab({ userId }) {
               <ClipboardList className="w-5 h-5 text-brand-text" /> Initial assessment
               <StatusPill status={assessment.status} label={assessment.status_label} />
             </h3>
-            <div className="flex flex-wrap gap-2">
-              {renderActions(assessment, assessmentValues)}
-            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Baseline · 33 skills</span>
           </div>
           <div className="flex flex-wrap gap-3 items-center text-sm">
             <span className="font-heading font-black text-theme">
@@ -987,8 +1288,10 @@ export function JourneyTab({ userId }) {
             mode="admin"
             onChange={setAssessmentField}
             showUserComments
+            tableId="assessment"
           />
-          <div className="flex flex-wrap gap-2">
+          {/* Sticky action bar (R3): works + status actions always reachable */}
+          <div className="sticky bottom-0 z-30 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-theme rounded-b-2xl flex flex-wrap gap-2 items-center">
             <ActionButton
               busy={busy === `save-${assessment.id}`}
               onClick={() => saveReport(assessment.id, stripGeneral(assessmentValues), assessmentValues.__general ?? assessment.general_admin_comment ?? '')}
@@ -997,20 +1300,15 @@ export function JourneyTab({ userId }) {
             />
             <ActionButton
               busy={false}
-              onClick={() => {
-                setAssessmentValues(prev => {
-                  const out = { ...prev }
-                  for (const [k, v] of Object.entries(out)) {
-                    if (k === '__general') continue
-                    if (scoreOf(v.admin_score) !== null && scoreOf(v.final_score) === null) out[k] = { ...v, final_score: v.admin_score }
-                  }
-                  return out
-                })
-              }}
+              onClick={() => fillFinalsFromAdmin('assessment')}
               icon={Target}
-              label="Finals ← admin scores"
+              label={`Fill finals (${assessEmptyFinals} empty)`}
               tone="ghost"
+              disabled={assessEmptyFinals === 0}
+              title={assessEmptyFinals === 0 ? 'No finals to fill — every admin score already has a final' : ''}
             />
+            <span className="flex-1" />
+            {renderActions(assessment, assessmentValues)}
           </div>
         </div>
       ) : (
@@ -1038,7 +1336,7 @@ export function JourneyTab({ userId }) {
           <p className="text-xs text-muted rounded-xl border border-dashed border-theme p-4 text-center">No monthly reports yet.</p>
         )}
         {data.reports.map(r => (
-          <div key={r.id} className="glass-panel rounded-2xl border border-theme overflow-hidden">
+          <div key={r.id} className="glass-panel rounded-2xl border border-theme">
             <button
               type="button"
               onClick={() => {
@@ -1047,7 +1345,7 @@ export function JourneyTab({ userId }) {
                 // Load THIS report's saved numbers (adminValues was holding the active report's values)
                 setAdminValues(valuesFromItems(r.items ?? []))
               }}
-              className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-surface/60 transition-all"
+              className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-all"
             >
               <span className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-extrabold text-theme">Report {r.report_number} of {r.maximum_reports}</span>
@@ -1082,8 +1380,10 @@ export function JourneyTab({ userId }) {
                   mode="admin"
                   onChange={setAdminField}
                   showUserComments
+                  tableId={`report-${r.id}`}
                 />
-                <div className="flex flex-wrap gap-2 items-center">
+                {/* Sticky action bar (R3) */}
+                <div className="sticky bottom-0 z-30 -mx-5 -mb-5 px-5 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-theme rounded-b-2xl flex flex-wrap gap-2 items-center">
                   <ActionButton
                     busy={busy === `save-${r.id}`}
                     onClick={() => saveReport(r.id, stripGeneral(adminValues), adminValues.__general ?? r.general_admin_comment ?? '')}
@@ -1092,10 +1392,12 @@ export function JourneyTab({ userId }) {
                   />
                   <ActionButton
                     busy={false}
-                    onClick={() => fillFinalsFromAdmin()}
+                    onClick={() => fillFinalsFromAdmin(`report-${r.id}`)}
                     icon={Target}
-                    label="Finals ← admin scores"
+                    label={`Fill finals (${reportEmptyFinals} empty)`}
                     tone="ghost"
+                    disabled={reportEmptyFinals === 0}
+                    title={reportEmptyFinals === 0 ? 'No finals to fill — every admin score already has a final' : ''}
                   />
                   <span className="flex-1" />
                   {renderActions(r, adminValues)}
@@ -1121,7 +1423,7 @@ function ActionButton({ onClick, icon: Icon, label, busy, disabled, tone = 'bran
   const tones = {
     brand: 'bg-brand hover:bg-brand-hover text-white',
     rose: 'bg-rose-500/10 text-rose-500 border border-rose-500/30 hover:bg-rose-500/20',
-    ghost: 'bg-surface border border-theme text-theme hover:border-brand-text',
+    ghost: 'bg-white dark:bg-slate-900 border border-theme text-theme hover:bg-slate-100/70 dark:hover:bg-slate-800/70',
   }
   return (
     <button

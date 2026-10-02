@@ -375,7 +375,8 @@ export default function Tournament() {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-muted mb-1">Partner (optional — search members)</label>
-                      <PlayerSearchInput strict value={partner?.full_name || ''} onChange={() => {}}
+                      <PlayerSearchInput strict value={partner?.full_name || ''}
+                        onChange={(v) => { if (!partner || v !== partner.full_name) setPartner(null) }}
                         onPlayerSelect={setPartner} placeholder="e.g. Zain"
                         endpoint="/tournaments/players/search?q=" />
                     </div>

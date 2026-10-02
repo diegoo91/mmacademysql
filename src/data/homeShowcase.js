@@ -171,18 +171,4 @@ export const GALLERY_IMAGES = [
     image: `${import.meta.env.BASE_URL}images/lounge.png`,
     tag: 'Amenities',
   },
-  {
-    id: 5,
-    title: 'Official Pricing Flyer',
-    category: 'Facilities',
-    image: `${import.meta.env.BASE_URL}images/pricing.jpg`,
-    tag: 'Official Packages',
-  },
-  {
-    id: 6,
-    title: 'Academy Court 2',
-    category: 'Courts',
-    image: `${import.meta.env.BASE_URL}images/hero.png`,
-    tag: 'Outdoor',
-  },
 ]

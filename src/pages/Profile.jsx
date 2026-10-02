@@ -4,7 +4,13 @@ import { Camera, Clock, Download, Mail, Phone, Shield, ArrowRightLeft, Calendar,
 import { api, fileUrl } from '../lib/api'
 import { canonTime, formatSlotTime } from '../lib/time'
 import { useAuth } from '../context/AuthContext'
+import { useFeedback } from '../context/FeedbackContext'
+import { useEscapeKey } from '../lib/hooks'
 import DeclineChoiceModal from '../components/DeclineChoiceModal'
+import MyJourneySection from '../components/Journey'
+import { COURTS } from '../data/siteConfig'
+
+const COURT_OPTIONS = Array.from({ length: COURTS }, (_, i) => i + 1)
 
 function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
   const [players, setPlayers] = useState([])
@@ -39,6 +45,7 @@ function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
 
 export default function Profile() {
   const { user, setUser } = useAuth()
+  const { toast } = useFeedback()
   const navigate = useNavigate()
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
@@ -139,7 +146,7 @@ export default function Profile() {
       await api.put(`/slots/${slotId}/confirm`)
       fetchMySlots()
     } catch (err) {
-      alert(err.message || 'Failed to confirm')
+      toast.error(err.message || 'Failed to confirm')
     }
   }
 
@@ -234,6 +241,9 @@ export default function Profile() {
   const cycleExpires = user.cycle_expires_at || null
   const paidThisCycle = !!user.cycle_key && (cyclePrivate > 0 || cycleGroup > 0 || legacyPrivate > 0 || legacyGroup > 0)
   const hasCredits = totalPrivateRemaining > 0 || totalGroupRemaining > 0
+  const debtPrivate = Math.max(0, Number(user.debt_private) || 0)
+  const debtGroup = Math.max(0, Number(user.debt_group) || 0)
+  const debtLabel = [debtPrivate > 0 ? `${debtPrivate} private` : '', debtGroup > 0 ? `${debtGroup} group` : ''].filter(Boolean).join(' · ')
 
   const visibleBookings = user?.role === 'player'
     ? bookings.filter(b => b.status !== 'cancelled' && b.status !== 'denied')
@@ -405,7 +415,7 @@ export default function Profile() {
               const doc = generateReceiptPDF(data)
               doc.save(`my_report_${new Date().toISOString().slice(0,10)}.pdf`)
             } catch (err) {
-              alert('Failed to generate report: ' + (err.message || 'Unknown error'))
+              toast.error('Failed to generate report: ' + (err.message || 'Unknown error'))
             }
           }}
           className="w-full px-4 py-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 font-bold text-sm hover:bg-amber-400/20 transition-all flex items-center justify-center gap-2"
@@ -477,6 +487,9 @@ export default function Profile() {
           />
         )}
 
+        {/* My Journey — coaching progress & monthly reports */}
+        {user?.role === 'player' && <MyJourneySection />}
+
         <DeclineChoiceModal
           open={!!declineSlot}
           slot={declineSlot}
@@ -499,21 +512,24 @@ export default function Profile() {
             )}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-2xl bg-surface/80 border border-theme text-center">
-                <div className="font-heading text-3xl font-black text-brand-text">{Math.max(0, cyclePrivate + legacyPrivate)}</div>
+                <div className="font-heading text-3xl font-black text-brand-text">{totalPrivateRemaining}</div>
                 <div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">Private Sessions</div>
                 {cyclePrivate > 0 && <div className="text-[10px] text-brand-text/80 mt-1">{cyclePrivate} this cycle{legacyPrivate > 0 ? ` + ${legacyPrivate} carryover` : ''}</div>}
                 {cyclePrivate === 0 && legacyPrivate > 0 && <div className="text-[10px] text-muted mt-1">{legacyPrivate} carryover</div>}
               </div>
               <div className="p-4 rounded-2xl bg-surface/80 border border-theme text-center">
-                <div className="font-heading text-3xl font-black text-purple-400">{Math.max(0, cycleGroup + legacyGroup)}</div>
+                <div className="font-heading text-3xl font-black text-purple-400">{totalGroupRemaining}</div>
                 <div className="text-xs font-semibold text-muted mt-1 uppercase tracking-wider">Group Sessions</div>
                 {cycleGroup > 0 && <div className="text-[10px] text-purple-400/80 mt-1">{cycleGroup} this cycle{legacyGroup > 0 ? ` + ${legacyGroup} carryover` : ''}</div>}
                 {cycleGroup === 0 && legacyGroup > 0 && <div className="text-[10px] text-muted mt-1">{legacyGroup} carryover</div>}
               </div>
             </div>
             <p className="text-[11px] text-muted mt-3 text-center">1 Private session = 2 Group sessions.</p>
-            {totalPrivateRemaining > 0 && (
-              <p className="text-[11px] text-purple-400 font-semibold text-center">Up to {totalGroupRemaining + totalPrivateRemaining * 2} as group.</p>
+            {totalPrivateRemaining > 0 && user.effective_group > 0 && (
+              <p className="text-[11px] text-purple-400 font-semibold text-center">Up to {user.effective_group} as group.</p>
+            )}
+            {debtLabel && (
+              <p className="text-[11px] text-rose-400 font-semibold text-center mt-2">Outstanding: {debtLabel} owed — settle at the academy.</p>
             )}
             <ConversionRequestButton privateRemaining={totalPrivateRemaining} groupRemaining={totalGroupRemaining} />
           </div>
@@ -521,6 +537,9 @@ export default function Profile() {
           <div className="glass-panel rounded-3xl border border-theme p-6 sm:p-8 text-center space-y-3">
             <h2 className="font-heading text-xl font-extrabold text-theme">No active package this month</h2>
             <p className="text-sm text-muted">Buy a session package to book courts this month. Unused sessions expire on the 14th of the following month.</p>
+            {debtLabel && (
+              <p className="text-xs font-semibold text-rose-400">Outstanding: {debtLabel} owed — settle at the academy.</p>
+            )}
             <Link
               to="/book"
               className="inline-flex px-5 py-3 rounded-xl bg-gold hover:bg-gold-hover text-slate-950 font-extrabold text-sm transition-all"
@@ -596,8 +615,20 @@ function ConversionRequestButton({ privateRemaining, groupRemaining }) {
   const [form, setForm] = useState({ from: 'private', count: 1 })
   const [msg, setMsg] = useState('')
   const [sending, setSending] = useState(false)
+  const [quote, setQuote] = useState(null)
+
+  useEffect(() => {
+    if (!open) { setQuote(null); return }
+    let alive = true
+    const count = Math.max(1, parseInt(form.count, 10) || 1)
+    api.get(`/conversion-requests/quote?from=${form.from}&count=${count}`)
+      .then(q => { if (alive) setQuote(q) })
+      .catch(() => { if (alive) setQuote(null) })
+    return () => { alive = false }
+  }, [open, form.from, form.count])
 
   const handleSubmit = async () => {
+    if (quote && !quote.allowed) return
     setSending(true)
     setMsg('')
     try {
@@ -635,14 +666,19 @@ function ConversionRequestButton({ privateRemaining, groupRemaining }) {
             <label className="block text-[10px] font-semibold text-muted uppercase mb-1">
               {form.from === 'private' ? 'Private sessions to convert' : 'Group sessions to convert (÷2)'}
             </label>
-            <input type="number" min={1} max={form.from === 'private' ? privateRemaining : Math.floor(groupRemaining / 2)} value={form.count} onChange={e => setForm({ ...form, count: parseInt(e.target.value) || 1 })} className="w-full px-3 py-1.5 rounded-lg bg-surface border border-theme text-theme text-xs" />
+            <input type="number" min={1} max={quote ? Math.max(1, quote.max) : (form.from === 'private' ? Math.max(1, privateRemaining) : Math.max(1, Math.floor(groupRemaining / 2)))} value={form.count} onChange={e => setForm({ ...form, count: parseInt(e.target.value) || 1 })} className="w-full px-3 py-2 rounded-lg bg-surface border border-theme text-theme text-xs" />
           </div>
           <p className="text-[11px] text-center text-slate-400">
-            {form.from === 'private' ? `→ +${form.count * 2} group sessions` : `→ +${form.count} private sessions`}
+            {quote && !quote.allowed
+              ? '—'
+              : form.from === 'private' ? `→ +${(quote ? quote.yields : form.count * 2)} group sessions` : `→ +${(quote ? quote.yields : form.count)} private sessions`}
           </p>
+          {quote && !quote.allowed && quote.reason && (
+            <p className="text-[11px] text-center text-rose-400 font-semibold">{quote.reason}</p>
+          )}
           <div className="flex gap-2">
             <button onClick={() => setOpen(false)} className="flex-1 py-2 rounded-lg bg-surface border border-theme text-theme text-xs font-semibold">Cancel</button>
-            <button onClick={handleSubmit} disabled={sending} className="flex-1 py-2 rounded-lg bg-purple-500 hover:bg-purple-400 text-white text-xs font-bold disabled:opacity-50">
+            <button onClick={handleSubmit} disabled={sending || (quote && !quote.allowed)} className="flex-1 py-2 rounded-lg bg-purple-500 hover:bg-purple-400 text-white text-xs font-bold disabled:opacity-50">
               {sending ? 'Sending...' : 'Send Request'}
             </button>
           </div>
@@ -654,6 +690,7 @@ function ConversionRequestButton({ privateRemaining, groupRemaining }) {
 }
 
 function PlayerResultModal({ user, onClose, onSaved }) {
+  useEscapeKey(onClose)
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     format: 'short',
@@ -727,10 +764,10 @@ function PlayerResultModal({ user, onClose, onSaved }) {
   const canSubmit = form.date && form.sideA[0]?.trim() && form.sideB[0]?.trim() && scoresFilled && !tie
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">Submit Match Result</h3>
+          <h3 id="modal-title-0" className="text-xl font-bold text-theme">Submit Match Result</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg">&times;</button>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -743,8 +780,9 @@ function PlayerResultModal({ user, onClose, onSaved }) {
             <div>
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Court</label>
               <select value={form.court} onChange={e => setForm({ ...form, court: parseInt(e.target.value) })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
-                <option value={1}>Court 1</option>
-                <option value={2}>Court 2</option>
+                {COURT_OPTIONS.map((c) => (
+                  <option key={c} value={c}>Court {c}</option>
+                ))}
               </select>
             </div>
           </div>

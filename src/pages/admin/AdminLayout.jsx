@@ -4,27 +4,27 @@ import { BarChart3, ChevronLeft, DollarSign, FileUp, LayoutDashboard, LogOut, Me
 import { useAuth } from '../../context/AuthContext'
 
 const ALL_SIDEBAR_LINKS = [
-  { name: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true, roles: ['superadmin', 'admin'] },
-  { name: 'Schedule Manager', path: '/admin/schedule', icon: CalendarClock, roles: ['superadmin', 'admin', 'coach'] },
-  { name: 'Results', path: '/admin/results', icon: BarChart3, roles: ['superadmin', 'admin'] },
-  { name: 'Tournament', path: '/admin/tournament', icon: Trophy, roles: ['superadmin', 'admin'] },
-  { name: 'Users', path: '/admin/users', icon: Users, roles: ['superadmin', 'admin', 'coach'] },
-  { name: 'Roles', path: '/admin/roles', icon: ShieldCheck, roles: ['superadmin'] },
-  { name: 'Imports', path: '/admin/imports', icon: FileUp, roles: ['superadmin', 'admin'] },
-  { name: 'Comments', path: '/admin/comments', icon: MessageSquare, roles: ['superadmin', 'admin'] },
-  { name: 'Expenses', path: '/admin/expenses', icon: DollarSign, roles: ['superadmin', 'admin'] },
-  { name: 'Payments', path: '/admin/payments', icon: DollarSign, roles: ['superadmin', 'admin'] },
-  { name: 'Reports', path: '/admin/reports', icon: PieChart, roles: ['superadmin', 'admin'] },
+  { name: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true, module: 'dashboard' },
+  { name: 'Schedule Manager', path: '/admin/schedule', icon: CalendarClock, module: 'schedule' },
+  { name: 'Results', path: '/admin/results', icon: BarChart3, module: 'results' },
+  { name: 'Tournament', path: '/admin/tournament', icon: Trophy, module: 'results' },
+  { name: 'Users', path: '/admin/users', icon: Users, module: 'players' },
+  { name: 'Roles', path: '/admin/roles', icon: ShieldCheck, superadminOnly: true },
+  { name: 'Imports', path: '/admin/imports', icon: FileUp, module: 'imports' },
+  { name: 'Comments', path: '/admin/comments', icon: MessageSquare, module: 'comments' },
+  { name: 'Expenses', path: '/admin/expenses', icon: DollarSign, module: 'dashboard' },
+  { name: 'Payments', path: '/admin/payments', icon: DollarSign, module: 'dashboard' },
+  { name: 'Reports', path: '/admin/reports', icon: PieChart, module: 'dashboard' },
 ]
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { user, logout } = useAuth()
+  const { user, logout, hasPermission } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
 
-  const sidebarLinks = ALL_SIDEBAR_LINKS.filter(l => l.roles.includes(user?.role))
+  const sidebarLinks = ALL_SIDEBAR_LINKS.filter(l => l.superadminOnly ? user?.role === 'superadmin' : hasPermission(l.module))
 
   const isActive = (path, exact) => exact ? location.pathname === path : location.pathname.startsWith(path)
 
@@ -41,7 +41,7 @@ export default function AdminLayout() {
             </span>
           </div>
         )}
-        <button onClick={() => mobileOpen ? setMobileOpen(false) : setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-muted hover:text-slate-900 dark:hover:text-white transition-colors">
+        <button onClick={() => mobileOpen ? setMobileOpen(false) : setSidebarOpen(!sidebarOpen)} aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={sidebarOpen} className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-muted hover:text-slate-900 dark:hover:text-white transition-colors">
           {mobileOpen ? <X className="w-4 h-4" /> : <ChevronLeft className={`w-4 h-4 transition-transform ${!sidebarOpen ? 'rotate-180' : ''}`} />}
         </button>
       </div>
@@ -106,7 +106,7 @@ export default function AdminLayout() {
 
       <main className="flex-1 p-4 md:p-8 overflow-auto min-w-0">
         <div className="md:hidden flex items-center gap-2 mb-6">
-          <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg bg-surface border border-theme text-theme">
+          <button onClick={() => setMobileOpen(true)} aria-label="Open navigation" aria-expanded={mobileOpen} className="p-2 rounded-lg bg-surface border border-theme text-theme">
             <Menu className="w-5 h-5" />
           </button>
           <span className="text-sm font-bold text-theme">{user?.role === 'coach' ? 'Coach Panel' : 'Admin Panel'}</span>

@@ -242,6 +242,34 @@ async function run() {
   const putDefaults = await req('PUT', '/slots/court-defaults', { court: 1, coach_id: null }, adminToken)
   mark('PUT /slots/court-defaults (admin)', putDefaults.ok)
 
+  // court-default propagation: future slots adopt the new default coach,
+  // manual coach overrides are kept, applyToFuture:false touches no slots
+  {
+    const cdCourt = 6
+    const adminId = meAdmin.data?.user?.id
+    const usersRes = await req('GET', '/users', null, adminToken)
+    const userList = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.users || [])
+    const newCoachId = (userList.find(u => u.role === 'coach') || {}).id ?? adminId
+    await req('PUT', '/slots/court-defaults', { court: cdCourt, coach_id: null, applyToFuture: false }, adminToken)
+    const slotA = await req('POST', '/slots', { date: farFuture, time: '15:00', court: cdCourt, player_text: '', session_type: null }, adminToken)
+    const slotB = await req('POST', '/slots', { date: farFuture, time: '16:00', court: cdCourt, player_text: '', session_type: null }, adminToken)
+    if (slotA.ok && slotB.ok && newCoachId && playerId) {
+      await req('PUT', `/slots/${slotB.data.id}`, { coach_id: playerId }, adminToken)
+      const apply = await req('PUT', '/slots/court-defaults', { court: cdCourt, coach_id: newCoachId, applyToFuture: true }, adminToken)
+      mark('PUT /slots/court-defaults applyToFuture reports count', apply.ok && apply.data?.updatedSlots === 1, `updatedSlots=${apply.data?.updatedSlots}`)
+      const list = await req('GET', `/slots?court=${cdCourt}&from=${farFuture}&to=${farFuture}`, null, adminToken)
+      const a = (list.data || []).find(s => s.id === slotA.data.id)
+      const b = (list.data || []).find(s => s.id === slotB.data.id)
+      mark('court-default: unassigned future slot adopts default coach', Number(a?.coach_id) === Number(newCoachId), `slot=${a?.coach_id} default=${newCoachId}`)
+      mark('court-default: manual coach override preserved', Number(b?.coach_id) === Number(playerId), `slot=${b?.coach_id} manual=${playerId}`)
+      cleanup.push({ method: 'DELETE', path: `/slots/${slotA.data.id}`, token: adminToken, label: 'court-default slot A' })
+      cleanup.push({ method: 'DELETE', path: `/slots/${slotB.data.id}`, token: adminToken, label: 'court-default slot B' })
+      await req('PUT', '/slots/court-defaults', { court: cdCourt, coach_id: null, applyToFuture: false }, adminToken)
+    } else {
+      mark('court-default propagation setup', false, JSON.stringify({ slotA: slotA.status, slotB: slotB.status, newCoachId, playerId }))
+    }
+  }
+
   // create temp slot
   const createSlot = await req('POST', '/slots', { date: farFuture, time: '22:00', court: 6, player_text: PLAYER_1, session_type: 'private', status: 'available', balanceOverride: 'free' }, adminToken)
   mark('POST /slots (admin, far-future)', createSlot.ok && createSlot.status === 201, JSON.stringify(createSlot.data))
@@ -605,6 +633,125 @@ async function run() {
   for (const k of ['players', 'bookings', 'payments']) {
     const t = await req('GET', `/imports/template/${k}`, null, adminToken)
     mark(`GET /imports/template/${k}`, t.ok)
+  }
+
+  // ── JOURNEY ──
+  console.log('\n[journey]')
+  if (playerToken && playerId) {
+    const jTpl = await req('GET', '/journey/templates', null, playerToken)
+    mark('GET /journey/templates (player, 33 skills)', jTpl.ok && jTpl.data?.templates?.length === 33 && jTpl.data?.pillars?.length === 4, `got ${jTpl.data?.templates?.length}`)
+
+    const jSelf = await req('GET', '/journey', null, playerToken)
+    mark('GET /journey (player self)', jSelf.ok && jSelf.data?.summary?.needs_assessment === true, JSON.stringify(jSelf.data?.summary || jSelf.data).slice(0, 120))
+
+    const jRbac = await req('GET', `/journey/${adminLogin.data?.user?.id || 1}`, null, playerToken)
+    mark('GET /journey/:userId (player -> 403)', jRbac.status === 403, `got ${jRbac.status}`)
+
+    const jCreateDeny = await req('POST', '/journey/reports', { user_id: playerId, report_month: '2099-01' }, playerToken)
+    mark('POST /journey/reports (player -> 403)', jCreateDeny.status === 403, `got ${jCreateDeny.status}`)
+
+    const jStart = await req('POST', '/journey/assessment', {}, playerToken)
+    mark('POST /journey/assessment (player -> 201)', jStart.status === 201, JSON.stringify(jStart.data))
+    const jid = jStart.data?.id
+
+    const jGate = await req('POST', '/journey/reports', { user_id: playerId, report_month: '2099-01' }, adminToken)
+    mark('monthly blocked before assessment published -> 400', jGate.status === 400, `got ${jGate.status}: ${JSON.stringify(jGate.data)}`)
+
+    if (jid) {
+      const jBad = await req('PUT', `/journey/reports/${jid}`, { items: [{ template_id: 1, user_score: 0 }] }, playerToken)
+      mark('PUT self-score 0 -> 400', jBad.status === 400, `got ${jBad.status}`)
+      const jBad2 = await req('PUT', `/journey/reports/${jid}`, { items: [{ template_id: 1, user_score: 1.5 }] }, playerToken)
+      mark('PUT self-score 1.5 -> 400', jBad2.status === 400, `got ${jBad2.status}`)
+
+      const items33 = Array.from({ length: 33 }, (_, i) => ({ template_id: i + 1, user_score: (i % 10) + 1 }))
+      const jFill = await req('PUT', `/journey/reports/${jid}`, { items: items33, general_user_comment: 'E2E journey' }, playerToken)
+      mark('PUT 33 self-scores (owner draft)', jFill.ok, JSON.stringify(jFill.data).slice(0, 150))
+
+      const jNoStart = await req('POST', `/journey/${jid}/start-review`, {}, playerToken)
+      mark('start-review (player -> 403)', jNoStart.status === 403, `got ${jNoStart.status}`)
+
+      const jSub = await req('POST', `/journey/${jid}/submit`, {}, playerToken)
+      mark('submit assessment -> submitted', jSub.ok && jSub.data?.status === 'submitted', JSON.stringify(jSub.data))
+
+      const jEdit = await req('PUT', `/journey/reports/${jid}`, { items: [{ template_id: 1, user_score: 9 }] }, playerToken)
+      mark('owner edit after submit -> 403', jEdit.status === 403, `got ${jEdit.status}`)
+
+      const jRev = await req('POST', `/journey/${jid}/start-review`, {}, adminToken)
+      mark('start-review (admin) -> in-review', jRev.ok && jRev.data?.status === 'in-review', JSON.stringify(jRev.data))
+
+      const jEarly = await req('POST', `/journey/${jid}/reviewed`, {}, adminToken)
+      mark('reviewed with missing scores -> 400', jEarly.status === 400, `got ${jEarly.status}`)
+
+      const adminItems = Array.from({ length: 33 }, (_, i) => ({ template_id: i + 1, admin_score: (i % 10) + 1, final_score: (i % 10) + 1, admin_comment: i === 0 ? 'E2E coach note' : '' }))
+      const jFillA = await req('PUT', `/journey/reports/${jid}`, { items: adminItems, general_admin_comment: 'E2E admin comment' }, adminToken)
+      mark('PUT admin+final scores', jFillA.ok, JSON.stringify(jFillA.data).slice(0, 150))
+
+      const jReviewed = await req('POST', `/journey/${jid}/reviewed`, {}, adminToken)
+      mark('reviewed -> reviewed', jReviewed.ok && jReviewed.data?.status === 'reviewed', JSON.stringify(jReviewed.data))
+
+      const jPub = await req('POST', `/journey/${jid}/publish`, {}, adminToken)
+      mark('publish assessment (overall 1dp)', jPub.ok && typeof jPub.data?.overall_score === 'number', JSON.stringify(jPub.data))
+
+      const jAfter = await req('GET', '/journey', null, playerToken)
+      const s = jAfter.data?.summary || {}
+      mark('assessment published visible to player', s.assessment_status === 'published', `got ${s.assessment_status}`)
+      mark('summary: score and report count separate', typeof s.overall_score === 'number' && typeof s.report_position === 'number' && typeof s.progress_pct === 'number', JSON.stringify(s).slice(0, 160))
+      mark('summary: sessions_completed present', typeof s.sessions_completed === 'number', String(s.sessions_completed))
+
+      const jMonth = await req('POST', '/journey/reports', { user_id: playerId, report_month: '2099-01' }, adminToken)
+      mark('create monthly report 1 -> 201', jMonth.status === 201 && jMonth.data?.report_number === 1, JSON.stringify(jMonth.data))
+      const mid = jMonth.data?.id
+
+      const jDup = await req('POST', '/journey/reports', { user_id: playerId, report_month: '2099-01' }, adminToken)
+      mark('duplicate report month -> 409', jDup.status === 409, `got ${jDup.status}`)
+      const jActive = await req('POST', '/journey/reports', { user_id: playerId, report_month: '2099-02' }, adminToken)
+      mark('second monthly while active -> 409', jActive.status === 409, `got ${jActive.status}`)
+
+      const jHidden = await req('GET', '/journey', null, playerToken)
+      mark('draft monthly items hidden from player', jHidden.data?.reports?.[0]?.items?.length === 0, `items=${jHidden.data?.reports?.[0]?.items?.length}`)
+      mark('active_report set', !!jHidden.data?.summary?.active_report, JSON.stringify(jHidden.data?.summary?.active_report))
+
+      if (mid) {
+        const mA = await req('PUT', `/journey/reports/${mid}`, { items: adminItems, general_admin_comment: 'E2E month' }, adminToken)
+        mark('PUT monthly admin+final scores', mA.ok, JSON.stringify(mA.data).slice(0, 150))
+        const mStart = await req('POST', `/journey/${mid}/start-review`, {}, adminToken)
+        mark('monthly start-review -> in-review', mStart.ok && mStart.data?.status === 'in-review', JSON.stringify(mStart.data))
+        const mRet = await req('POST', `/journey/${mid}/return`, { comment: 'E2E return feedback' }, adminToken)
+        mark('monthly return -> returned', mRet.ok && mRet.data?.status === 'returned', JSON.stringify(mRet.data))
+
+        const mPlayerFill = await req('PUT', `/journey/reports/${mid}`, { items: items33, general_user_comment: 'E2E fixed' }, playerToken)
+        mark('owner edits returned monthly', mPlayerFill.ok, JSON.stringify(mPlayerFill.data).slice(0, 150))
+        const mSub = await req('POST', `/journey/${mid}/submit`, {}, playerToken)
+        mark('owner resubmit monthly -> in-review', mSub.ok && mSub.data?.status === 'in-review', JSON.stringify(mSub.data))
+        const mRev = await req('POST', `/journey/${mid}/reviewed`, {}, adminToken)
+        mark('monthly reviewed', mRev.ok && mRev.data?.status === 'reviewed', JSON.stringify(mRev.data))
+        const mPub = await req('POST', `/journey/${mid}/publish`, {}, adminToken)
+        mark('monthly publish', mPub.ok && mPub.data?.status === 'published', JSON.stringify(mPub.data))
+
+        const jProg = await req('GET', '/journey', null, playerToken)
+        const ps = jProg.data?.summary || {}
+        mark('journey progress 10% (1 of 10)', ps.progress_pct === 10, `got ${ps.progress_pct}`)
+        mark('report position 1', ps.report_position === 1, `got ${ps.report_position}`)
+        mark('published monthly items visible (33)', jProg.data?.reports?.[0]?.items?.length === 33, `items=${jProg.data?.reports?.[0]?.items?.length}`)
+        mark('pillar averages present', ps.pillar_averages && typeof ps.pillar_averages['1'] === 'number', JSON.stringify(ps.pillar_averages))
+        mark('timeline present', Array.isArray(jProg.data?.timeline) && jProg.data.timeline.length > 0)
+
+        const jAdmin = await req('GET', `/journey/${playerId}`, null, adminToken)
+        mark('GET /journey/:userId (admin full)', jAdmin.ok && jAdmin.data?.assessment?.items?.length === 33 && jAdmin.data?.reports?.length === 1, JSON.stringify({ assess: jAdmin.data?.assessment?.items?.length, reports: jAdmin.data?.reports?.length }))
+
+        const jNotif = await req('GET', '/notifications', null, playerToken)
+        const nlist = Array.isArray(jNotif.data) ? jNotif.data : (jNotif.data?.notifications || [])
+        mark('journey notifications delivered', jNotif.ok && nlist.some(n => n.kind === 'journey' || /report|assessment/i.test(n.title || '')), `count=${nlist.length}`)
+
+        const mEditPub = await req('PUT', `/journey/reports/${mid}`, { items: [{ template_id: 1, final_score: 10, admin_comment: 'post-publish fix' }] }, adminToken)
+        mark('admin edits published report', mEditPub.ok, JSON.stringify(mEditPub.data).slice(0, 150))
+      }
+
+      const jBadAct = await req('POST', `/journey/${jid}/frobnicate`, {}, adminToken)
+      mark('unknown journey action -> 404', jBadAct.status === 404, `got ${jBadAct.status}`)
+    }
+  } else {
+    mark('journey block', true, 'skipped (no player token)')
   }
 
   // ── LOGOUT ──

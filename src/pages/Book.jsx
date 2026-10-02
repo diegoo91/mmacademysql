@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useEscapeKey } from '../lib/hooks'
 import {
   ArrowRight,
   Calendar as CalendarIcon,
@@ -17,12 +18,26 @@ import { useAuth } from '../context/AuthContext'
 import { COURTS } from '../data/siteConfig'
 import { PRICING, calculatePrice, perSessionRate } from '../data/pricingData'
 import { canonTime, formatSlotTime } from '../lib/time'
+import PlayerSearchInput from '../components/PlayerSearchInput'
 
 const ALL_TIMES = ['14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00']
+const COURT_LIST = Array.from({ length: COURTS }, (_, i) => i + 1)
+
+const tierTag = (type) => {
+  const tier = PRICING[type]
+  return (
+    Object.keys(tier)
+      .filter((k) => k !== 'name')
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((c) => tier[c].toLocaleString('en-US'))
+      .join(' / ') + ' EGP'
+  )
+}
 
 const SESSION_TYPES = [
-  { value: 'private', label: 'Private Coaching', sub: '1-on-1 Personalised Coaching', tag: '1,000 / 3,600 / 7,000 / 10,800 / 14,000 EGP' },
-  { value: 'group', label: 'Group (2 Persons)', sub: '2-Person Group Session', tag: '500 / 1,800 / 3,500 / 7,000 EGP' },
+  { value: 'private', label: 'Private Coaching', sub: '1-on-1 Personalised Coaching', tag: tierTag('private') },
+  { value: 'group', label: 'Group (2 Persons)', sub: '2-Person Group Session', tag: tierTag('group') },
 ]
 
 const DAY_OPTIONS = [
@@ -42,9 +57,12 @@ export default function Book() {
 
   const [mode, setMode] = useState('day')
   const [sessionType, setSessionType] = useState('')
+  const [partnerName, setPartnerName] = useState('')
   const [showFlyerModal, setShowFlyerModal] = useState(false)
+  useEscapeKey(() => setShowFlyerModal(false), showFlyerModal)
   const [balanceInfo, setBalanceInfo] = useState(null)
   const [bookingFromBalance, setBookingFromBalance] = useState(false)
+  const [balanceError, setBalanceError] = useState('')
 
   const [daySelectedDate, setDaySelectedDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [daySelections, setDaySelections] = useState(() => new Map())
@@ -52,6 +70,7 @@ export default function Book() {
   const [weekStartDate, setWeekStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [weekDays, setWeekDays] = useState([])
   const [weekTime, setWeekTime] = useState('')
+  const [weekCourt, setWeekCourt] = useState(1)
   const [weekWeeks, setWeekWeeks] = useState(1)
 
   const fetchSlots = () => {
@@ -117,13 +136,13 @@ export default function Book() {
         sessions.push({
           date: dateStr,
           time: weekTime,
-          court: 1,
-          label: `${dateStr} · ${formatSlotTime(weekTime)} · ${dayKey[0].toUpperCase() + dayKey.slice(1)}`,
+          court: weekCourt,
+          label: `${dateStr} · ${formatSlotTime(weekTime)} · Court ${weekCourt} · ${dayKey[0].toUpperCase() + dayKey.slice(1)}`,
         })
       }
     }
     return sessions
-  }, [mode, weekTime, weekDays, weekWeeks, weekStartDate])
+  }, [mode, weekTime, weekCourt, weekDays, weekWeeks, weekStartDate])
 
   const activeSessions = mode === 'day' ? daySessions : weekSessions
   const sessionCount = activeSessions.length
@@ -138,20 +157,23 @@ export default function Book() {
 
   const handleContinue = async () => {
     if (!user) { navigate('/login'); return }
+    setBalanceError('')
+    const partner = sessionType === 'group' ? (partnerName.trim() || null) : null
     if (balanceInfo?.hasEnough) {
       setBookingFromBalance(true)
       try {
         await api.post('/bookings/from-balance', {
           sessionType,
+          partner,
           sessions: activeSessions.map(s => ({ date: s.date, time: s.time, court: s.court })),
         })
         navigate('/profile')
       } catch (err) {
         // Hard block: insufficient balance → route to payment, no override for players
         if (err.message?.includes('Insufficient balance') || err.message?.includes('INSUFFICIENT_BALANCE')) {
-          navigate('/payment', { state: { sessionType, mode, sessions: activeSessions, totalPrice, sessionCount } })
+          navigate('/payment', { state: { sessionType, mode, sessions: activeSessions, totalPrice, sessionCount, partner } })
         } else {
-          alert(err.message || 'Failed to book from balance')
+          setBalanceError(err.message || 'This slot was just booked by another player — refresh availability and try again.')
         }
       }
       setBookingFromBalance(false)
@@ -159,7 +181,7 @@ export default function Book() {
     }
     // Hard block: no balance available → route to payment
     navigate('/payment', {
-      state: { sessionType, mode, sessions: activeSessions, totalPrice, sessionCount },
+      state: { sessionType, mode, sessions: activeSessions, totalPrice, sessionCount, partner },
     })
   }
 
@@ -168,10 +190,10 @@ export default function Book() {
       <div className="absolute top-10 left-1/4 w-[500px] h-[300px] bg-brand/10 rounded-full blur-[140px] pointer-events-none" />
 
       {showFlyerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/85 backdrop-blur-md animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/85 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
           <div className="relative max-w-2xl w-full max-h-[90vh] bg-surface rounded-3xl overflow-hidden border border-theme p-2 shadow-2xl flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-theme">
-              <h3 className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
+              <h3 id="modal-title-0" className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-brand-text" />
                 <span>Official MM Padel Academy Pricing Flyer</span>
               </h3>
@@ -211,11 +233,24 @@ export default function Book() {
                 <div className="w-8 h-8 rounded-xl bg-brand text-white flex items-center justify-center font-bold text-sm">1</div>
                 <h3 className="font-heading text-xl font-extrabold text-theme">Select Session Category</h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2" role="radiogroup" aria-label="Session category">
                 {SESSION_TYPES.map((item) => {
                   const selected = sessionType === item.value
                   return (
-                    <div key={item.value} onClick={() => setSessionType(item.value)} className={`p-5 rounded-2xl cursor-pointer border transition-all ${selected ? 'bg-brand/10 border-brand-text ring-1 ring-brand-text' : 'bg-surface/60 border-theme hover:border-slate-300 dark:hover:border-slate-700'}`}>
+                    <div
+                      key={item.value}
+                      role="radio"
+                      aria-checked={selected}
+                      tabIndex={0}
+                      onClick={() => setSessionType(item.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setSessionType(item.value)
+                        }
+                      }}
+                      className={`p-5 rounded-2xl cursor-pointer border transition-all ${selected ? 'bg-brand/10 border-brand-text ring-1 ring-brand-text' : 'bg-surface/60 border-theme hover:border-slate-300 dark:hover:border-slate-700'}`}
+                    >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-theme text-base">{item.label}</span>
                         {selected && <CheckCircle2 className="w-5 h-5 text-brand-text" />}
@@ -226,6 +261,33 @@ export default function Book() {
                   )
                 })}
               </div>
+
+              {sessionType === 'group' && (
+                <div className="pt-2 space-y-1.5">
+                  <label className="block text-xs font-semibold text-theme uppercase tracking-wider">
+                    Partner name <span className="text-muted normal-case font-medium">(2-person group)</span>
+                  </label>
+                  {user ? (
+                    <PlayerSearchInput
+                      value={partnerName}
+                      onChange={(v) => setPartnerName(v)}
+                      endpoint="/tournaments/players/search?q="
+                      placeholder="Search member name…"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={partnerName}
+                      onChange={(e) => setPartnerName(e.target.value)}
+                      placeholder="Partner's full name"
+                      className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs focus:outline-none focus:border-brand-text"
+                    />
+                  )}
+                  <p className="text-[11px] text-muted">
+                    Both names appear on the schedule slot. Each player pays the per-player group rate.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="glass-panel rounded-3xl p-6 border border-theme space-y-6">
@@ -268,16 +330,17 @@ export default function Book() {
                   <p className="text-xs text-muted">Greyed-out slots are already booked. Tap any available time + court.</p>
                   <div className="overflow-x-auto rounded-2xl border border-theme">
                     <div className="min-w-[320px]">
-                      <div className="grid grid-cols-3 bg-surface/80 text-center">
+                      <div className="grid grid-cols-4 bg-surface/80 text-center">
                         <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-muted text-left">Time</div>
-                        <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 1</div>
-                        <div className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court 2</div>
+                        {COURT_LIST.map((court) => (
+                          <div key={court} className="px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-brand-text border-l border-theme">Court {court}</div>
+                        ))}
                       </div>
                       <div className="divide-y divide-theme">
                         {ALL_TIMES.map((time) => (
-                          <div key={time} className="grid grid-cols-3 items-stretch">
+                          <div key={time} className="grid grid-cols-4 items-stretch">
                             <div className="px-3 py-2 text-theme font-mono text-[11px] flex items-center bg-surface/80">{formatSlotTime(time)}</div>
-                            {[1, 2].map((court) => {
+                            {COURT_LIST.map((court) => {
                               const booked = isTimeBooked(daySelectedDate, time, court)
                               const selected = daySelections.has(`${time}|${court}`)
                               return (
@@ -327,6 +390,17 @@ export default function Book() {
                       </button>
                       ))}
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Court</label>
+                    <div className="flex flex-wrap gap-2">
+                      {COURT_LIST.map((court) => (
+                        <button key={court} onClick={() => setWeekCourt(court)} className={`px-4 py-2 rounded-xl border text-xs font-bold transition-all ${weekCourt === court ? 'bg-brand text-white border-brand-text' : 'bg-surface text-theme border-theme/80 hover:border-brand-text/60'}`}>
+                          Court {court}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted mt-2">The same court every selected day. Availability is re-checked at booking.</p>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">Number of Weeks</label>
@@ -381,6 +455,12 @@ export default function Book() {
                       </div>
                     </div>
                   </div>
+
+                  {balanceError && (
+                    <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs font-semibold text-rose-500 dark:text-rose-400 leading-relaxed">
+                      {balanceError}
+                    </div>
+                  )}
 
                   <button onClick={handleContinue} disabled={!canContinue || bookingFromBalance} className="w-full py-4 rounded-2xl bg-gold hover:bg-gold-hover text-slate-950 font-extrabold text-sm shadow-xl shadow-gold/30 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50">
                     <span>{bookingFromBalance ? 'Booking...' : user ? (balanceInfo?.hasEnough ? 'Book from Balance' : `Continue to Payment (${totalPrice.toLocaleString()} EGP)`) : 'Login to Continue'}</span>

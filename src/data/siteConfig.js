@@ -1,6 +1,8 @@
 export const CONTACT = {
   phone: '+20 10 00915244',
   phoneHref: 'tel:+201000915244',
+  whatsappUrl: 'https://wa.me/201000915244',
+  whatsappLabel: '+20 10 00915244',
   hours: 'Sunday – Thursday, 3:00 PM – 11:00 PM',
   address:
     'Unnamed Road, الظهرير الصحراوى لمحافظة الجيزة, Second Al Sheikh Zayed, 3640705',

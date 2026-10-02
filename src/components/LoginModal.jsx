@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Lock, Mail, X } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, adminLandingPath } from '../context/AuthContext'
+import { useEscapeKey } from '../lib/hooks'
 import Logo from './Logo'
 
 export default function LoginModal() {
@@ -12,6 +13,8 @@ export default function LoginModal() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEscapeKey(closeLoginModal, isLoginModalOpen)
 
   if (!isLoginModalOpen) return null
 
@@ -26,13 +29,7 @@ export default function LoginModal() {
     try {
       const u = await login(email, password)
       closeLoginModal()
-      if (u.role === 'superadmin' || u.role === 'admin') {
-        navigate('/admin')
-      } else if (u.role === 'coach') {
-        navigate('/admin/schedule')
-      } else {
-        navigate('/schedule')
-      }
+      navigate(adminLandingPath(u))
     } catch (err) {
       setError(err.message || 'Login failed.')
     } finally {
@@ -48,13 +45,7 @@ export default function LoginModal() {
     try {
       const u = await login('player@mmpadel.com', 'padel2026')
       closeLoginModal()
-      if (u.role === 'superadmin' || u.role === 'admin') {
-        navigate('/admin')
-      } else if (u.role === 'coach') {
-        navigate('/admin/schedule')
-      } else {
-        navigate('/schedule')
-      }
+      navigate(adminLandingPath(u))
     } catch {
       setError('Demo login failed. The demo account may not exist yet.')
     } finally {
@@ -63,7 +54,7 @@ export default function LoginModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/80 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <div className="relative w-full max-w-md p-6 overflow-hidden glass-panel rounded-2xl border border-theme shadow-2xl">
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-brand/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -78,7 +69,7 @@ export default function LoginModal() {
 
         <div className="text-center mb-6">
           <Logo className="w-16 h-16 rounded-2xl border-2 border-brand-text/80 shadow-lg shadow-brand/20 mx-auto mb-3" />
-          <h3 className="text-2xl font-bold font-heading text-theme">Welcome Back</h3>
+          <h3 id="modal-title-0" className="text-2xl font-bold font-heading text-theme">Welcome Back</h3>
           <p className="text-sm text-muted mt-1">Access your MM Padel Academy member portal</p>
         </div>
 
@@ -90,12 +81,13 @@ export default function LoginModal() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">
+            <label htmlFor="modal-email" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">
               Email Address
             </label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
               <input
+                id="modal-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -106,12 +98,13 @@ export default function LoginModal() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">
+            <label htmlFor="modal-password" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">
               Password
             </label>
             <div className="relative">
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
               <input
+                id="modal-password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

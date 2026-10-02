@@ -15,6 +15,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { CONTACT } from '../data/siteConfig'
+import { perSessionRate } from '../data/pricingData'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -24,11 +25,12 @@ export default function Payment() {
   const { user } = useAuth()
   const booking = location.state || null
   const { sessionType, sessions = [], totalPrice = 0, sessionCount = 0, mode,
-    purpose, tournamentName, entryFee, paymentRef, returnTo } = booking || {}
+    purpose, tournamentName, entryFee, paymentRef, returnTo, partner } = booking || {}
   const isTournament = purpose === 'tournament'
   const amount = isTournament ? Number(entryFee || 0) : totalPrice
 
   const [copied, setCopied] = useState(false)
+  const [refCopied, setRefCopied] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [bookingConfirmed, setBookingConfirmed] = useState(false)
   const [bookingReference, setBookingReference] = useState('')
@@ -40,6 +42,12 @@ export default function Payment() {
     try { await navigator.clipboard.writeText(CONTACT.instapayUrl) } catch {}
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleCopyRef = async () => {
+    try { await navigator.clipboard.writeText(bookingReference) } catch {}
+    setRefCopied(true)
+    setTimeout(() => setRefCopied(false), 2000)
   }
 
   const handleConfirm = async (e) => {
@@ -56,13 +64,14 @@ export default function Payment() {
       const data = await api.post('/bookings', {
         sessionType,
         mode,
+        partner: partner || null,
         sessions: sessions.map(s => ({ date: s.date, time: s.time, court: s.court, label: s.label })),
         totalPrice,
       })
       setBookingReference(data.ref)
       setBookingConfirmed(true)
     } catch (err) {
-      setError(err.message || 'Failed to create booking. Please try again.')
+      setError(err.message || 'Your booking could not be completed — no slot was reserved. Refresh availability and try again.')
     } finally {
       setIsProcessing(false)
     }
@@ -72,8 +81,8 @@ export default function Payment() {
     const playerName = user?.name || 'Player'
     const waMessage = isTournament
       ? `Hi MM Padel Academy!%0A%0APayment Reference: ${bookingReference}%0AName: ${playerName}%0ATournament: ${tournamentName}%0AAmount: ${amount.toLocaleString()} EGP%0A%0APayment has been completed via InstaPay. Please confirm my tournament entry.`
-      : `Hi MM Padel Academy!%0A%0ABooking Reference: ${bookingReference}%0AName: ${playerName}%0ASessions: ${sessionCount} ${sessionLabel}%0ATotal: ${totalPrice.toLocaleString()} EGP%0A%0APayment has been completed via InstaPay. Please confirm my booking.`
-    const waUrl = `https://wa.me/201000915244?text=${waMessage}`
+      : `Hi MM Padel Academy!%0A%0ABooking Reference: ${bookingReference}%0AName: ${playerName}%0ASessions: ${sessionCount} ${sessionLabel}${partner ? `%0APartner: ${partner}` : ''}%0ATotal: ${totalPrice.toLocaleString()} EGP%0A%0APayment has been completed via InstaPay. Please confirm my booking.`
+    const waUrl = `${CONTACT.whatsappUrl}?text=${waMessage}`
 
     return (
       <div className="min-h-screen bg-theme text-theme py-16 px-4 flex items-center justify-center relative overflow-hidden">
@@ -101,7 +110,18 @@ export default function Payment() {
                 <span className="text-[10px] text-muted uppercase tracking-widest font-semibold block">{isTournament ? 'Payment Reference' : 'Booking Reference ID'}</span>
                 <span className="font-mono text-xl font-extrabold text-brand-text">{bookingReference}</span>
               </div>
-              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 uppercase">Pending</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyRef}
+                  aria-label="Copy reference number"
+                  className="px-2.5 py-1 rounded-lg bg-surface border border-theme text-[10px] font-bold text-muted hover:text-brand-text hover:border-brand-text/50 transition-colors flex items-center gap-1"
+                >
+                  {refCopied ? <Check className="w-3 h-3 text-brand-text" /> : <Copy className="w-3 h-3" />}
+                  <span>{refCopied ? 'Copied' : 'Copy'}</span>
+                </button>
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 uppercase">Pending</span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4 text-xs">
               {isTournament ? (
@@ -247,6 +267,12 @@ export default function Payment() {
                           <span className="font-bold text-theme text-sm">{sessionLabel}</span>
                           <span className="text-[11px] font-bold px-2.5 py-0.5 rounded bg-brand/20 text-brand-text">
                             {sessionCount} session{sessionCount === 1 ? '' : 's'} • {mode === 'day' ? 'Per Day' : 'Per Week'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-muted pt-1 border-t border-theme">
+                          <span>Rate (per player · 1 hour)</span>
+                          <span className="font-semibold text-theme">
+                            {sessionCount} × {perSessionRate(sessionType, sessionCount).toLocaleString('en-US')} EGP
                           </span>
                         </div>
                         <ul className="space-y-1.5 pt-2 border-t border-theme max-h-56 overflow-y-auto pr-1">

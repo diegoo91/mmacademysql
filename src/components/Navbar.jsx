@@ -13,6 +13,15 @@ import {
 } from '../lib/push'
 import Logo from './Logo'
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const fmtStamp = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d)) return String(iso).slice(0, 16)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())} ${MONTHS[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showThemeMenu, setShowThemeMenu] = useState(false)
@@ -27,14 +36,18 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', path: '/' },
     ...(!user ? [{ name: 'Sign Up', path: '/signup' }] : []),
-    ...(!user ? [{ name: 'Guest Booking', path: '/guest-booking' }] : []),
-    { name: 'Schedule', path: '/schedule' },
+    ...(user ? [{ name: 'Schedule', path: '/schedule' }] : []),
     { name: 'Tournament', path: '/tournament' },
     { name: 'Book a Session', path: '/book' },
+    { name: 'Coaches', path: '/coaches' },
   ]
 
-  if (isAdmin || isCoach) {
-    navLinks.push({ name: 'Dashboard', path: '/admin' })
+  if (isCoach) {
+    const p = user.permissions || []
+    const hasAdminModule = isAdmin || ['dashboard', 'schedule', 'players', 'results', 'users', 'imports', 'comments', 'conversions', 'bookings'].some(m => p.includes(m))
+    if (hasAdminModule) {
+      navLinks.push({ name: 'Dashboard', path: (isAdmin || p.includes('dashboard')) ? '/admin' : '/admin/schedule' })
+    }
   }
 
   useEffect(() => {
@@ -139,9 +152,12 @@ export default function Navbar() {
             }}
             className={`w-full text-left px-4 py-3 border-b border-theme hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors ${!n.read ? 'bg-brand/5' : ''}`}
           >
-            <p className="text-xs font-bold text-theme">{n.title}</p>
+            <p className="text-xs font-bold text-theme">
+              {n.title}
+              {!n.read && <span className="ml-2 text-[9px] font-black uppercase tracking-wider text-brand-text">Unread</span>}
+            </p>
             <p className="text-[11px] text-muted mt-0.5">{n.body}</p>
-            <p className="text-[10px] text-muted mt-1">{n.created_at?.slice(0, 16)}</p>
+            <p className="text-[10px] text-muted mt-1">{fmtStamp(n.created_at)}</p>
           </button>
         ))
       )}
@@ -204,6 +220,9 @@ export default function Navbar() {
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
                 className="p-2.5 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                 title="Theme"
+                aria-label="Choose theme"
+                aria-expanded={showThemeMenu}
+                aria-haspopup="true"
               >
                 <Palette className="w-4 h-4" />
               </button>
@@ -227,7 +246,7 @@ export default function Navbar() {
 
             {user && (
               <div className="relative">
-                <button data-notif-toggle onClick={() => setShowNotifications(!showNotifications)} className="relative p-2.5 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                <button data-notif-toggle onClick={() => setShowNotifications(!showNotifications)} aria-label="Notifications" aria-expanded={showNotifications} className="relative p-2.5 rounded-xl bg-surface border border-theme text-muted hover:text-theme hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
                   <Bell className="w-4 h-4" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -289,6 +308,7 @@ export default function Navbar() {
                   data-notif-toggle
                   onClick={() => setShowNotifications(!showNotifications)}
                   aria-label="Notifications"
+                  aria-expanded={showNotifications}
                   className="relative p-2 rounded-xl bg-surface border border-theme text-theme"
                 >
                   <Bell className="w-4 h-4" />
@@ -305,6 +325,7 @@ export default function Navbar() {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2.5 rounded-xl bg-surface border border-theme text-theme hover:text-theme focus:outline-none"
               aria-label="Toggle menu"
+              aria-expanded={mobileMenuOpen}
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>

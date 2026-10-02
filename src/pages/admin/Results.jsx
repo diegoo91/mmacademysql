@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { AlertCircle, CheckCircle2, Download, Edit, FileUp, Plus, Search, Trash2, Upload, X, Check } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
+import { useFeedback } from '../../context/FeedbackContext'
+import { useEscapeKey } from '../../lib/hooks'
 
 function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
   const [players, setPlayers] = useState([])
@@ -35,8 +37,9 @@ function PlayerDropdown({ value, onChange, onSelect, placeholder }) {
 }
 
 function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
-  const { isAdmin } = useAuth()
-  const admin = adminOverride !== undefined ? adminOverride : isAdmin
+  useEscapeKey(onClose)
+  const { hasPermission } = useAuth()
+  const admin = adminOverride !== undefined ? adminOverride : hasPermission('results')
   const [form, setForm] = useState({
     date: result?.date || new Date().toISOString().slice(0, 10),
     format: result?.format || 'short',
@@ -118,10 +121,10 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
   const canSubmit = form.date && form.sideA[0]?.trim() && form.sideB[0]?.trim() && scoresFilled && !tie
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">{result ? 'Edit Result' : admin ? 'Add Match Result' : 'Submit Match Result'}</h3>
+          <h3 id="modal-title-0" className="text-xl font-bold text-theme">{result ? 'Edit Result' : admin ? 'Add Match Result' : 'Submit Match Result'}</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -217,6 +220,7 @@ function ResultModal({ result, onClose, onSave, isAdmin: adminOverride }) {
 }
 
 function ImportModal({ kind, onClose, onDone }) {
+  useEscapeKey(onClose)
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -268,10 +272,10 @@ function ImportModal({ kind, onClose, onDone }) {
 
   if (result) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-1">
         <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
           <CheckCircle2 className="w-12 h-12 text-brand-text mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-theme mb-2">Import Complete</h3>
+          <h3 id="modal-title-1" className="text-xl font-bold text-theme mb-2">Import Complete</h3>
           <p className="text-muted text-sm mb-4">{result.inserted} results imported successfully.</p>
           <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Done</button>
         </div>
@@ -280,10 +284,10 @@ function ImportModal({ kind, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-2">
       <div className="w-full max-w-2xl glass-panel rounded-2xl border border-theme shadow-2xl p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">Import Results from Excel</h3>
+          <h3 id="modal-title-2" className="text-xl font-bold text-theme">Import Results from Excel</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <button onClick={downloadTemplate} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-800 mb-4">
@@ -338,8 +342,9 @@ function ImportModal({ kind, onClose, onDone }) {
 }
 
 export default function Results() {
-  const { isAdmin } = useAuth()
-  const canEdit = isAdmin
+  const { hasPermission } = useAuth()
+  const { toast } = useFeedback()
+  const canEdit = hasPermission('results')
   const [results, setResults] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -350,19 +355,20 @@ export default function Results() {
   const [showAdd, setShowAdd] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  useEscapeKey(() => setDeleteConfirm(null), !!deleteConfirm)
 
   const fetchResults = () => {
     setLoading(true)
     const params = new URLSearchParams({ page, limit: 20 })
     if (search) params.set('player', search)
-    if (isAdmin && statusFilter !== 'all') params.set('status', statusFilter)
+    if (canEdit && statusFilter !== 'all') params.set('status', statusFilter)
     api.get(`/results?${params}`).then(data => { setResults(data.results); setTotal(data.total) }).catch(() => {}).finally(() => setLoading(false))
   }
 
   useEffect(() => { fetchResults() }, [page, statusFilter])
 
   const handleSearch = (e) => { e.preventDefault(); setPage(1); fetchResults() }
-  const handleDelete = async (id) => { try { await api.del(`/results/${id}`); setDeleteConfirm(null); fetchResults() } catch {} }
+  const handleDelete = async (id) => { try { await api.del(`/results/${id}`); setDeleteConfirm(null); fetchResults() } catch (err) { toast.error(err.message || 'Failed to delete result') } }
   const handleConfirm = async (id) => { try { await api.put(`/results/${id}/confirm`); fetchResults() } catch {} }
 
   const totalPages = Math.ceil(total / 20)
@@ -395,7 +401,7 @@ export default function Results() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-        {isAdmin && (
+        {canEdit && (
           <div className="flex gap-1 bg-surface border border-theme rounded-xl p-1">
             {statusTabs.map(tab => (
               <button key={tab.id} onClick={() => { setStatusFilter(tab.id); setPage(1) }}
@@ -464,8 +470,8 @@ export default function Results() {
                           )}
                           {canEdit && (
                             <>
-                              <button onClick={() => setEditResult(r)} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><Edit className="w-4 h-4" /></button>
-                              <button onClick={() => setDeleteConfirm(r)} className="p-2 text-muted hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                              <button onClick={() => setEditResult(r)} aria-label="Edit result" className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><Edit className="w-4 h-4" /></button>
+                              <button onClick={() => setDeleteConfirm(r)} aria-label="Delete result" className="p-2 text-muted hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                             </>
                           )}
                         </div>
@@ -490,10 +496,10 @@ export default function Results() {
       {(showAdd || editResult) && <ResultModal result={editResult} onClose={() => { setShowAdd(false); setEditResult(null) }} onSave={() => { setShowAdd(false); setEditResult(null); fetchResults() }} />}
       {showImport && <ImportModal kind="results" onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); fetchResults() }} />}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-3">
           <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
             <AlertCircle className="w-12 h-12 text-rose-400 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-theme mb-2">Delete Result?</h3>
+            <h3 id="modal-title-3" className="text-lg font-bold text-theme mb-2">Delete Result?</h3>
             <p className="text-muted text-sm mb-6">This match result will be permanently deleted.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>

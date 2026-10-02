@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DollarSign, Plus, Trash2, X } from 'lucide-react'
 import { api } from '../../lib/api'
+import { useFeedback } from '../../context/FeedbackContext'
 
 const CATEGORIES = ['Court Booking Fees', 'Equipment', 'Salaries', 'Utilities', 'Other']
 
@@ -8,6 +9,12 @@ function ExpenseModal({ onClose, onSave }) {
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: 'Court Booking Fees', description: '', amount: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -20,10 +27,10 @@ function ExpenseModal({ onClose, onSave }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="add-expense-title" onClick={onClose}>
+      <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">Add Expense</h3>
+          <h3 id="add-expense-title" className="text-xl font-bold text-theme">Add Expense</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -61,6 +68,7 @@ function ExpenseModal({ onClose, onSave }) {
 }
 
 export default function Expenses() {
+  const { toast } = useFeedback()
   const [expenses, setExpenses] = useState([])
   const [total, setTotal] = useState(0)
   const [totalAmount, setTotalAmount] = useState(0)
@@ -70,22 +78,31 @@ export default function Expenses() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [fetchError, setFetchError] = useState(null)
 
   const fetchExpenses = () => {
     setLoading(true)
+    setFetchError(null)
     const params = new URLSearchParams()
     if (from) params.set('from', from)
     if (to) params.set('to', to)
     if (categoryFilter) params.set('category', categoryFilter)
     api.get(`/expenses?${params}`).then(data => {
       setExpenses(data.expenses); setTotal(data.total); setTotalAmount(data.totalAmount)
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch(err => setFetchError(err?.message || 'Failed to load expenses')).finally(() => setLoading(false))
   }
 
   useEffect(() => { fetchExpenses() }, [from, to, categoryFilter])
 
+  useEffect(() => {
+    if (!deleteConfirm) return
+    const onKey = (e) => { if (e.key === 'Escape') setDeleteConfirm(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [deleteConfirm])
+
   const handleDelete = async (id) => {
-    try { await api.del(`/expenses/${id}`); setDeleteConfirm(null); fetchExpenses() } catch {}
+    try { await api.del(`/expenses/${id}`); setDeleteConfirm(null); fetchExpenses() } catch (err) { toast.error(err.message || 'Failed to delete expense') }
   }
 
   const catColors = {
@@ -125,6 +142,11 @@ export default function Expenses() {
 
       {loading ? (
         <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
+      ) : fetchError ? (
+        <div role="alert" className="text-center py-12">
+          <p className="text-sm text-rose-600 dark:text-rose-400 mb-3">{fetchError}</p>
+          <button onClick={fetchExpenses} className="px-4 py-2 rounded-xl bg-surface border border-theme text-theme text-sm font-bold">Retry</button>
+        </div>
       ) : expenses.length === 0 ? (
         <div className="text-center py-12 text-muted">No expenses recorded.</div>
       ) : (
@@ -148,7 +170,7 @@ export default function Expenses() {
                     <td className="px-6 py-4 text-theme text-sm">{e.description}</td>
                     <td className="px-6 py-4 text-right font-bold text-theme">EGP {Number(e.amount).toLocaleString()}</td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={() => setDeleteConfirm(e)} className="p-2 text-muted hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleteConfirm(e)} aria-label={`Delete expense${e.description ? `: ${e.description}` : ''}`} className="p-2 text-muted hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </td>
                   </tr>
                 ))}
@@ -163,10 +185,10 @@ export default function Expenses() {
 
       {showAdd && <ExpenseModal onClose={() => setShowAdd(false)} onSave={() => { setShowAdd(false); fetchExpenses() }} />}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="delete-expense-title" onClick={() => setDeleteConfirm(null)}>
+          <div className="w-full max-w-sm glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center" onClick={(e) => e.stopPropagation()}>
             <DollarSign className="w-12 h-12 text-rose-400 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-theme mb-2">Delete Expense?</h3>
+            <h3 id="delete-expense-title" className="text-lg font-bold text-theme mb-2">Delete Expense?</h3>
             <p className="text-muted text-sm mb-6">Are you sure you want to delete this expense record?</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>

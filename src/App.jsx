@@ -10,6 +10,7 @@ import Home from './pages/Home'
 import SignUp from './pages/SignUp'
 import Schedule from './pages/Schedule'
 import Book from './pages/Book'
+import Coaches from './pages/Coaches'
 import GuestBooking from './pages/GuestBooking'
 import Payment from './pages/Payment'
 import Profile from './pages/Profile'
@@ -29,11 +30,12 @@ import Payments from './pages/admin/Payments'
 import Roles from './pages/admin/Roles'
 import AdminTournament from './pages/admin/Tournament'
 
-function ProtectedRoute({ children, roles }) {
-  const { user, loading } = useAuth()
+function ProtectedRoute({ children, roles, module }) {
+  const { user, loading, hasPermission } = useAuth()
   if (loading) return <div className="min-h-screen bg-theme flex items-center justify-center"><div className="w-8 h-8 border-2 border-brand-text border-t-transparent rounded-full animate-spin" /></div>
   if (!user) return <Navigate to="/login" replace />
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />
+  if (module && !hasPermission(module)) return <Navigate to="/" replace />
   return children
 }
 
@@ -118,6 +120,7 @@ function AppRoutes() {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/book" element={<Book />} />
+    <Route path="/coaches" element={<Coaches />} />
         <Route path="/tournament" element={<Tournament />} />
         <Route path="/guest-booking" element={<GuestBooking />} />
         <Route path="/payment" element={<Payment />} />
@@ -134,23 +137,27 @@ function AppRoutes() {
           </ProtectedRoute>
         }>
           <Route index element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="dashboard">
               <Dashboard />
             </ProtectedRoute>
           } />
-          <Route path="schedule" element={<ScheduleManager />} />
+          <Route path="schedule" element={
+            <ProtectedRoute module="schedule">
+              <ScheduleManager />
+            </ProtectedRoute>
+          } />
           <Route path="results" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="results">
               <Results />
             </ProtectedRoute>
           } />
           <Route path="users" element={
-            <ProtectedRoute roles={['superadmin', 'admin', 'coach']}>
+            <ProtectedRoute module="players">
               <Users />
             </ProtectedRoute>
           } />
           <Route path="users/:id" element={
-            <ProtectedRoute roles={['superadmin', 'admin', 'coach']}>
+            <ProtectedRoute module="players">
               <UserDetail />
             </ProtectedRoute>
           } />
@@ -160,32 +167,32 @@ function AppRoutes() {
             </ProtectedRoute>
           } />
           <Route path="imports" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="imports">
               <Imports />
             </ProtectedRoute>
           } />
           <Route path="comments" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="comments">
               <Comments />
             </ProtectedRoute>
           } />
           <Route path="expenses" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="dashboard">
               <Expenses />
             </ProtectedRoute>
           } />
           <Route path="reports" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="dashboard">
               <Reports />
             </ProtectedRoute>
           } />
           <Route path="payments" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="dashboard">
               <Payments />
             </ProtectedRoute>
           } />
           <Route path="tournament" element={
-            <ProtectedRoute roles={['superadmin', 'admin']}>
+            <ProtectedRoute module="results">
               <AdminTournament />
             </ProtectedRoute>
           } />

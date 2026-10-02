@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Lock, LogIn, Mail } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, adminLandingPath } from '../context/AuthContext'
 import Logo from '../components/Logo'
 
 export default function Login() {
@@ -23,13 +23,7 @@ export default function Login() {
     setLoading(true)
     try {
       const u = await login(email, password)
-      if (u.role === 'superadmin' || u.role === 'admin') {
-        navigate('/admin')
-      } else if (u.role === 'coach') {
-        navigate('/admin/schedule')
-      } else {
-        navigate('/schedule')
-      }
+      navigate(adminLandingPath(u))
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.')
     } finally {
@@ -37,11 +31,7 @@ export default function Login() {
     }
   }
 
-  if (user) {
-    if (user.role === 'superadmin' || user.role === 'admin') return <Navigate to="/admin" replace />
-    if (user.role === 'coach') return <Navigate to="/admin/schedule" replace />
-    return <Navigate to="/schedule" replace />
-  }
+  if (user) return <Navigate to={adminLandingPath(user)} replace />
 
   return (
     <div className="min-h-screen bg-theme text-theme py-12 px-4 flex items-center justify-center relative overflow-hidden">
@@ -59,10 +49,11 @@ export default function Login() {
           )}
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
-              <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Email Address</label>
+              <label htmlFor="login-email" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
                 <input
+                  id="login-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -72,10 +63,11 @@ export default function Login() {
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Password</label>
+              <label htmlFor="login-password" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
                 <input
+                  id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

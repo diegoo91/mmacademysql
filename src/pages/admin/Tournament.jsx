@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../../lib/api'
+import { useFeedback } from '../../context/FeedbackContext'
+import { useEscapeKey } from '../../lib/hooks'
 import PlayerSearchInput from '../../components/PlayerSearchInput'
 import TournamentCountdown from '../../components/TournamentCountdown'
 import BracketView from '../../components/BracketView'
@@ -90,6 +92,7 @@ function Fact({ label, value }) {
 }
 
 function TournamentFormModal({ initial, submitting, onCancel, onSubmit }) {
+  useEscapeKey(onCancel)
   const [f, setF] = useState(() => initial ? {
     name: initial.name || '',
     skill_level: initial.skill_level || 'Open',
@@ -127,10 +130,10 @@ function TournamentFormModal({ initial, submitting, onCancel, onSubmit }) {
   const labelCls = 'block text-xs font-semibold text-muted mb-1'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <form onSubmit={submit} className="w-full max-w-2xl glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto space-y-4 animate-fadeIn">
         <div className="flex items-center justify-between">
-          <h2 className="font-heading text-xl font-extrabold text-theme">{initial ? 'Edit tournament' : 'New tournament'}</h2>
+          <h2 id="modal-title-0" className="font-heading text-xl font-extrabold text-theme">{initial ? 'Edit tournament' : 'New tournament'}</h2>
           <button type="button" onClick={onCancel} className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-muted"><X className="w-4 h-4" /></button>
         </div>
 
@@ -260,6 +263,7 @@ function ScoreInputs({ value, onChange, onSave, saving, disabled, compact }) {
 }
 
 export default function AdminTournament() {
+  const { confirm } = useFeedback()
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [selectedId, setSelectedId] = useState(null)
@@ -449,19 +453,36 @@ export default function AdminTournament() {
     }
   }
 
-  const closeRegistration = () => {
-    if (!window.confirm(`Close registration for "${t.name}"? Players will no longer be able to sign up.`)) return
+  const closeRegistration = async () => {
+    const ok = await confirm({
+      title: 'Close registration?',
+      description: `Close registration for "${t.name}"? Players will no longer be able to sign up.`,
+      confirmLabel: 'Close registration',
+      tone: 'danger',
+    })
+    if (!ok) return
     run(() => api.post(`/tournaments/${t.id}/close`), 'Registration closed')
   }
 
-  const openRegistration = () => {
+  const openRegistration = async () => {
     if (!t.registration_close_at) { say('err', 'Set a registration close date first (Edit)'); return }
-    if (!window.confirm(`Open registration for "${t.name}"?`)) return
+    const ok = await confirm({
+      title: 'Open registration?',
+      description: `Open registration for "${t.name}"?`,
+      confirmLabel: 'Open registration',
+    })
+    if (!ok) return
     run(() => api.post(`/tournaments/${t.id}/open`, {}), 'Registration opened')
   }
 
-  const deleteTournament = () => {
-    if (!window.confirm(`Delete "${t.name}"? This cannot be undone.`)) return
+  const deleteTournament = async () => {
+    const ok = await confirm({
+      title: 'Delete tournament?',
+      description: `Delete "${t.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete tournament',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     api.del(`/tournaments/${t.id}`)
       .then(() => {
@@ -473,8 +494,13 @@ export default function AdminTournament() {
       .finally(() => setBusy(false))
   }
 
-  const completeTournament = () => {
-    if (!window.confirm(`Mark "${t.name}" as completed?`)) return
+  const completeTournament = async () => {
+    const ok = await confirm({
+      title: 'Mark as completed?',
+      description: `Mark "${t.name}" as completed?`,
+      confirmLabel: 'Complete tournament',
+    })
+    if (!ok) return
     run(async () => {
       const res = await api.post(`/tournaments/${t.id}/complete`)
       if (res.mirrored > 0) say('ok', `Tournament completed — ${res.mirrored} results mirrored to records`)
@@ -496,15 +522,26 @@ export default function AdminTournament() {
     }
   }
 
-  const signupAction = (sid, status) => {
+  const signupAction = async (sid, status) => {
     const labels = { approved: 'approve', rejected: 'reject', withdrawn: 'withdraw' }
-    if (!window.confirm(`Confirm: ${labels[status]} this signup?`)) return
+    const ok = await confirm({
+      title: `${labels[status][0].toUpperCase()}${labels[status].slice(1)} this signup?`,
+      description: `Confirm: ${labels[status]} this signup?`,
+      confirmLabel: labels[status][0].toUpperCase() + labels[status].slice(1),
+      tone: status === 'approved' ? 'default' : 'danger',
+    })
+    if (!ok) return
     run(() => api.put(`/tournaments/signups/${sid}`, { status }), `Signup ${status}`)
   }
 
-  const pairSolos = () => {
+  const pairSolos = async () => {
     if (!pairA || !pairB || pairA === pairB) { say('err', 'Pick two different solo signups'); return }
-    if (!window.confirm('Pair these two solo players into a team?')) return
+    const ok = await confirm({
+      title: 'Pair players?',
+      description: 'Pair these two solo players into a team?',
+      confirmLabel: 'Pair players',
+    })
+    if (!ok) return
     run(async () => {
       await api.post(`/tournaments/${t.id}/pair-solos`, {
         signup_a_id: Number(pairA),
@@ -540,13 +577,24 @@ export default function AdminTournament() {
     }
   }
 
-  const deleteTeam = (tid, label) => {
-    if (!window.confirm(`Remove team "${label}"?`)) return
+  const deleteTeam = async (tid, label) => {
+    const ok = await confirm({
+      title: 'Remove team?',
+      description: `Remove team "${label}"?`,
+      confirmLabel: 'Remove team',
+      tone: 'danger',
+    })
+    if (!ok) return
     run(() => api.del(`/tournaments/teams/${tid}`), 'Team removed')
   }
 
-  const doDraw = (body, confirmMsg) => {
-    if (!window.confirm(confirmMsg)) return
+  const doDraw = async (body, confirmMsg) => {
+    const ok = await confirm({
+      title: 'Publish draw?',
+      description: confirmMsg,
+      confirmLabel: 'Publish draw',
+    })
+    if (!ok) return
     setBusy(true)
     api.post(`/tournaments/${t.id}/draw`, body)
       .then((res) => {
@@ -933,11 +981,11 @@ export default function AdminTournament() {
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-semibold text-muted mb-1">Player 1 *</label>
-                      <PlayerSearchInput strict value={teamP1?.full_name || ''} onChange={() => {}} onPlayerSelect={setTeamP1} placeholder="Search member…" />
+                      <PlayerSearchInput strict value={teamP1?.full_name || ''} onChange={(v) => { if (!teamP1 || v !== teamP1.full_name) setTeamP1(null) }} onPlayerSelect={setTeamP1} placeholder="Search member…" />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-muted mb-1">Player 2 (optional)</label>
-                      <PlayerSearchInput strict value={teamP2?.full_name || ''} onChange={() => {}} onPlayerSelect={setTeamP2} placeholder="Search member…" />
+                      <PlayerSearchInput strict value={teamP2?.full_name || ''} onChange={(v) => { if (!teamP2 || v !== teamP2.full_name) setTeamP2(null) }} onPlayerSelect={setTeamP2} placeholder="Search member…" />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-muted mb-1">Team name (optional)</label>

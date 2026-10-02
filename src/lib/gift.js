@@ -29,14 +29,17 @@ export async function giftUnpaidSessions({ playerId, playerName, unpaidPrivate, 
   })
 }
 
-/** Confirm dialog shared by every surface that offers the gift action. */
-export function confirmGift(playerName, priv, grp, amountOwed) {
-  const total = priv + grp
-  return window.confirm(
-    `Gift ${total} unpaid session${total === 1 ? '' : 's'} to ${playerName}?\n\n` +
-    `  ${priv} private + ${grp} group\n` +
-    `  Amount: EGP 0 (no money recorded)\n` +
-    `  Owed now: EGP ${Number(amountOwed || 0).toLocaleString()}\n\n` +
-    `This clears them from the Unpaid Players report. Any negative balance is settled first.`
-  )
+/**
+ * Confirm dialog shared by every surface that offers the gift action.
+ * Takes the confirm fn from useFeedback() so the prompt is an in-app modal.
+ */
+export function confirmGift(confirm, { playerName, priv, grp, amountOwed }) {
+  const total = Number(priv) + Number(grp)
+  return confirm({
+    title: `Gift ${total} unpaid session${total === 1 ? '' : 's'}?`,
+    description: `This clears ${playerName} from the Unpaid Players report. Any negative balance is settled first.`,
+    details: `${priv} private + ${grp} group\nAmount: EGP 0 (no money recorded)\nOwed now: EGP ${Number(amountOwed || 0).toLocaleString()}`,
+    confirmLabel: 'Gift sessions',
+    tone: 'success',
+  })
 }

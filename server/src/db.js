@@ -62,6 +62,8 @@ export const TABLES = [
   'coach_daily_hours', 'coach_payments', 'push_subscriptions',
   // tournament tables reference users → must come after users (delete order is reversed)
   'tournaments', 'tournament_signups', 'tournament_teams', 'tournament_matches',
+  // journey tables reference users + assessment_templates → last (delete order reversed)
+  'assessment_templates', 'journey_reports', 'journey_items',
 ]
 
 // ---------------------------------------------------------------------------
@@ -146,6 +148,9 @@ const DATE_COLS = {
   tournament_signups: ['created_at', 'updated_at'],
   tournament_teams: ['created_at', 'updated_at'],
   tournament_matches: ['scheduled_at', 'created_at', 'updated_at'],
+  assessment_templates: ['created_at', 'updated_at'],
+  journey_reports: ['created_at', 'updated_at', 'published_at'],
+  journey_items: ['created_at', 'updated_at'],
 }
 const JSON_COLS = {
   results: ['sidea', 'sideb', 'sidea_ids', 'sideb_ids'],
@@ -159,6 +164,7 @@ const DECIMAL_COLS = {
   expenses: ['amount'],
   payments: ['amount'],
   tournaments: ['entry_fee'],
+  journey_reports: ['overall_score'],
 }
 
 function normalizeForPg(table, obj) {

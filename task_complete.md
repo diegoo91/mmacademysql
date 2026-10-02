@@ -357,11 +357,33 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 ---
 
+## Phase 15: Coaching Journey & Progress Reports (2026-10-01)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Assessment structure: 33 skills across 4 pillars (Shots 19 / Fitness 4 / Movement 5 / Game Intelligence 5) as `assessment_templates`, boot-seeded idempotently on both pg + JSON backends | Done | 2026-10-01 |
+| 2 | New tables `journey_reports` (kind initial/monthly, 6-status machine, `UNIQUE(user_id, kind, report_number)`, default `maximum_reports=10`) + `journey_items` (1–10 CHECK constraints) wired into `schema.sql`, `db.js` (`TABLES`/`DATE_COLS`/`DECIMAL_COLS`), `database.js` `DEFAULTS` | Done | 2026-10-01 |
+| 3 | REST API `server/src/routes/journey.js`: templates, self summary, per-user admin view, assessment lifecycle (draft→submitted→in-review→returned→reviewed→published), monthly creation with assessment-first gate + active/duplicate-month guards, whole-number 1–10 validation, completeness gates (submit=33 self-scores, reviewed=admin+final, publish=final), server-computed overall + pillar averages (1dp) + progress %, `notifyUser` + audit on transitions | Done | 2026-10-01 |
+| 4 | Shared UI `src/components/Journey.jsx`: summary cards in exact spec formats (`Sessions completed: 8`, `Report 3 of 10`, `Overall score: 7.2/10`, `Journey progress: 30%` — score and count kept separate), pillar-average chips, grouped 33-skill editors (player / admin / read-only), empty state (explanation + sessions count + Start Your Journey + Initial Assessment), journey timeline, collapsible report cards, status pills | Done | 2026-10-01 |
+| 5 | Profile.jsx: `My Journey` section (players only) between Session History and Session Credits, `#journey` anchor | Done | 2026-10-01 |
+| 6 | UserDetail.jsx: `Journey` tab in the player tab bar — full admin workflow: create monthly report (month picker + gating hints), admin-score/final-score editing with "Finals ← admin scores" helper, start review, return with feedback prompt, mark reviewed, publish, edit a published report | Done | 2026-10-01 |
+| 7 | Decisions: report authorship = admins + coaches via existing `players` permission (zero RBAC changes); completed session = `player_confirmed` slot on/before today (mirrors `enrichPlayer` name matching); players only see published reports fully (returned reports editable, drafts metadata-only) | Done | 2026-10-01 |
+| 8 | Verification: oxlint 0 errors (0 warnings in Journey.jsx), `npm run build` OK, e2e extended with 41 journey checks (RBAC 403s, validation 400s, full lifecycle, progress math) — **141/141 passed** | Done | 2026-10-01 |
+
+---
+
 ## File Changes Summary
 
 ### Backend (server/)
 | File | Changes |
 |------|---------|
+| `server/src/routes/journey.js` | New: coaching journey REST — assessment + monthly report lifecycle, validation, math, notify + audit |
+| `server/src/utils/journey.js` | New: 33-skill template list, PILLARS, status sets, score validation, avg/round1/progress helpers |
+| `server/src/index.js` | `ensureJourneyTables()` boot migration (3 tables + triggers + indexes + 33-skill seed) + `/api/journey` mount |
+| `server/schema.sql` | `assessment_templates` / `journey_reports` / `journey_items` DDL, CHECKs, UNIQUE, FK indexes, updated_at triggers; DROPs in cleanup block |
+| `server/src/db.js` | Journey tables in `TABLES`; `DATE_COLS` + `DECIMAL_COLS` (`overall_score`) entries |
+| `server/src/database.js` | Journey collections in `data` literal + `DEFAULTS` (JSON backend parity) |
+| `server/e2e-all.cjs` | New `[journey]` block — 41 checks; suite now 141 endpoints |
 | `server/schema.sql` | Added `sideA_ids`/`sideB_ids` JSON columns to `results`; pg DDL; `roles` table + seed; `refresh_denylist` table; CHECK constraints; `app_sessions` placement fix; `slots.time` widened to `VARCHAR(20)`; `coach_daily_hours` + `coach_payments` tables |
 | `server/src/db.js` | Added `sideA_ids`/`sideB_ids` to `JSON_COLS`; pg↔app column mapping; `roles` to `TABLES`/`JSON_COLS`/`DATE_COLS`; `removeWhere`; normalize rows before predicate in `findAll`; `DATE_COLS` for slots |
 | `server/src/sql.js` | Rewritten for pg (Knex/pg) |
@@ -397,6 +419,9 @@ All tasks completed from project inception (2026-09-09) through current date.
 ### Frontend (src/)
 | File | Changes |
 |------|---------|
+| `src/components/Journey.jsx` | New: shared `MyJourneySection` (Profile) + `JourneyTab` (UserDetail) — summary cards, 33-skill editors, report cards, timeline, empty state |
+| `src/pages/Profile.jsx` | `My Journey` section (players) after Session History; import |
+| `src/pages/admin/UserDetail.jsx` | `Journey` tab entry + `<JourneyTab userId>` mount; `TrendingUp` icon import |
 | `src/lib/api.js` | Cookie-based boot in `initAuth()` (refresh→me) |
 | `src/pages/admin/Roles.jsx` | New: role permissions management page |
 | `src/pages/admin/Users.jsx` | Role dropdown from GET /roles, baseline hint |

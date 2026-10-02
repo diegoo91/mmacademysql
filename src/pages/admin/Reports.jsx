@@ -3,6 +3,7 @@ import { Calendar, DollarSign, Download, FileText, AlertTriangle, TrendingUp, Tr
 import { api, downloadFile } from '../../lib/api'
 import { giftUnpaidSessions, confirmGift } from '../../lib/gift'
 import { useAuth } from '../../context/AuthContext'
+import { useFeedback } from '../../context/FeedbackContext'
 
 function downloadCSV(filename, headers, rows) {
   const escape = (v) => {
@@ -56,7 +57,9 @@ function DateRangeSelector({ preset, setPreset, from, setFrom, to, setTo }) {
 }
 
 export default function Reports() {
-  const { isAdmin } = useAuth()
+  const { hasPermission } = useAuth()
+  const canViewExtras = hasPermission('dashboard')
+  const { confirm, toast } = useFeedback()
   const [preset, setPreset] = useState('month')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -65,6 +68,7 @@ export default function Reports() {
   const [coachHours, setCoachHours] = useState(null)
   const [coachBalance, setCoachBalance] = useState(null)
   const [unpaidPlayers, setUnpaidPlayers] = useState(null)
+  const [unpaidError, setUnpaidError] = useState(null)
   const [giftingId, setGiftingId] = useState(null)
   const [giftMsg, setGiftMsg] = useState('')
   const [remainingSessions, setRemainingSessions] = useState(null)
@@ -80,7 +84,7 @@ export default function Reports() {
     api.get(`/reports/summary?${params}`).then(setData).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchReport(); if (isAdmin) { fetchCoachHours(); fetchCoachBalance(); fetchUnpaidPlayers(); fetchRemainingSessions() } }, [preset, from, to])
+  useEffect(() => { fetchReport(); if (canViewExtras) { fetchCoachHours(); fetchCoachBalance(); fetchUnpaidPlayers(); fetchRemainingSessions() } }, [preset, from, to])
 
   const fetchCoachHours = () => {
     const params = new URLSearchParams()
@@ -97,12 +101,19 @@ export default function Reports() {
   }
 
   const fetchUnpaidPlayers = () => {
-    api.get('/reports/unpaid').then(setUnpaidPlayers).catch(() => {})
+    setUnpaidError(null)
+    api.get('/reports/unpaid').then(setUnpaidPlayers).catch(err => setUnpaidError(err?.message || 'Failed to load unpaid players'))
   }
 
   const handleGift = async (p) => {
     if (giftingId) return
-    if (!confirmGift(p.name, p.unpaid_private, p.unpaid_group, p.amount_owed)) return
+    const ok = await confirmGift(confirm, {
+      playerName: p.name,
+      priv: p.unpaid_private,
+      grp: p.unpaid_group,
+      amountOwed: p.amount_owed,
+    })
+    if (!ok) return
     setGiftingId(p.id)
     setGiftMsg('')
     try {
@@ -142,7 +153,7 @@ export default function Reports() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      alert(err.message || 'Export failed')
+      toast.error(err.message || 'Export failed')
     }
   }
 
@@ -315,7 +326,14 @@ export default function Reports() {
                 <Download className="w-3 h-3" /> CSV
               </button>
             </h3>
-            {(!unpaidPlayers || !unpaidPlayers.unpaid_players || unpaidPlayers.unpaid_players.length === 0) ? (
+            {unpaidError ? (
+              <div role="alert" className="text-sm text-rose-600 dark:text-rose-400 text-center py-4">
+                Couldn’t load unpaid players.{' '}
+                <button onClick={fetchUnpaidPlayers} className="font-bold underline">Retry</button>
+              </div>
+            ) : !unpaidPlayers ? (
+              <p className="text-sm text-muted text-center py-4">Loading unpaid players…</p>
+            ) : (unpaidPlayers.unpaid_players || []).length === 0 ? (
               <p className="text-sm text-muted text-center py-4">No players with unpaid sessions.</p>
             ) : (
               <div className="max-h-80 overflow-y-auto space-y-2">
@@ -433,7 +451,7 @@ export default function Reports() {
             )}
           </div>
 
-          {isAdmin && coachHours && (
+          {canViewExtras && coachHours && (
             <div className="glass-panel rounded-2xl p-6 border border-theme">
               <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5 text-brand-text" /> Coach Hours
@@ -480,7 +498,7 @@ export default function Reports() {
             </div>
           )}
 
-          {isAdmin && coachBalance && (
+          {canViewExtras && coachBalance && (
             <div className="glass-panel rounded-2xl p-6 border border-theme">
               <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-brand-text" /> Coach Balances (Payroll)

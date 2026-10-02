@@ -18,8 +18,10 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../lib/api'
-import { canonTime, formatSlotTime } from '../lib/time'
+import { canonTime, formatSlotTime, formatDateShort } from '../lib/time'
 import { useAuth } from '../context/AuthContext'
+import { useFeedback } from '../context/FeedbackContext'
+import { useEscapeKey } from '../lib/hooks'
 import { COURTS } from '../data/siteConfig'
 import DeclineChoiceModal from '../components/DeclineChoiceModal'
 
@@ -41,11 +43,6 @@ function toLocalDateStr(d) {
   return `${y}-${m}-${day}`
 }
 
-function formatDateShort(dateStr) {
-  const [, m, d] = dateStr.split('-')
-  return `${Number(d)}/${Number(m)}`
-}
-
 function getDayName(dateStr) {
   const dt = new Date(dateStr + 'T00:00:00')
   return DAY_NAMES[dt.getDay()]
@@ -53,11 +50,13 @@ function getDayName(dateStr) {
 
 export default function Schedule() {
   const { user } = useAuth()
+  const { toast } = useFeedback()
   const navigate = useNavigate()
   const [scheduleView, setScheduleView] = useState('day')
   const [mineOnly, setMineOnly] = useState(false)
   const [scheduleDate, setScheduleDate] = useState(() => toLocalDateStr(new Date()))
   const [showFlyerModal, setShowFlyerModal] = useState(false)
+  useEscapeKey(() => setShowFlyerModal(false), showFlyerModal)
   const [slots, setSlots] = useState([])
   const [myBookings, setMyBookings] = useState([])
   const [loading, setLoading] = useState(true)
@@ -104,7 +103,7 @@ export default function Schedule() {
   const fetchSlots = () => {
     setLoading(true)
     setError('')
-    // All slots - a fixed today+/-30 window (computed once on mount) hid any day
+    // All slots — a fixed today±30 window (computed once on mount) hid any day
     // you navigate outside it (e.g. browsing back past 31/08), even when slots exist.
     api.get('/slots?visible_only=1')
       .then(setSlots)
@@ -125,7 +124,7 @@ export default function Schedule() {
       await api.put(`/slots/${slotId}/confirm`)
       setSlots(prev => prev.map(s => s.id === slotId ? { ...s, status: 'player_confirmed' } : s))
     } catch (err) {
-      alert(err.message || 'Failed to confirm')
+      toast.error(err.message || 'Failed to confirm')
     }
   }
 
@@ -240,10 +239,10 @@ export default function Schedule() {
       <div className="absolute top-10 left-1/4 w-[500px] h-[300px] bg-brand/10 rounded-full blur-[140px] pointer-events-none" />
 
       {showFlyerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/85 backdrop-blur-md animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme/85 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
           <div className="relative max-w-2xl w-full max-h-[90vh] bg-surface rounded-3xl overflow-hidden border border-theme p-2 shadow-2xl flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-theme">
-              <h3 className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
+              <h3 id="modal-title-0" className="font-heading font-extrabold text-theme text-lg flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-brand-text" />
                 <span>Official MM Padel Academy Pricing Flyer</span>
               </h3>
@@ -419,6 +418,9 @@ export default function Schedule() {
               </div>
             ) : (
               <div className="glass-panel rounded-3xl p-6 border border-theme overflow-x-auto mb-8">
+                {weekTimes.length === 0 ? (
+                  <p className="text-sm text-muted py-8 text-center">No sessions scheduled this week — all courts are free. Book a slot to get started.</p>
+                ) : (
                 <div className="min-w-[950px]">
                   <div className="grid grid-cols-8 gap-3 pb-4 border-b border-theme text-center font-heading text-sm font-extrabold text-theme">
                     <div className="text-left text-muted text-xs uppercase">Time Slot</div>
@@ -435,28 +437,48 @@ export default function Schedule() {
                         </div>
                         {weekDates.map(date => {
                           const daySlots = slotsByDate.get(date) || []
-                          const s = daySlots.find(x => canonTime(x.time) === time && x.court === 1)
-                          const s2 = daySlots.find(x => canonTime(x.time) === time && x.court === 2)
-                          const s3 = daySlots.find(x => canonTime(x.time) === time && x.court === 3)
-                          const c1 = s?.player_text || ''
-                          const c2 = s2?.player_text || ''
-                          const c3 = s3?.player_text || ''
-                          const empty = !c1 && !c2 && !c3
-                          const isMine = mySlotKeys.has(`${date}|${time}|1`) || mySlotKeys.has(`${date}|${time}|2`) || mySlotKeys.has(`${date}|${time}|3`) || mySessionKeys.has(`${date}|${time}|1`) || mySessionKeys.has(`${date}|${time}|2`) || mySessionKeys.has(`${date}|${time}|3`)
+                          const cellSlots = [1, 2, 3].map(c => daySlots.find(x => canonTime(x.time) === time && x.court === c))
+                          const anyBooked = cellSlots.some(Boolean)
+                          const isMine = [1, 2, 3].some(c => mySlotKeys.has(`${date}|${time}|${c}`) || mySessionKeys.has(`${date}|${time}|${c}`))
+                          const coachNames = anyBooked
+                            ? [...new Set(cellSlots.filter(Boolean).map(x => x.coach_name).filter(Boolean))]
+                            : []
                           return (
-                            <div key={date} className={`p-2.5 rounded-xl border text-[11px] font-bold text-center leading-snug ${
-                              empty ? 'bg-surface text-muted border-theme'
+                            <div key={date} className={`p-1.5 rounded-xl border text-[11px] font-bold text-center leading-snug ${
+                              !anyBooked ? 'bg-surface text-muted border-theme'
                               : isMine ? 'bg-brand/15 border-brand-text/40 text-brand-text'
                               : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
                             }`}>
-                              {empty ? 'Available' : (
-                                <span className="block">{[c1 && `C1: ${c1}`, c2 && `C2: ${c2}`, c3 && `C3: ${c3}`].filter(Boolean).join(' / ')}{isMine ? ' ★' : ''}</span>
+                              {!anyBooked ? 'Available' : (
+                                <div className="flex flex-col gap-1">
+                                  {cellSlots.map((s, i) => {
+                                    const c = i + 1
+                                    const mine = mySlotKeys.has(`${date}|${time}|${c}`) || mySessionKeys.has(`${date}|${time}|${c}`)
+                                    if (!s) {
+                                      return <span key={c} className="text-[9px] font-bold text-muted bg-slate-500/10 border border-theme rounded px-1 py-0.5">C{c} Free</span>
+                                    }
+                                    const awaiting = s.status === 'schedule_approved' && mine
+                                    const pending = s.status === 'payment_pending'
+                                    return (
+                                      <span
+                                        key={c}
+                                        title={`Court ${c}: ${s.player_text}`}
+                                        className={`text-[9px] font-bold rounded px-1 py-0.5 truncate ${
+                                          awaiting ? 'bg-purple-500/25 text-purple-300'
+                                          : pending ? 'bg-amber-500/25 text-amber-300'
+                                          : mine ? 'bg-brand/30 text-brand-text'
+                                          : 'bg-rose-500/25 text-rose-300'
+                                        }`}
+                                      >
+                                        C{c}: {s.player_text}{mine ? ' ★' : ''}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
                               )}
-                              {!empty && (() => {
-                                const allSlots = (slotsByDate.get(date) || []).filter(x => canonTime(x.time) === time)
-                                const coachNames = [...new Set(allSlots.map(x => x.coach_name).filter(Boolean))]
-                                return coachNames.length > 0 ? <span className="block text-[9px] text-amber-400 mt-0.5">{coachNames.join(', ')}</span> : null
-                              })()}
+                              {coachNames.length > 0 && (
+                                <span className="block text-[9px] text-amber-400 mt-0.5">{coachNames.join(', ')}</span>
+                              )}
                             </div>
                           )
                         })}
@@ -464,6 +486,7 @@ export default function Schedule() {
                     ))}
                   </div>
                 </div>
+                )}
               </div>
             )}
           </>

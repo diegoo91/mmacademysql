@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { ArrowRightLeft, BarChart3, Calendar, CheckCircle2, Clock, FileUp, RefreshCw, Send, TrendingUp, Users, UserX, XCircle } from 'lucide-react'
 import { api } from '../../lib/api'
-import { formatSlotTime } from '../../lib/time'
+import { formatSlotTime, formatDateMed } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
+import { useFeedback } from '../../context/FeedbackContext'
 
-function StatCard({ icon: Icon, label, value, color = 'lime' }) {
+function StatCard({ icon: Icon, label, value, sub, color = 'lime' }) {
   const colors = {
     lime: 'bg-brand/10 text-brand-text border-brand-text/20',
     blue: 'bg-blue-400/10 text-blue-400 border-blue-400/20',
@@ -22,12 +23,14 @@ function StatCard({ icon: Icon, label, value, color = 'lime' }) {
         <span className="text-xs font-semibold text-muted uppercase tracking-wider">{label}</span>
       </div>
       <p className="text-3xl font-black text-theme font-heading">{value}</p>
+      {sub && <p className="text-[11px] text-muted mt-1.5 font-semibold">{sub}</p>}
     </div>
   )
 }
 
 export default function Dashboard() {
-  const { isAdmin, loading: authLoading } = useAuth()
+  const { hasPermission, loading: authLoading } = useAuth()
+  const { toast } = useFeedback()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -35,6 +38,7 @@ export default function Dashboard() {
   const [decidingId, setDecidingId] = useState(null)
   const [proposeForm, setProposeForm] = useState(null)
   const [proposeData, setProposeData] = useState({ proposed_date: '', proposed_time: '' })
+  const [confirmDenyId, setConfirmDenyId] = useState(null)
   const [rolloverLoading, setRolloverLoading] = useState(false)
   const [rolloverMsg, setRolloverMsg] = useState('')
 
@@ -54,12 +58,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (authLoading) return
     api.get('/dashboard').then(setData).catch(e => setError(e.message)).finally(() => setLoading(false))
-    if (isAdmin) {
+    if (hasPermission('bookings')) {
       api.get('/booking-requests?status=pending')
         .then(data => setPendingRequests(Array.isArray(data) ? data : []))
         .catch(() => {})
     }
-  }, [authLoading, isAdmin])
+  }, [authLoading, hasPermission])
 
   const handleDecide = async (id, decision, extra = {}) => {
     setDecidingId(id)
@@ -67,7 +71,9 @@ export default function Dashboard() {
       await api.put(`/booking-requests/${id}/decide`, { decision, ...extra })
       setPendingRequests(prev => prev.filter(r => r.id !== id))
       setProposeForm(null)
-    } catch {}
+    } catch (e) {
+      toast.error(e.message || 'Failed to update request')
+    }
     setDecidingId(null)
   }
 
@@ -84,7 +90,7 @@ export default function Dashboard() {
           <h1 className="font-heading text-3xl font-black text-theme">Dashboard</h1>
           <p className="text-muted text-sm mt-1">Academy overview and key metrics</p>
         </div>
-        {isAdmin && (
+        {hasPermission('dashboard') && (
           <div className="flex flex-col items-end gap-1">
             <button
               onClick={handleRollover}
@@ -100,7 +106,7 @@ export default function Dashboard() {
       </div>
 
       {/* Pending Requests Strip */}
-      {isAdmin && pendingRequests.length > 0 && (
+      {hasPermission('bookings') && pendingRequests.length > 0 && (
         <div className="glass-panel rounded-2xl border border-amber-400/30 p-6 bg-amber-400/5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-theme flex items-center gap-2">
@@ -137,10 +143,10 @@ export default function Dashboard() {
                         <option value="">Time</option>
                         {['14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'].map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
-                      <button onClick={() => handleDecide(r.id, 'approved', proposeData)} disabled={!proposeData.proposed_date || !proposeData.proposed_time || decidingId === r.id} className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg disabled:opacity-30">
+                      <button onClick={() => handleDecide(r.id, 'approved', proposeData)} disabled={!proposeData.proposed_date || !proposeData.proposed_time || decidingId === r.id} aria-label="Send proposed time" className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg disabled:opacity-30">
                         <Send className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setProposeForm(null)} className="p-1.5 text-slate-400 hover:bg-slate-500/10 rounded-lg">
+                      <button onClick={() => setProposeForm(null)} aria-label="Cancel proposed time" className="p-1.5 text-slate-400 hover:bg-slate-500/10 rounded-lg">
                         <XCircle className="w-4 h-4" />
                       </button>
                     </div>
@@ -154,9 +160,20 @@ export default function Dashboard() {
                           <Send className="w-4 h-4" />
                         </button>
                       )}
-                      <button onClick={() => handleDecide(r.id, 'denied')} disabled={decidingId === r.id} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-30" title="Deny">
-                        <XCircle className="w-4 h-4" />
-                      </button>
+                      {confirmDenyId === r.id ? (
+                        <div className="flex items-center gap-1 px-1 py-1 rounded-lg bg-rose-500/10 border border-rose-500/30">
+                          <button onClick={() => { setConfirmDenyId(null); handleDecide(r.id, 'denied') }} disabled={decidingId === r.id} aria-label="Confirm deny" title="Confirm deny" className="text-rose-400 hover:text-rose-300 disabled:opacity-30">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setConfirmDenyId(null)} aria-label="Cancel deny" title="Cancel" className="text-slate-400 hover:text-slate-300">
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmDenyId(r.id)} disabled={decidingId === r.id} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-30" title="Deny">
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -166,13 +183,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard icon={Users} label="Users" value={stats.totalUsers} color="blue" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard icon={Users} label="Users" value={stats.totalUsers} sub={`${stats.totalPlayers} players`} color="blue" />
         <StatCard icon={UserX} label="Players" value={stats.totalPlayers} color="purple" />
         <StatCard icon={BarChart3} label="Results" value={stats.totalResults} color="amber" />
-        <StatCard icon={Calendar} label="Bookings" value={stats.totalBookings} color="lime" />
-        <StatCard icon={TrendingUp} label="Revenue" value={`EGP ${stats.totalRevenue.toLocaleString()}`} color="cyan" />
-        <StatCard icon={FileUp} label="Occupancy" value={`${stats.occupiedSlots || 0}/${stats.totalSlots || 0} (${stats.occupancyRate}%)`} color="rose" />
+        <StatCard icon={Calendar} label="Bookings" value={stats.totalBookings} sub={`${stats.activeBookings || 0} active`} color="lime" />
+        <StatCard icon={TrendingUp} label="Revenue" value={`EGP ${stats.totalRevenue.toLocaleString()}`} sub="approved payments" color="cyan" />
+        <StatCard icon={FileUp} label="Occupancy" value={`${stats.occupancyRate}%`} sub={`${stats.occupiedSlots || 0} of ${stats.totalSlots || 0} slots filled`} color="rose" />
       </div>
 
       {/* Schedule Overview */}
@@ -273,7 +290,10 @@ export default function Dashboard() {
                   <tr key={c.user_id}>
                     <td className="py-3 text-theme font-medium">{c.name}</td>
                     <td className="py-3 text-brand-text font-bold">{c.private_balance}</td>
-                    <td className="py-3 text-brand-text font-bold">{c.group_balance}</td>
+                    <td className="py-3 text-brand-text font-bold">
+                      {c.group_balance}
+                      {(c.group_from_private ?? 0) > 0 && <span className="ml-1 text-[10px] text-muted font-semibold">· up to {c.group_balance + c.group_from_private} as group</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -305,7 +325,7 @@ export default function Dashboard() {
                     <td className="py-3 text-theme">{ib.filename}</td>
                     <td className="py-3 text-theme">{ib.row_count}</td>
                     <td className="py-3 text-theme">{ib.user_name || 'Unknown'}</td>
-                    <td className="py-3 text-muted text-xs">{new Date(ib.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 text-muted text-xs">{formatDateMed(ib.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

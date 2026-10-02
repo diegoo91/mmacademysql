@@ -22,14 +22,14 @@ if (!existsSync(DB_PATH) && existsSync(OLD_DB_PATH)) {
 // This setup is for testing/demo only. Production data would require either Railway's paid
 // persistent volumes or migrating to a real database (Postgres, SQLite on volume, etc.).
 
-let data = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], roles: [], coach_daily_hours: [], coach_payments: [] }
+let data = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], roles: [], coach_daily_hours: [], coach_payments: [], assessment_templates: [], journey_reports: [], journey_items: [] }
 
 if (existsSync(DB_PATH)) {
   try { data = JSON.parse(readFileSync(DB_PATH, 'utf-8')) } catch { /* start fresh */ }
 }
 
 // Ensure all expected collections exist (handles adding new collections)
-const DEFAULTS = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], court_defaults: [], roles: [], coach_daily_hours: [], coach_payments: [] }
+const DEFAULTS = { users: [], results: [], slots: [], bookings: [], import_batches: [], comments: [], notifications: [], conversion_requests: [], expenses: [], booking_requests: [], payments: [], audit_logs: [], court_defaults: [], roles: [], coach_daily_hours: [], coach_payments: [], assessment_templates: [], journey_reports: [], journey_items: [] }
 for (const [key, val] of Object.entries(DEFAULTS)) {
   if (!Array.isArray(data[key])) data[key] = val
 }

@@ -3,6 +3,19 @@ import * as api from '../lib/api'
 
 const AuthContext = createContext()
 
+// Landing path after login — first module the user is permitted to open.
+// superadmin/admin always land on the dashboard; coach lands on dashboard or
+// schedule per their Roles-tab ticks; anyone with no admin module goes home.
+export function adminLandingPath(u) {
+  if (!u) return '/schedule'
+  if (u.role === 'superadmin' || u.role === 'admin') return '/admin'
+  if (u.role !== 'coach') return '/schedule'
+  const p = u.permissions || []
+  if (p.includes('dashboard')) return '/admin'
+  if (p.includes('schedule')) return '/admin/schedule'
+  return '/'
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -44,7 +57,7 @@ export function AuthProvider({ children }) {
   const isSuperAdmin = user?.role === 'superadmin'
   const hasPermission = useCallback((module) => {
     if (!user) return false
-    if (user.role === 'superadmin') return true
+    if (user.role === 'superadmin' || user.role === 'admin') return true
     return user.permissions?.includes(module) || false
   }, [user])
 

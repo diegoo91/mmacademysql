@@ -400,3 +400,206 @@
 **DB note:** test residue scrubbed again (tournaments/test-users/audit = 0). User manual repro restored intact: tournament "Test" (id 38, fee 700), signup 63 pending for Magdy, payment 72 PAY-0023 payment_pending, admin notifications 768-770 (new_payment) + 963-965 (tournament_signup). `payments` also holds 22 pre-existing real historical payments - never touched.
 
 **Resume here:** user reviews on localhost (the "Test" tournament signup or create a new fee tournament). Commit/push ONLY on explicit approval - prod deploy (Railway+Pages+Supabase) needs a separate OK.
+
+---
+
+## Design/UX pass + verification (2026-09-29) - localhost only
+
+**Design doc:** `Stragent.md` rewritten gym -> padel academy design agent (3-court identity, slot/payment/tournament UX rules, 6 themes, naming `mm-padel-*`, localhost verification section).
+
+**Frontend:**
+- `src/pages/Book.jsx`: day grid 2 -> 3 courts (`COURTS`/`COURT_LIST`, `grid-cols-4`); week mode got a court picker (was hardcoded `court: 1`); new group partner field (`PlayerSearchInput`, endpoint `/tournaments/players/search?q=`, free-text fallback when logged out) passed as `partner` through `/payment` state and from-balance POST.
+- `src/pages/Payment.jsx`: forwards `partner` to `POST /bookings`; WhatsApp confirm message includes partner.
+- `server/src/routes/bookings.js`: `slotPlayerText()` - group slots store `player_text: "You / Partner"` on `POST /` and `POST /from-balance` (display only, no billing change).
+- `src/pages/Home.jsx`: pricing cards derived from `PRICING` (`PricingTierCard`, single source of truth); gallery filter buttons `aria-pressed` + decorative video `aria-hidden`.
+- `src/pages/Schedule.jsx`: week cell renders per-court status badges (occupied mine/pending/awaiting/free) instead of one joined string; empty week state added.
+- `src/components/Footer.jsx`: removed dead Instagram/Facebook icon spans + dead Privacy/Terms spans (no URLs exist; WhatsApp + tel links kept).
+- `src/pages/admin/ScheduleManager.jsx`: removed always-failing "Toggle Private/Group" menu item (`toggle-type` route 400s since `validatePlayerCount` landed - private<=1 name, group 2-4, so no transition is legal); Edit flow still changes type with players in one validated request. User-approved decision.
+
+**Verification (all green):**
+- `server/e2e-all.cjs`: **100/100** (was 82/3 then 99/1 during fixes). Real suite bugs fixed: name collisions (signup name reused by later tests), slots test lacked `balanceOverride: 'free'`, results sideB user was deleted before use, and an unmarked `force-change-password` was silently resetting the ADMIN password to `TestPass123!` every run (now restores `adminPass`; admin hash restored to `.env` value). Cleanup runner added (was never executed despite the header comment) + reject-payment and import-slot cleanup - two consecutive runs leave **0 residue** (verified).
+- `npx oxlint`: 0 errors; `npm run build`: OK.
+- DB scrub: 74 stale E2E records removed (6 users, 4 payments, 44+10 notifications, 10 import batches); residue check = 0 everywhere.
+- Ports left DOWN (API 5174 stopped after sweep; PG 5432 untouched). Temp scripts/logs removed; `backend.log.prev`/`frontend.log.prev` deleted.
+
+**Resume here:** nothing in-flight; all changes uncommitted (commit ONLY on explicit approval; no prod contact).
+
+---
+
+## Home visible upgrades + full UI audit + Wave 1 fixes (2026-09-30) - localhost only
+
+**Home (visible):** hero (glass eyebrow pill + two-line headline + gold-check glass chips), pricing cards (`approx X EGP / session` + gold BEST chip/ring on cheapest rate rows), gallery lightbox (prev/next, Esc/arrow keys, scroll-lock, Maximize2 hover badge), section nav dots (label `animate-fadeIn`, hides near footer). TDZ crash fixed (lightbox effect moved below `filteredGallery`).
+
+**Full audit:** 5 parallel explore agents over 40 UI files vs `Stragent.md` -> ~90 findings (30 high / 50 med / 10 low) reported in 8 groups (domain, money-trust, a11y, theming, states, nav/roles, dates, UX details). Key claims personally verified (missing themes, @theme gaps, coach guard, effective_group).
+
+**Wave 1 fixes (all verified):**
+- Domain: Court 4 removed from GuestBooking/admin Payments/Profile (now `COURT_OPTIONS` from `COURTS=3`); Book tierTag from `PRICING`; Home/Footer `COURTS` + EGP; `CONTACT.whatsappUrl/whatsappLabel` in siteConfig (Footer + Payment FAB use it).
+- Money-trust: Payment ref-copy button + rate breakdown + error fallback copy; Profile `user.effective_group` (server truth for group tier cap); conversion-requests GET `converted_count` + ScheduleManager uses it; Book inline `balanceError` (no more alert()).
+- A11y: id/htmlFor in Login/LoginModal/SignUp, skill radiogroup + password 8->10, AdminLayout aria-labels/aria-expanded, Dashboard propose send/cancel + two-step Deny confirm, Expenses/Results delete aria-labels, Navbar fmtStamp + coach Dashboard link -> /admin/schedule + Unread badge + aria-expanded on theme/bell/hamburger, Home review form (star aria-pressed, textarea aria-label, disabled reason, status colors), Book session cards -> radiogroup/keyboard.
+- PlayerSearchInput rewritten: combobox ARIA (aria-expanded/controls/activedescendant), listbox/option roles, status rows (empty/error), onChange now fires on every keystroke; strict callers in Tournament.jsx + admin Tournament.jsx now clear stale selection on edit; ScheduleManager handlers verified safe.
+- Theming: `@theme inline { --color-surface/theme/muted }` replaces plain token classes (hover:bg-surface etc. now compile - verified in dist CSS); 5 missing palettes built (.theme-ocean/forest/sunset/royal/contrast = dark-family, full var sets + slate overrides); ThemeContext THEMES 2->7 + applyTheme removes all classes (desktop picker picks them up automatically); index.html pre-paint already aligned. Reduced-motion extended (animate-fadeIn/pulse-glow/pulse/bounce + scroll-behavior auto).
+- States: Payments delete -> consequence modal (ref/player/EGP/credited/settled + Escape/backdrop); Reports unpaid players loading/error/empty split (Retry); Expenses fetch error state + Retry + delete error surfaced.
+
+**Verification:** `npx oxlint` 0 errors; `npm run build` OK (x4 checkpoints); dist CSS confirmed to contain hover\:bg-surface:hover + theme-* palettes; frontend :5173 UP (200), API :5174 down (start for e2e).
+
+**Not done (Wave 2+):** pagination (Users/Payments), UserDetail tabs/layout/balance note, admin modal a11y sweep, KPI rework, date helpers (formatDateShort ambiguity), server quote endpoint for conversions, Profile totalPrivateRemaining, `bg-brand text-white` -> `text-slate-900` contrast sweep (45 matches, user decision), rose-500 destructive buttons 3.7:1, remaining native alert()/confirm() sweep, e2e suite rerun (needs API up).
+
+**Resume here:** Wave 1 complete, all uncommitted (commit ONLY on explicit approval; no prod contact).
+
+**Correction (same day):** user does not like the new background/palette colors -> FULL revert of the theming-wave color changes: `@theme inline` block removed + original plain token classes restored (`.bg-surface/.bg-theme/.text-theme/.text-muted/.border-theme/.divide-theme`), the 5 `.theme-*` palettes deleted from index.css, ThemeContext back to Dark/Light only (plus guard: unknown stored `mm_padel_theme` value resets to `dark`), index.html pre-paint clamped to dark/light. Reduced-motion additions kept (not color). Non-color Wave 1 fixes (a11y, modals, states, money-trust, domain) kept. Verified: oxlint 0 errors, build OK, dist CSS has plain `.bg-surface` and no `theme-ocean`. **e2e-all.cjs: 100/100, 0 residue** (API :5174 was already running; vite :5173 UP).
+
+---
+
+## Nav tweaks + Home simplification pass (2026-09-30) - localhost only
+
+**Nav:** "Guest Booking" tab removed from header (guest flow stays inside /book -> /guest-booking link); "Schedule" link now signed-in only (Navbar navLinks + Footer quick link).
+
+**Home auto-scroll:** guided tour on load (1 section / 4.5s), pauses on wheel/touch/key/mousedown, resumes after 10s idle, stops at last section, skips while lightbox open/footer visible/tab hidden (lastInteractionRef persists across effect re-runs).
+
+**Home simplification (simpler / professional / attractive):**
+- Removed marquee strip + marqueeItems; hero overlays cut 8->4 (no float blobs), chips row removed, shine animation + btn-sheen + hover-scale dropped (headline keeps static gradient), gold CTA simplified.
+- Method + Why MM merged into single #method section (steps x3 + why x4); LEVEL_PATHS block, TV card, levelIcons, id="why" topic removed (HOME_TOPICS now 9 entries - rail + auto-scroll follow).
+- Uniform section headers: eyebrow + h2 (3xl/4xl) + one-line sub, mb-14 everywhere; backgrounds plain except Pricing tint.
+- One CTA system: green primary (bg-brand) for all section CTAs, surface+hairline outline secondary, gold reserved for hero + Best Value; btn-sheen gone.
+- Cards unified: glass-card rounded-2xl + hover:-translate-y-1 (team/method/why/programs/reviews/contact); dead bg-surface/60 overrides removed (unlayered .glass-card always won anyway).
+- Pricing: computed featuredType (lower best-rate) gets gold ring + "Best Value" badge replacing per-card badge; per-row Best chips unchanged.
+- Gallery: "Evening Play" filter dropped (All shows all 6), static Live-Clip dot; Reviews: top 3 default + Show More (>3), header sub added; FAQ/Contact header subs + normalized card bg; CTA band -> bg-brand/10, green primary + brand outline secondary; icon-bounce removed page-wide.
+
+**Verification:** oxlint 0 errors (only pre-existing set-state-in-effect warning), npm run build OK. Frontend :5173 HMR live. Visual pass = user review.
+
+**Resume here:** all uncommitted (commit ONLY on explicit approval; no prod contact).
+
+---
+
+## Wave 2a: native dialogs removed + modal a11y (2026-09-30) - localhost only
+
+**New shared feedback system** (`src/context/FeedbackContext.jsx`, mounted in App.jsx):
+- `useFeedback()` -> `{ confirm, prompt, toast }`.
+- `confirm({title, description, details, confirmLabel, tone})` -> Promise<boolean>; promise-based in-app modal (role=dialog, aria-modal, labelled, Escape + backdrop cancel, focus on confirm, body scroll lock, danger/success/default tones).
+- `prompt({title, label, defaultValue, ...})` -> Promise<string|null> with input field (replaces native prompt()).
+- `toast.info/success/error/warning` -> non-blocking stack top-right (role=status, aria-live=polite, 5s auto-dismiss, dismiss button, whitespace-pre-line).
+
+**Native dialog sweep (38 -> 0):** all alert()/confirm()/prompt() in src replaced:
+- alert -> toast.error (errors) / toast.success (Payments settlement info).
+- confirm -> await confirm({...}) in Payments (reject), UserDetail (expire), Tournament admin (8: open/close reg, delete, complete, signup, pair, remove team, publish draw), ScheduleManager surfaced 4 previously silent `catch {}` + toast errors.
+- prompt -> await prompt (UserDetail write-off x2, incl. reason field).
+- `lib/gift.js` confirmGift(confirm, {playerName, priv, grp, amountOwed}) now returns the shared modal promise (both Reports + UserDetail callers updated).
+- Also converted native alerts in Profile, Schedule, Users (export), Expenses, Reports.
+
+**Modal a11y sweep (30 modals):**
+- All 30 `fixed inset-0 z-50` backdrops now have role="dialog" + aria-modal + aria-labelledby -> id on their title (scripted pass + manual fixes for 4 distant titles).
+- `useEscapeKey` hook (`src/lib/hooks.js`) wired: Users (5 modals), UserDetail (PaymentModal + 4 inline confirm dialogs), Results (3), ScheduleManager (addSlot/balanceWarning/pendingOverride + EditSlot pendingOverride-first Escape), Tournament form, Schedule/Book flyer modals, LoginModal (guarded by isLoginModalOpen), Profile PlayerResultModal, DeclineChoiceModal (guarded while loading), Expenses (Add + delete), BalanceControl.
+- ExpenseModal/EditSlotModal/BalanceControl also got backdrop-click close (panel stopPropagation).
+- Skipped: ForcePasswordChange overlay (intentionally undismissable), Home lightbox (done in Wave 1).
+
+**Verification:** oxlint 0 errors; `npm run build` OK. e2e unaffected (backend untouched).
+
+**Resume here (Wave 2 backlog):** pagination Users/Payments, UserDetail tabs/layout, Dashboard KPI rework, date-helper dedupe, `bg-brand text-white` contrast decision (3.08:1 - fails AA; needs user choice), rose-500 destructive buttons consistency. All uncommitted (commit ONLY on explicit approval; no prod contact).
+
+## Wave 2b: date helpers dedupe + contrast decision (2026-09-30) - localhost only
+
+- **Contrast decision (user):** keep `bg-brand` + white text as-is (3.08:1 accepted; do not re-raise, do NOT sweep to dark text / do NOT darken brand).
+- **Date helpers centralized** in `src/lib/time.js`: added `formatDateShort` (d/m) and `formatDateMed` (02 Sep 2026, fixed en-GB so output is locale-independent + null/invalid -> em dash).
+- Removed duplicate `formatDateShort` from Schedule.jsx and ScheduleManager.jsx (identical copies) -> both now import from lib/time.
+- Replaced inline `new Date(x).toLocaleDateString()` (browser-locale dependent) in admin Dashboard (created_at), Users (created_at), UserDetail (joined + cycle_expires_at) with `formatDateMed`.
+- Left as-is: lib/tournament.js fmtDate/fmtDateTime (tournament-scoped), Navbar fmtStamp, receiptPDF generated date.
+- Verification: oxlint 0 errors, npm run build OK.
+
+**Still open (Wave 2 backlog):** pagination for admin Users list (backend already supports page/limit in routes/users.js) + Payments (route has none - needs route work), UserDetail tabs/layout (880-line single scroll), Dashboard KPI rework, rose-500 destructive-button consistency. All uncommitted (commit ONLY on explicit approval; no prod contact).
+
+## 2026-09-30 — Wave 2c: pagination + Profile debt/credits
+
+- **Users + Payments tables paginated (client-side):** `PAGE_SIZE = 25` in both; page state resets on search/filter change; footer shows `Showing X–Y of Z` + Prev / `Page N of M` / Next (hidden when under 25 rows). Instant search kept (all rows still in memory, only 25 in DOM). No backend change — Payments route has no page/limit, client-side avoided route work; Users route already supports it if ever needed.
+- **Profile `totalPrivateRemaining` + debt (Stragent.md:167 "remaining private/group, cycle, debt"):**
+  - Cards now render `totalPrivateRemaining` / `totalGroupRemaining` (was duplicate inline `max(0, cycle+legacy)` math — same value, single source now).
+  - `/auth/me` (`server/src/routes/auth.js` `safeUserPayload`) now returns `debt_private` / `debt_group` (>= 0 magnitudes, same convention as `users.js` enrichPlayer).
+  - Profile shows `Outstanding: X private · Y group owed — settle at the academy.` (rose) inside the credits panel AND inside the "No active package" empty state — debt was previously invisible to players (auth payload clamps legacy to >= 0, so client could not detect it).
+  - Verified: oxlint 0 errors, client build OK, `node --check auth.js` OK.
+- Server stayed up throughout (localhost only). No commits.
+
+## 2026-09-30 - Wave 2d: UserDetail tabs, Dashboard KPIs, conversion quote endpoint (localhost only)
+
+- **UserDetail tabs (Stragent.md:453 "Avoid displaying all information simultaneously. Use sections/tabs"):**
+  - Added `tab` state + tab bar (matches ScheduleManager pill style, `role=tablist`/`role=tab`/`aria-selected`): **Overview | Balances | Sessions | Payments** (Payments tab only when `canPay`).
+  - Top stays always-visible per spec: header/quick actions, contact grid, then money row now `sm:grid-cols-3` = Amount Owed + Total Paid + **new merged Remaining card** (`5P · 0G`, "1P = 2G · this month X/Y", full-width on mobile per Stragent:434).
+  - Overview: used-sessions stats (4 tiles; removed the duplicate "Remaining" tile now shown in the merged card) + Notes. Balances: legacy/cycle/debt/expiry/write-off panel. Sessions: session history. Payments: payment history (empty state now shows instead of hiding the panel).
+- **Dashboard KPI rework:**
+  - KPI grid `xl:grid-cols-6` -> `sm:grid-cols-2 lg:grid-cols-3` (no more 6-across squeeze); StatCard gained a `sub` line: Users "N players", Bookings "N active", Revenue "approved payments", Occupancy now `27%` big + "12 of 45 slots filled" (was unreadable `12/45 (27%)`).
+  - `handleDecide` silent `catch {}` (old line 71) now surfaces `toast.error` via FeedbackContext.
+  - Session Credits table: group cell now shows `· up to X as group` when `group_from_private > 0` (same money-truth note as Reports/UserDetail/Profile).
+- **Server quote endpoint for conversions:** `GET /api/conversion-requests/quote?from=private|group&count=N[&player_id=]` in `server/src/routes/conversion-requests.js`.
+  - Mirrors **approval math** (legacy buckets only - cycle package stays as-is, matching PUT /:id/approve): returns `{max, yields, allowed, reason, legacy_*, effective_*}`. player_id != self requires `conversions` permission (getUserPermissions).
+  - Fixes the client-side gap where the form's max used effective balances (cycle credits) but approval converts legacy only - now the UI gets `allowed:false` + reason ("Active package credits stay with this cycle...") and the submit button disables.
+  - Profile `ConversionRequestButton` wired: fetches quote on open/from/count change, uses `quote.max`/`quote.yields`, shows `quote.reason`, disables submit when not allowed. Fallbacks keep old client math if the fetch fails.
+  - Live-verified: login OK, `quote?from=private` + `from=group` return expected JSON, `GET /` list unaffected.
+- **e2e suite rerun: 100 passed, 0 failed, 0 skipped** (e2e-all.cjs needs ADMIN_EMAIL/ADMIN_PASSWORD exported from server/.env in the shell - it does not load .env itself).
+- **rose-500 destructive buttons (3.7:1 white-on-rose):** keep as-is by the same user decision as `bg-brand` (do not sweep to dark text / do not darken).
+- **Concurrent-writer note:** another session/writer touched AuthContext/App/AdminLayout/Dashboard during this work (RBAC split: `canEdit`(users)/`canPay`(dashboard)/`canConvert`(conversions) + `hasPermission(module)`); user chose "continue everywhere, accept conflicts". UserDetail tab work coexists with those edits; lint+build green after merge.
+- Verified: oxlint 0 errors, client build OK, `node --check` on edited server files, e2e 100/100. All uncommitted (commit ONLY on explicit approval; no prod contact).
+- **Remaining backlog:** none of the original Wave 2 items are open. Candidates (not started, no audit spec): PlayerSearchInput/other UX polish, e2e re-run after future server changes.
+
+## 2026-09-30 - Coaches moved off Home to its own nav tab (localhost only)
+
+- **Home:** removed the "Meet the Coaches" / OUR TEAM section (`id="team"`), the `coaches` state + `/users/public/coaches` fetch, the `fileUrl` import, and the `team` entry from `HOME_TOPICS` (8 topics now; scroll-spy dep cleaned from `[coaches.length]` -> `[]`). No other page linked to `#team`.
+- **New page `src/pages/Coaches.jsx` (route `/coaches`):** featured **Head Coach Mahmoud Moharam** card (gold ring/badge, bio blurb + pull-quote "Every rally has a lesson - train with purpose."), then "The Coaching Team" grid from the public coaches API (same card style as Home; filters out a DB coach row named Mahmoud Moharam so he never shows twice).
+- **Nav tab:** `Coaches` added to Navbar `navLinks` immediately after `Book a Session` (desktop pill nav + mobile menu both map from navLinks) and to Footer Quick Links right after Book Session.
+- **App.jsx:** import + `<Route path="/coaches" element={<Coaches />} />` (public, inside Layout).
+- Verified: oxlint 0 errors (only pre-existing warnings elsewhere), `npm run build` OK. All uncommitted.
+
+## 2026-09-30 - Home pass: simple/useful/professional + Explore rework (localhost only)
+
+- **Explore the Academy (gallery) reworked:**
+  - Filters REMOVED (they were also broken: "Evening Play" category had no matching button, so that item was unreachable except via All). Section header now centered like every other section (eyebrow "Inside the Academy").
+  - Gallery data cleaned: dropped the pricing-flyer item (duplicated the pricing section) and the duplicate court item (same image as Court 1) -> 4 distinct items, one clean row on desktop (`lg:grid-cols-4`).
+  - Card chrome simplified: removed the "Live Clip / Photo" status pill; kept bottom gradient + tag + title + maximize affordance + full lightbox (arrows/Escape/scroll-lock).
+- **Programs section REMOVED** - it restated the same two packages already shown in the Pricing section (long price-string blobs, ~700px of scroll). Hero secondary CTA retargeted `#programs` -> `#pricing` ("See pricing"); `HOME_TOPICS` now 7 entries (auto-tour/navigator adjust automatically).
+- **Method section:** removed the redundant "Book Your Path" button (pricing + final CTA band still cover conversion).
+- Cleanup: dropped `PROGRAMS`/`CheckCircle2` imports, `galleryFilter` state, `filteredGallery` selector (now plain `GALLERY_IMAGES`), fixed exhaustive-deps warning on the lightbox effect.
+- Home section order now: Hero / Method / Pricing / Explore / Reviews / FAQ / Contact / CTA.
+- Verified: oxlint 0 errors (only the pre-existing set-state-in-effect warning in useCountUp), `npm run build` OK. Left untouched: auto-scroll guided tour (was a deliberate earlier feature), hero, pricing, reviews, FAQ, contact, CTA. All uncommitted.
+
+## 2026-10-01 - Feature: User Coaching Journey & Progress Reports (Phase 15, localhost only)
+
+- **Plan first:** inspected repo (dual pg/JSON db.js, comments/tournaments route conventions, Profile single-scroll, UserDetail tabs), locked decisions with user: report authorship = admins+coaches via existing `players` permission (no RBAC changes); completed session = `player_confirmed` slot on/before today (mirrors enrichPlayer name matching); assessment-first gate (monthly reports 400 until initial assessment published). Plan saved to `docs/journey-plan.md`.
+- **DB (new tables only; users/slots/bookings untouched):**
+  - `assessment_templates` (33 canonical skills: P1 Shots 19 across 5 sections / P2 Fitness 4 / P3 Movement 5 / P4 Intelligence 5), `journey_reports` (kind `initial|monthly`, statuses `draft|submitted|in-review|returned|reviewed|published`, `UNIQUE(user_id,kind,report_number)`, `maximum_reports` default 10, `overall_score NUMERIC(4,1)`, general user/admin comments, `published_at`), `journey_items` (user/admin/final scores + comments, all 1-10 CHECKs, `UNIQUE(report_id,template_id)`).
+  - Wiring: `ensureJourneyTables()` in `server/src/index.js` (idempotent pg CREATE + triggers + indexes + seed; runs before `loadActorColumns` so created_by/updated_by stamp), `schema.sql` DDL + DROPs, `db.js` TABLES/DATE_COLS/DECIMAL_COLS, `database.js` DEFAULTS. Initial assessment = kind `initial`, report_number 0; monthly numbered 1..N (max+1).
+- **API `server/src/routes/journey.js`** (mounted `/api/journey` with actionLimiter, `authenticate` globally):
+  - GET `/templates` (33 + pillars), GET `/` (self: published monthlies full, returned full for editing, other monthlies metadata-only; assessment always theirs), GET `/:userId` (`players` perm, full), GET `/reports/:id`, POST `/assessment` (409 dup), POST `/reports` (gates: assessment published / no active / month unique / number<=max / 400-409 messages), PUT `/reports/:id` (owner fields user_* only while initial draft|returned or monthly returned; admin fields admin_*/final any status; comment length via LIMITS), POST `/:id/:action` = submit (owner; 33 self-scores required; initial->submitted, monthly->in-review) | start-review (admin; initial from submitted, monthly from draft) | return (admin; +comment, notify player) | reviewed (admin; admin+final complete) | publish (admin; final complete, sets published_at, notifies player).
+  - Math on read: overall = avg(final ?? admin ?? user) rounded 1dp (published = final lens), pillar averages grouped via templates, progress = round(published_monthlies/max*100). `storeOverall` persists report.overall_score on edits/transitions. Sessions = player_confirmed slots date<=today matching user_id or player_text name list.
+- **Shared UI `src/components/Journey.jsx`:** default `MyJourneySection` + named `JourneyTab`. Summary cards render exact spec strings (label+value one line; `Report X of Y` its own card; progress bar under grid), pillar chips, grouped skill lists (pillar->section; user mode = score+comment inputs; admin mode = admin+final inputs + coach comment; view = badges + comments), empty state (explanation, Sessions completed line, Start Your Journey + Initial Assessment buttons both bootstrapping the draft), timeline (create/submit/return/publish events, max 30), collapsible report cards with status pills, per-report editors + resubmit (returned), admin create-report month picker with gating hints, "Finals <- admin scores" helper, return via `prompt()` with comment.
+- **Wiring:** Profile.jsx `<MyJourneySection />` (players) after SessionHistoryPanel; UserDetail.jsx `journey` tab (TrendingUp) inside isPlayer tab bar + `<JourneyTab userId={id} />` block.
+- **Verify:** oxlint 0 errors, 0 warnings in Journey.jsx (47 pre-existing elsewhere); `npm run build` OK; e2e `[journey]` block added (41 checks incl. player 403s on /journey/:userId + POST /journey/reports, 400 score rejects, owner-edit-after-submit 403, review/publish completeness gates, active/duplicate month 409, draft-items hidden from player, progress 10% after 1 of 10, notifications, edit-published) -> **141 passed / 0 failed**. Smoke test earlier 57/57 (temp script in %TEMP%, admin self-journey rows cleaned via psql; e2e temp player cascades on user delete; 33 templates remain by design).
+- Docs: `docs/journey-plan.md` created; task_complete.md Phase 15 + File Changes rows. All uncommitted (user handles git).
+
+## 2026-10-01 - Fixes: journey UI corruption, per-report state, admin-start-assessment
+
+- **"Failed to fetch" root cause:** three duplicate backend chains (npm run dev x3, node --watch x2) were fighting over port 5174. Killed all, restarted ONE with log capture (`%TEMP%\opencode\server.log`). Exact player submit flow reproduced clean (57-check style smoke: signup -> journey -> assessment -> PUT 33 scores -> submit, all 2xx).
+- **Journey.jsx encoding:** file had 361 double-encoded UTF-8 chars (arrows/dashes rendered as "â†"/"â€”" in UI). Fixed byte-wise via windows-1252 reverse-map script (`%TEMP%\opencode\fix-mojibake.cjs`, backup `Journey.jsx.bak`); 0 mojibake left.
+- **Per-report state bug (admin panel):** opening a previous monthly report showed the ACTIVE report's numbers because adminValues was not reloaded per report. Fixed: report header click now reloads that report's saved values into adminValues.
+- **Player old scores now visible to admin:** SkillsList admin mode shows "player X" self-score chip next to admin/final inputs, and the player's per-skill comment (read-only) in the coach-comment row.
+- **Admin starts initial assessment (feature):** POST /api/journey/assessment accepts optional `user_id`; non-self requires `players` permission (403 otherwise), 404 unknown user, 409 duplicate, notifies the player ("Your coach started your initial assessment"). JourneyTab empty state replaced with "Start initial assessment" button + handler `startAssessmentForPlayer`.
+- **Verify:** node --check OK; oxlint 0 errors (0 Journey warnings); build OK; dedicated 11-check admin-start smoke ALL PASSED (incl. player-for-other-user 403, duplicate 409, notification delivered, player PUT+submit after admin start); **e2e 141/141**.
+- **Answered user questions:** "Finals <- admin scores" button copies admin scores into empty final fields (review-then-save shortcut); final = locked published number, admin = working numbers during review.
+- All uncommitted (user handles git).
+
+## 2026-10-01 - Redesign: Journey report interface (both surfaces, R1-R6)
+
+- Plan approved by user via options (both surfaces; all pain points: length/scroll, visual style, confusing workflow, mobile). UI-only: no API/DB/RBAC/status changes, exact spec strings kept (Sessions completed:, Report X of Y, Overall score: X/10, Journey progress: N%), no new deps. All work in src/components/Journey.jsx (1138 -> ~1450 lines).
+- R1 SkillsList rewrite: dense rows instead of stacked cards. Per-row responsive grid (admin: Skill | Player | Admin | Final | Note; user: Skill | Your score | Comment; view: Skill | Score). Collapsible pillar blocks with live counters (Admin 7/9 . Final 5/9 / n/33 scored), sticky pillar headers (top-0 inside admin <main overflow-auto> scrollport, top-20 under site navbar for player window scroller), section subheaders, auto-collapse pillars already fully scored. Mobile: col-span-2 name + labeled score cells + 42px steppers; Enter jumps to next visible score input ([data-skills] + data-score-input filter by offsetParent).
+- ScoreInput: added -/+ stepper buttons (sm:hidden, 42px targets, lucide Minus/Plus), data-field attr, Enter-to-next nav; base bg switched to utilities where hover/focus pairing needed (unlayered .bg-surface/.border-theme beat layered hover:/focus: utilities - known trap, documented).
+- R2 ScoreRing (SVG, stroke-brand + neutral track, center value /10) added to player hero (92px, aria-label); PillarRow chips replaced with mini bars (per-pillar color + value text, never color-only).
+- R3: column legend above admin tables (Player = self-assessment read-only / Admin = working / Final = published); Fill finals button now shows live count "Fill finals (n empty)" (n = admin set + final empty, disabled at 0 with title) and after clicking focuses first still-empty final (focusFirstEmptyFinal via tableId); "Mark reviewed" disabled count now skips __general key (pre-existing bug: typing a general comment disabled Mark reviewed with wrong reason) and title shows "N skills still need an admin + final score".
+- R4: player hero (ring + Report X of Y + status pill + context line + "Continue scoring (n/33)" CTA, becomes "Review & submit" at 33/33); report-card headers gained mini score "7.2/10"; Timeline collapsed into <details> "Journey history (n)" on both surfaces.
+- R5: StatusPill/ScoreBadge kept (already match repo chip/badge conventions); ActionButton ghost tone fixed (bg-surface + hover pairs were dead -> bg-white/dark:bg-slate-900 + hover bg works).
+- R6: both spinners replaced by SkeletonPanel (aria-busy pulse blocks); load failures now render ErrorPanel with message + Try again (retry()) instead of blank screen; toast kept.
+- Fixed dead no-op classes in touched code: bg-surface/60, bg-surface/50, hover:bg-surface/60 -> bg-white/50 dark:bg-slate-900/40 or bg-white/dark:bg-slate-900 + slate hover variants. Removed overflow-hidden from admin monthly panel (it silently disabled sticky action bar + sticky pillar headers inside it).
+- Sticky action bars (z-30, backdrop blur, rounded-b, negative-margin bleed): player assessment (Save draft / Submit / n/33 hint), player returned report (Resubmit), admin assessment (Save scores / Fill finals / status actions), admin monthly (Save report / Fill finals / status actions). Status actions moved from assessment header into its sticky bar (no duplicate button sets).
+- Verify: oxlint 0 errors, 0 Journey findings (52 pre-existing warnings elsewhere); mojibake 0 (arrows/emdashes/middots valid UTF-8); npm run build OK; vite dev transform of Journey.jsx 200 with new symbols; backend health 200; **e2e 141/141**. Left uncommitted for user review on :5173 (Profile > My Journey; Admin > Users > player > Journey tab).
+
+## 2026-10-01 - Addendum: journey redesign full-file review pass
+
+- Read all 1440 lines of Journey.jsx end-to-end hunting runtime bugs (lint/build/e2e can't): none found. Confirmed every new Tailwind class actually emitted in built CSS (arbitrary grid-cols, min-h-[42px], group-open, sticky offsets, focus-visible rings).
+- ARIA polish: ScoreRing role="img", SkeletonPanel role="status".
+- Re-verified: oxlint 0 errors / 0 Journey findings, mojibake 0, build OK, api 200, vite transform 200, e2e 144/144 (141 journey-era checks + 3 court-default checks added by the concurrent slots workstream; journey block untouched).
+- Still local-only, uncommitted.

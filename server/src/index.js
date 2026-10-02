@@ -30,6 +30,7 @@ import rolesRoutes from './routes/roles.js'
 import transfersRoutes from './routes/transfers.js'
 import guestBookingRequestsRoutes from './routes/guest-booking-requests.js'
 import tournamentsRoutes from './routes/tournaments.js'
+import journeyRoutes from './routes/journey.js'
 import { ensureAdmin } from './ensure-admin.js'
 import { autoAudit } from './middleware/auto-audit.js'
 import { SYSTEM_ROLES } from './utils/modules.js'
@@ -120,6 +121,7 @@ app.use('/api/roles', rolesRoutes)
 app.use('/api/transfers', transfersRoutes)
 app.use('/api/guest-booking-requests', guestBookingRequestsRoutes)
 app.use('/api/tournaments', actionLimiter, tournamentsRoutes)
+app.use('/api/journey', actionLimiter, journeyRoutes)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
 
@@ -466,6 +468,98 @@ try {
 } catch (err) {
   console.log('Migration for tournament tables skipped:', err.message)
 }
+
+// Migration: coaching journey — assessment_templates / journey_reports /
+// journey_items + the 33 canonical skill seeds. All statements idempotent,
+// so boot is safe on fresh and existing local databases. Registered BEFORE
+// loadActorColumns so created_by/updated_by get stamped on journey_reports.
+async function ensureJourneyTables() {
+  try {
+    if (db.backend === 'pg') {
+      const { getKnex } = await import('./sql.js')
+      const knex = getKnex()
+      await knex.raw(`CREATE TABLE IF NOT EXISTS assessment_templates (
+        id SERIAL PRIMARY KEY,
+        pillar INT NOT NULL,
+        section VARCHAR(80) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        description TEXT,
+        sort_order INT NOT NULL DEFAULT 0,
+        active SMALLINT NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT chk_tpl_pillar CHECK (pillar IN (1, 2, 3, 4)),
+        CONSTRAINT chk_tpl_active CHECK (active IN (0, 1))
+      )`)
+      await knex.raw(`CREATE TABLE IF NOT EXISTS journey_reports (
+        id SERIAL PRIMARY KEY,
+        user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        kind VARCHAR(10) NOT NULL DEFAULT 'monthly',
+        report_number INT NOT NULL DEFAULT 0,
+        maximum_reports INT NOT NULL DEFAULT 10,
+        report_month VARCHAR(7),
+        status VARCHAR(20) NOT NULL DEFAULT 'draft',
+        overall_score NUMERIC(4, 1),
+        general_user_comment TEXT,
+        general_admin_comment TEXT,
+        created_by INT,
+        updated_by INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        published_at TIMESTAMP,
+        CONSTRAINT chk_journey_kind CHECK (kind IN ('initial', 'monthly')),
+        CONSTRAINT chk_journey_status CHECK (status IN ('draft', 'submitted', 'in-review', 'returned', 'reviewed', 'published')),
+        CONSTRAINT chk_journey_reports_max CHECK (maximum_reports >= 1),
+        CONSTRAINT uq_journey_report UNIQUE (user_id, kind, report_number)
+      )`)
+      await knex.raw(`CREATE TABLE IF NOT EXISTS journey_items (
+        id SERIAL PRIMARY KEY,
+        report_id INT NOT NULL REFERENCES journey_reports(id) ON DELETE CASCADE,
+        template_id INT NOT NULL REFERENCES assessment_templates(id) ON DELETE CASCADE,
+        user_score INT,
+        user_comment TEXT,
+        admin_score INT,
+        admin_comment TEXT,
+        final_score INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT chk_item_user_score CHECK (user_score IS NULL OR (user_score >= 1 AND user_score <= 10)),
+        CONSTRAINT chk_item_admin_score CHECK (admin_score IS NULL OR (admin_score >= 1 AND admin_score <= 10)),
+        CONSTRAINT chk_item_final_score CHECK (final_score IS NULL OR (final_score >= 1 AND final_score <= 10)),
+        CONSTRAINT uq_journey_item UNIQUE (report_id, template_id)
+      )`)
+      await knex.raw(`CREATE OR REPLACE FUNCTION update_timestamp() RETURNS TRIGGER AS $$
+        BEGIN NEW.updated_at = now(); RETURN NEW; END;
+        $$ LANGUAGE plpgsql`)
+      for (const tbl of ['assessment_templates', 'journey_reports', 'journey_items']) {
+        await knex.raw(`DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '${tbl}_updated_at_trigger') THEN
+            CREATE TRIGGER ${tbl}_updated_at_trigger BEFORE UPDATE ON ${tbl}
+              FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+          END IF;
+        END $$`)
+      }
+      for (const ddl of [
+        'CREATE INDEX IF NOT EXISTS ix_journey_reports_user ON journey_reports(user_id)',
+        'CREATE INDEX IF NOT EXISTS ix_journey_reports_status ON journey_reports(status)',
+        'CREATE INDEX IF NOT EXISTS ix_journey_items_report ON journey_items(report_id)',
+        'CREATE INDEX IF NOT EXISTS ix_journey_items_template ON journey_items(template_id)',
+        'CREATE INDEX IF NOT EXISTS ix_assessment_templates_pillar ON assessment_templates(pillar, sort_order)',
+      ]) await knex.raw(ddl)
+      if (await knex.schema.hasTable('journey_reports')) console.log('Migration: journey tables ensured')
+    }
+    // Seed the 33 canonical skills once — both backends.
+    const existing = await db.findAll('assessment_templates')
+    if (existing.length === 0) {
+      const { JOURNEY_TEMPLATES, TEMPLATE_COUNT } = await import('./utils/journey.js')
+      for (const tpl of JOURNEY_TEMPLATES) await db.insert('assessment_templates', tpl)
+      console.log(`ensure-journey: seeded ${TEMPLATE_COUNT} assessment templates`)
+    }
+  } catch (err) {
+    console.error('ensure-journey: failed (non-fatal):', err.message)
+  }
+}
+await ensureJourneyTables()
 
 // Cache which tables expose created_by/updated_by (information_schema, once).
 try {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import { api } from '../lib/api'
 
 export default function PlayerSearchInput({ value, onChange, onPlayerSelect, placeholder, strict, endpoint, minChars = 3 }) {
@@ -6,8 +6,10 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
   const [suggestions, setSuggestions] = useState([])
   const [open, setOpen] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
+  const [status, setStatus] = useState('') // '' | 'loading' | 'empty' | 'error'
   const wrapRef = useRef(null)
   const debounceRef = useRef(null)
+  const listId = useId()
 
   useEffect(() => { setQuery(value || '') }, [value])
 
@@ -20,19 +22,26 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
   }, [])
 
   const fetchSuggestions = (q) => {
-    if (q.length < minChars) { setSuggestions([]); return }
+    if (q.length < minChars) { setSuggestions([]); setStatus(''); return }
+    setStatus('loading')
     const url = endpoint
       ? `${endpoint}${encodeURIComponent(q)}`
       : `/users?role=player&search=${encodeURIComponent(q)}&limit=10`
     api.get(url).then(data => {
-      setSuggestions((data.players || []).map(p => ({ ...p, full_name: p.full_name || p.name })))
+      const list = (data.players || []).map(p => ({ ...p, full_name: p.full_name || p.name }))
+      setSuggestions(list)
+      setStatus(list.length > 0 ? '' : 'empty')
       setOpen(true)
-    }).catch(() => setSuggestions([]))
+    }).catch(() => {
+      setSuggestions([])
+      setStatus('error')
+      setOpen(true)
+    })
   }
 
   const handleInput = (val) => {
     setQuery(val)
-    if (!strict) onChange(val)
+    onChange(val)
     setActiveIdx(-1)
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => fetchSuggestions(val), 250)
@@ -81,24 +90,42 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
 
   const items = suggestions.map(s => s.full_name)
   const showAddNew = !strict && query.length >= minChars && !items.some(n => n.toLowerCase() === query.toLowerCase())
+  const showStatus = query.length >= minChars && (status === 'empty' || status === 'error')
+  const panelOpen = open && (suggestions.length > 0 || showAddNew || showStatus)
 
   return (
     <div ref={wrapRef} className="relative">
       <input
         type="text"
+        role="combobox"
+        aria-expanded={panelOpen}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={panelOpen && activeIdx >= 0 ? `${listId}-opt-${activeIdx}` : undefined}
+        aria-label={placeholder || 'Search players'}
         value={query}
         onChange={e => handleInput(e.target.value)}
-        onFocus={() => query.length >= minChars && (suggestions.length > 0 || showAddNew) && setOpen(true)}
+        onFocus={() => query.length >= minChars && (suggestions.length > 0 || showAddNew || showStatus) && setOpen(true)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder || 'e.g. Zain'}
         className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-xs"
       />
-      {open && (suggestions.length > 0 || showAddNew) && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-theme rounded-xl shadow-xl max-h-48 overflow-y-auto">
+      {panelOpen && (
+        <div id={listId} role="listbox" aria-label="Player suggestions" className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-theme rounded-xl shadow-xl max-h-48 overflow-y-auto">
+          {showStatus && (
+            <p role={status === 'error' ? 'alert' : undefined} className="px-3 py-2.5 text-xs text-muted">
+              {status === 'error'
+                ? "Couldn't search members — check your connection and try again."
+                : <>No members match <span className="font-semibold text-theme">“{query}”</span> — check the spelling.</>}
+            </p>
+          )}
           {suggestions.map((s, i) => (
             <button
               key={s.id}
+              id={`${listId}-opt-${i}`}
               type="button"
+              role="option"
+              aria-selected={i === activeIdx}
               onClick={() => selectName(s.full_name, s)}
               className={`w-full text-left px-3 py-2 text-xs ${i === activeIdx ? 'bg-brand/10 text-brand-text' : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-800'}`}
             >
@@ -108,6 +135,8 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
           {showAddNew && (
             <button
               type="button"
+              role="option"
+              aria-selected={activeIdx === suggestions.length}
               onClick={addNewPlayer}
               className={`w-full text-left px-3 py-2 text-xs border-t border-theme ${activeIdx === suggestions.length ? 'bg-brand/10 text-brand-text' : 'text-muted italic hover:bg-slate-100 dark:hover:bg-slate-800'}`}
             >

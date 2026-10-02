@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { CheckCircle, Send } from 'lucide-react'
+import { COURTS } from '../data/siteConfig'
+
+const COURT_OPTIONS = Array.from({ length: COURTS }, (_, i) => i + 1)
 
 export default function GuestBooking() {
   const [form, setForm] = useState({
@@ -96,13 +99,12 @@ export default function GuestBooking() {
           </div>
           <div>
             <label className="block text-xs font-bold text-muted uppercase">Court</label>
-            <select name="preferred_court" value={form.preferred_court} onChange={handleChange} className="w-full mt-1 px-4 py-3 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
-              <option value="">Any</option>
-              <option value="1">Court 1</option>
-              <option value="2">Court 2</option>
-              <option value="3">Court 3</option>
-              <option value="4">Court 4</option>
-            </select>
+              <select name="preferred_court" value={form.preferred_court} onChange={handleChange} className="w-full mt-1 px-4 py-3 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text">
+                <option value="">Any court</option>
+                {COURT_OPTIONS.map((c) => (
+                  <option key={c} value={c}>Court {c}</option>
+                ))}
+              </select>
           </div>
         </div>
         <div>

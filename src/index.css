@@ -304,6 +304,9 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   .reveal,
   .reveal.is-visible,
   .animate-marquee,
@@ -312,6 +315,10 @@ html {
   .animate-rise,
   .animate-cascade,
   .animate-fade-arrow,
+  .animate-fadeIn,
+  .animate-pulse-glow,
+  .animate-pulse,
+  .animate-bounce,
   .animate-\[shineText_6s_ease_infinite\] {
     animation: none !important;
     opacity: 1 !important;

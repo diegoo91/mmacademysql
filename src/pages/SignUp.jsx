@@ -58,7 +58,7 @@ export default function SignUp() {
     else if (formData.phone.replace(/\D/g, '').length < 8) next.phone = 'Please enter a valid phone number'
     if (!formData.dob) next.dob = 'Date of birth is required'
     if (!formData.password) next.password = 'Password is required'
-    else if (formData.password.length < 8) next.password = 'Password must be at least 8 characters long'
+    else if (formData.password.length < 10) next.password = 'Password must be at least 10 characters long'
     else if (formData.password.length > 72) next.password = 'Password must not exceed 72 characters'
     if (!formData.confirmPassword) next.confirmPassword = 'Confirming password is required'
     else if (formData.password !== formData.confirmPassword) next.confirmPassword = 'Passwords do not match'
@@ -162,12 +162,12 @@ export default function SignUp() {
           <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                <label htmlFor="signup-name" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
                   Full Name <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                  <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="e.g. Ahmed Salah" className={inputClass(errors.fullName)} />
+                  <input id="signup-name" type="text" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="e.g. Ahmed Salah" className={inputClass(errors.fullName)} />
                 </div>
                 {errors.fullName && (
                   <p className="text-rose-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /><span>{errors.fullName}</span></p>
@@ -175,12 +175,12 @@ export default function SignUp() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                <label htmlFor="signup-email" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
                   Email Address <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                  <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@domain.com" className={inputClass(errors.email)} />
+                  <input id="signup-email" type="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@domain.com" className={inputClass(errors.email)} />
                 </div>
                 {errors.email && (
                   <p className="text-rose-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /><span>{errors.email}</span></p>
@@ -190,12 +190,12 @@ export default function SignUp() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                <label htmlFor="signup-phone" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
                   Phone Number <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                  <input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="+20 10 0000 0000" className={inputClass(errors.phone)} />
+                  <input id="signup-phone" type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="+20 10 0000 0000" className={inputClass(errors.phone)} />
                 </div>
                 {errors.phone && (
                   <p className="text-rose-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /><span>{errors.phone}</span></p>
@@ -203,12 +203,12 @@ export default function SignUp() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                <label htmlFor="signup-dob" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
                   Date of Birth <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                  <input type="date" name="dob" value={formData.dob} onChange={handleChange} className={inputClass(errors.dob)} />
+                  <input id="signup-dob" type="date" name="dob" value={formData.dob} onChange={handleChange} className={inputClass(errors.dob)} />
                 </div>
                 {errors.dob && (
                   <p className="text-rose-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /><span>{errors.dob}</span></p>
@@ -218,17 +218,18 @@ export default function SignUp() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                <label htmlFor="signup-password" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
                   Password <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
                   <input
+                    id="signup-password"
                     type={showPassword ? 'text' : 'password'}
                     name="password"
                     value={formData.password}
                     onChange={handleChange}
-                    placeholder="Min 8 characters"
+                    placeholder="Min 10 characters"
                     className={`${inputClass(errors.password)} pr-11`}
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted hover:text-theme" aria-label="Toggle password visibility">
@@ -241,12 +242,13 @@ export default function SignUp() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                <label htmlFor="signup-confirm-password" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
                   Confirm Password <span className="text-brand-text">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
                   <input
+                    id="signup-confirm-password"
                     type={showConfirmPassword ? 'text' : 'password'}
                     name="confirmPassword"
                     value={formData.confirmPassword}
@@ -268,13 +270,22 @@ export default function SignUp() {
               <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-3">
                 Skill Level <span className="text-brand-text">*</span>
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4" role="radiogroup" aria-label="Skill Level">
                 {skillOptions.map((opt) => {
                   const selected = formData.skillLevel === opt.id
                   return (
                     <div
                       key={opt.id}
+                      role="radio"
+                      tabIndex={0}
+                      aria-checked={selected}
                       onClick={() => setFormData({ ...formData, skillLevel: opt.id })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setFormData({ ...formData, skillLevel: opt.id })
+                        }
+                      }}
                       className={`p-4 rounded-2xl cursor-pointer transition-all border ${
                         selected
                           ? 'bg-brand/10 border-brand-text ring-1 ring-brand-text'

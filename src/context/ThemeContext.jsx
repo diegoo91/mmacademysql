@@ -19,7 +19,8 @@ function isDarkTheme(theme) {
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
     try {
-      return localStorage.getItem('mm_padel_theme') || 'dark'
+      const saved = localStorage.getItem('mm_padel_theme') || 'dark'
+      return ['dark', 'light'].includes(saved) ? saved : 'dark'
     } catch { return 'dark' }
   })
 

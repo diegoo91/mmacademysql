@@ -2,10 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRightLeft, CheckCircle2, Download, FileUp, Lock, Plus, Search, Shield, Unlock, Upload, X } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
-import { formatSlotTime } from '../../lib/time'
+import { formatSlotTime, formatDateMed } from '../../lib/time'
 import { useAuth } from '../../context/AuthContext'
+import { useFeedback } from '../../context/FeedbackContext'
+import { useEscapeKey } from '../../lib/hooks'
+
+const PAGE_SIZE = 25
 
 export function ConvertModal({ user, onClose, onDone }) {
+  useEscapeKey(onClose)
   const [from, setFrom] = useState('private')
   const [count, setCount] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -35,10 +40,10 @@ export function ConvertModal({ user, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">Convert Balances — {user.name}</h3>
+          <h3 id="modal-title-0" className="text-xl font-bold text-theme">Convert Balances — {user.name}</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-theme hover:bg-surface rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -98,6 +103,7 @@ const ALL_MODULES = ['dashboard', 'bookings', 'schedule', 'players', 'results', 
 export { ALL_MODULES }
 
 export function UserModal({ user, onClose, onSave }) {
+  useEscapeKey(onClose)
   const [roles, setRoles] = useState([])
   const [form, setForm] = useState({
     name: user?.name || user?.full_name || '',
@@ -166,10 +172,10 @@ export function UserModal({ user, onClose, onSave }) {
   const isPlayer = user?.role === 'player' || form.role === 'player'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-1">
       <div className="w-full max-w-lg glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">{user ? 'Edit User' : 'Create User'}</h3>
+          <h3 id="modal-title-1" className="text-xl font-bold text-theme">{user ? 'Edit User' : 'Create User'}</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -279,6 +285,7 @@ export function UserModal({ user, onClose, onSave }) {
 }
 
 export function HistoryModal({ user, onClose }) {
+  useEscapeKey(onClose)
   const [sessions, setSessions] = useState([])
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -298,13 +305,13 @@ export function HistoryModal({ user, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-2">
       <div className="w-full max-w-2xl glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-sm">{(user.name || '?').charAt(0)}</div>
             <div>
-              <h3 className="text-lg font-bold text-theme">{user.name} — Session Report</h3>
+              <h3 id="modal-title-2" className="text-lg font-bold text-theme">{user.name} — Session Report</h3>
               <p className="text-xs text-muted">{sessions.length} session{sessions.length !== 1 ? 's' : ''}{report && report.amount_owed > 0 && <span className="ml-2 text-amber-400 font-bold">EGP {report.amount_owed.toLocaleString()} owed</span>}</p>
             </div>
           </div>
@@ -356,6 +363,7 @@ export function HistoryModal({ user, onClose }) {
 }
 
 export function TransferModal({ player, onClose, allPlayers }) {
+  useEscapeKey(onClose)
   const [toPlayer, setToPlayer] = useState('')
   const [sessionType, setSessionType] = useState('private')
   const [count, setCount] = useState(1)
@@ -388,10 +396,10 @@ export function TransferModal({ player, onClose, allPlayers }) {
 
   if (result) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-3">
         <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
           <CheckCircle2 className="w-12 h-12 text-brand-text mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-theme mb-2">Transfer Complete</h3>
+          <h3 id="modal-title-3" className="text-lg font-bold text-theme mb-2">Transfer Complete</h3>
           <p className="text-muted text-sm mb-4">Transferred {result.count} {result.session_type} session(s) from {result.from.name} to {result.to.name}</p>
           <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-brand text-white font-bold text-sm">Done</button>
         </div>
@@ -404,10 +412,10 @@ export function TransferModal({ player, onClose, allPlayers }) {
   const availableGrp = (player.group_balance ?? player.total_group ?? 0) + (player.private_balance ?? player.total_private ?? 0) * 2
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-4">
       <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-theme">Transfer Sessions — {player.name || player.full_name}</h3>
+          <h3 id="modal-title-4" className="text-lg font-bold text-theme">Transfer Sessions — {player.name || player.full_name}</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -444,6 +452,7 @@ export function TransferModal({ player, onClose, allPlayers }) {
 }
 
 function ImportModal({ kind, onClose, onDone }) {
+  useEscapeKey(onClose)
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -496,10 +505,10 @@ function ImportModal({ kind, onClose, onDone }) {
 
   if (result) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-5">
         <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6 text-center">
           <CheckCircle2 className="w-12 h-12 text-brand-text mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-theme mb-2">Import Complete</h3>
+          <h3 id="modal-title-5" className="text-xl font-bold text-theme mb-2">Import Complete</h3>
           <p className="text-muted text-sm mb-4">{result.inserted} {kind} imported successfully.</p>
           <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Done</button>
         </div>
@@ -508,10 +517,10 @@ function ImportModal({ kind, onClose, onDone }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-6">
       <div className="w-full max-w-2xl glass-panel rounded-2xl border border-theme shadow-2xl p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-theme">Import {kind.charAt(0).toUpperCase() + kind.slice(1)} from Excel</h3>
+          <h3 id="modal-title-6" className="text-xl font-bold text-theme">Import {kind.charAt(0).toUpperCase() + kind.slice(1)} from Excel</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
 
@@ -588,9 +597,11 @@ const ROLE_STYLES = {
 }
 
 export default function Users() {
-  const { isAdmin, user: me } = useAuth()
+  const { user: me, hasPermission } = useAuth()
+  const { toast } = useFeedback()
   const navigate = useNavigate()
-  const canEdit = isAdmin || me?.role === 'superadmin' || me?.role === 'admin'
+  const canEdit = hasPermission('users')
+  const canImport = hasPermission('imports')
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -598,6 +609,7 @@ export default function Users() {
   const [roleFilter, setRoleFilter] = useState('')
   const [skillFilter, setSkillFilter] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [page, setPage] = useState(1)
 
   const fetchUsers = () => {
     setLoading(true)
@@ -615,6 +627,14 @@ export default function Users() {
     return (u.name || '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.phone && u.phone.includes(q)) || (u.member_code && u.member_code.includes(q))
   })
 
+  useEffect(() => { setPage(1) }, [search, roleFilter, skillFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const pageUsers = filteredUsers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const rangeStart = filteredUsers.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1
+  const rangeEnd = Math.min(safePage * PAGE_SIZE, filteredUsers.length)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -623,17 +643,21 @@ export default function Users() {
           <p className="text-muted text-sm mt-1">{filteredUsers.length} of {users.length} users · {playersOnly.length} players</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canEdit && (
+          {canImport && (
             <button onClick={() => setShowImport(true)} className="px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-800">
               <Upload className="w-4 h-4" /> Import Excel
             </button>
           )}
-          <button onClick={async () => { try { const blob = await downloadFile('/users/export-credentials'); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'mm-padel-credentials.xlsx'; a.click(); URL.revokeObjectURL(url) } catch (err) { alert(err.message || 'Export failed') } }} className="px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-800">
-            <Download className="w-4 h-4" /> Export Credentials
-          </button>
-          <button onClick={() => setShowAdd(true)} className="px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-bold flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Create User
-          </button>
+          {me?.role === 'superadmin' && (
+            <button onClick={async () => { try { const blob = await downloadFile('/users/export-credentials'); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'mm-padel-credentials.xlsx'; a.click(); URL.revokeObjectURL(url) } catch (err) { toast.error(err.message || 'Export failed') } }} className="px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <Download className="w-4 h-4" /> Export Credentials
+            </button>
+          )}
+          {canEdit && (
+            <button onClick={() => setShowAdd(true)} className="px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-bold flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Create User
+            </button>
+          )}
         </div>
       </div>
 
@@ -697,7 +721,7 @@ export default function Users() {
                       {search ? 'No users match your search.' : 'No users found.'}
                     </td>
                   </tr>
-                ) : filteredUsers.map(u => (
+                ) : pageUsers.map(u => (
                   <tr
                     key={u.id}
                     onClick={() => navigate(`/admin/users/${u.id}`)}
@@ -735,7 +759,7 @@ export default function Users() {
                         {(u.account_status || 'active') === 'active' ? 'Active' : 'Locked'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-muted text-xs">{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-muted text-xs">{formatDateMed(u.created_at)}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold ${
                         (u.used_sessions || 0) > 0 ? 'bg-brand/15 text-brand-text' : 'bg-surface/80 text-muted'
@@ -776,6 +800,16 @@ export default function Users() {
               </tbody>
             </table>
           </div>
+          {filteredUsers.length > PAGE_SIZE && (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t border-theme">
+              <span className="text-xs text-muted">Showing {rangeStart}–{rangeEnd} of {filteredUsers.length} users</span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPage(safePage - 1)} disabled={safePage <= 1} className="px-3 py-1.5 rounded-lg border border-theme text-theme text-xs font-bold hover:border-brand-text/50 disabled:opacity-40">Prev</button>
+                <span className="text-xs font-bold text-theme">Page {safePage} of {totalPages}</span>
+                <button type="button" onClick={() => setPage(safePage + 1)} disabled={safePage >= totalPages} className="px-3 py-1.5 rounded-lg border border-theme text-theme text-xs font-bold hover:border-brand-text/50 disabled:opacity-40">Next</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

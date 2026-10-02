@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, Clock, Globe, MapPin, MessageCircle, Phone, Share2 } from 'lucide-react'
-import { CONTACT } from '../data/siteConfig'
+import { ArrowUpRight, Clock, MapPin, MessageCircle, Phone } from 'lucide-react'
+import { CONTACT, COURTS } from '../data/siteConfig'
 import { useAuth } from '../context/AuthContext'
 import Logo from './Logo'
 
@@ -20,29 +20,25 @@ export default function Footer() {
               </span>
             </Link>
             <p className="text-sm text-muted leading-relaxed">
-              Train. Improve. Compete. Professional padel coaching across 3 courts with a vibrant player community.
+              Train. Improve. Compete. Professional padel coaching across {COURTS} courts with a vibrant player community.
             </p>
             <div className="flex items-center gap-3 pt-2">
-              <span
-                className="w-9 h-9 rounded-full bg-surface border border-theme flex items-center justify-center text-muted"
-                title="Instagram"
-              >
-                <Globe className="w-4 h-4" />
-              </span>
-              <span
-                className="w-9 h-9 rounded-full bg-surface border border-theme flex items-center justify-center text-muted"
-                title="Facebook"
-              >
-                <Share2 className="w-4 h-4" />
-              </span>
               <a
-                href="https://wa.me/201000915244"
+                href={CONTACT.whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-9 h-9 rounded-full bg-surface border border-theme flex items-center justify-center text-muted hover:text-brand-text hover:border-brand-text/50 transition-colors"
-                title="WhatsApp Support (+20 10 00915244)"
+                title={`WhatsApp Support (${CONTACT.whatsappLabel})`}
+                aria-label={`WhatsApp Support (${CONTACT.whatsappLabel})`}
               >
                 <MessageCircle className="w-4 h-4" />
+              </a>
+              <a
+                href={CONTACT.phoneHref}
+                className="w-9 h-9 rounded-full bg-surface border border-theme flex items-center justify-center text-muted hover:text-brand-text hover:border-brand-text/50 transition-colors"
+                title={`Call ${CONTACT.phone}`}
+              >
+                <Phone className="w-4 h-4" />
               </a>
             </div>
           </div>
@@ -55,11 +51,16 @@ export default function Footer() {
               <li>
                 <Link to="/" className="hover:text-brand-text transition-colors">Academy Overview</Link>
               </li>
-              <li>
-                <Link to="/schedule" className="hover:text-brand-text transition-colors">Court Schedule (Day &amp; Week)</Link>
-              </li>
+              {user && (
+                <li>
+                  <Link to="/schedule" className="hover:text-brand-text transition-colors">Court Schedule (Day &amp; Week)</Link>
+                </li>
+              )}
               <li>
                 <Link to="/book" className="text-gold font-semibold hover:text-gold-hover transition-colors">Book Session</Link>
+              </li>
+              <li>
+                <Link to="/coaches" className="hover:text-brand-text transition-colors">Meet the Coaches</Link>
               </li>
               {!user && (
                 <li>
@@ -133,8 +134,6 @@ export default function Footer() {
         <div className="mt-8 pt-4 flex flex-col md:flex-row items-center justify-between text-xs text-muted gap-4">
           <p>© {new Date().getFullYear()} MM Padel Academy. All rights reserved.</p>
           <div className="flex items-center gap-6">
-            <span>Privacy Policy</span>
-            <span>Terms of Service</span>
             <span className="text-brand-text/80 font-mono text-[11px]">⚡ Sheikh Zayed, Giza</span>
           </div>
         </div>

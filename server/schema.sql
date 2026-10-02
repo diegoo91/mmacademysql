@@ -13,6 +13,9 @@
 
 -- ----------------------------------------------------------------- users ---
 -- NOTE: app_sessions is (re)created AFTER this cleanup block — do not create it above.
+DROP TABLE IF EXISTS journey_items CASCADE;
+DROP TABLE IF EXISTS journey_reports CASCADE;
+DROP TABLE IF EXISTS assessment_templates CASCADE;
 DROP TABLE IF EXISTS refresh_denylist CASCADE;
 DROP TABLE IF EXISTS app_sessions CASCADE;
 DROP TABLE IF EXISTS coach_payments CASCADE;
@@ -680,5 +683,83 @@ CREATE TRIGGER tournament_signups_updated_at_trigger
     EXECUTE FUNCTION update_timestamp();
 CREATE TRIGGER tournament_teams_updated_at_trigger
     BEFORE UPDATE ON tournament_teams
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+
+-- ============================================== coaching journey ========
+-- Assessment skills (seeded once by ensureJourneyTables boot migration).
+CREATE TABLE IF NOT EXISTS assessment_templates (
+    id SERIAL PRIMARY KEY,
+    pillar INT NOT NULL,
+    section VARCHAR(80) NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    description TEXT,
+    sort_order INT NOT NULL DEFAULT 0,
+    active SMALLINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_tpl_pillar CHECK (pillar IN (1, 2, 3, 4)),
+    CONSTRAINT chk_tpl_active CHECK (active IN (0, 1))
+);
+
+-- One journey report row = initial self-assessment OR one monthly report.
+CREATE TABLE IF NOT EXISTS journey_reports (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    kind VARCHAR(10) NOT NULL DEFAULT 'monthly',
+    report_number INT NOT NULL DEFAULT 0,
+    maximum_reports INT NOT NULL DEFAULT 10,
+    report_month VARCHAR(7),
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    overall_score NUMERIC(4, 1),
+    general_user_comment TEXT,
+    general_admin_comment TEXT,
+    created_by INT,
+    updated_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    published_at TIMESTAMP,
+    CONSTRAINT chk_journey_kind CHECK (kind IN ('initial', 'monthly')),
+    CONSTRAINT chk_journey_status CHECK (status IN ('draft', 'submitted', 'in-review', 'returned', 'reviewed', 'published')),
+    CONSTRAINT chk_journey_reports_max CHECK (maximum_reports >= 1),
+    CONSTRAINT uq_journey_report UNIQUE (user_id, kind, report_number)
+);
+
+-- One row per skill per report (template-cloned).
+CREATE TABLE IF NOT EXISTS journey_items (
+    id SERIAL PRIMARY KEY,
+    report_id INT NOT NULL REFERENCES journey_reports(id) ON DELETE CASCADE,
+    template_id INT NOT NULL REFERENCES assessment_templates(id) ON DELETE CASCADE,
+    user_score INT,
+    user_comment TEXT,
+    admin_score INT,
+    admin_comment TEXT,
+    final_score INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_item_user_score CHECK (user_score IS NULL OR (user_score >= 1 AND user_score <= 10)),
+    CONSTRAINT chk_item_admin_score CHECK (admin_score IS NULL OR (admin_score >= 1 AND admin_score <= 10)),
+    CONSTRAINT chk_item_final_score CHECK (final_score IS NULL OR (final_score >= 1 AND final_score <= 10)),
+    CONSTRAINT uq_journey_item UNIQUE (report_id, template_id)
+);
+
+-- ------------------------------------------------ journey FK Indexes ---
+CREATE INDEX IF NOT EXISTS ix_journey_reports_user ON journey_reports(user_id);
+CREATE INDEX IF NOT EXISTS ix_journey_reports_status ON journey_reports(status);
+CREATE INDEX IF NOT EXISTS ix_journey_items_report ON journey_items(report_id);
+CREATE INDEX IF NOT EXISTS ix_journey_items_template ON journey_items(template_id);
+CREATE INDEX IF NOT EXISTS ix_assessment_templates_pillar ON assessment_templates(pillar, sort_order);
+
+-- Journey tables share the generic update_timestamp() trigger
+CREATE TRIGGER journey_reports_updated_at_trigger
+    BEFORE UPDATE ON journey_reports
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+CREATE TRIGGER journey_items_updated_at_trigger
+    BEFORE UPDATE ON journey_items
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+CREATE TRIGGER assessment_templates_updated_at_trigger
+    BEFORE UPDATE ON assessment_templates
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();

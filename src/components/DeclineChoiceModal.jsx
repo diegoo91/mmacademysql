@@ -1,5 +1,6 @@
 import { CalendarClock, XCircle } from 'lucide-react'
 import { formatSlotTime } from '../lib/time'
+import { useEscapeKey } from '../lib/hooks'
 
 /**
  * Shown when a player declines attendance.
@@ -7,16 +8,18 @@ import { formatSlotTime } from '../lib/time'
  * choice 'cancel'  → straightforward decline/cancellation (existing behavior)
  */
 export default function DeclineChoiceModal({ open, slot, loading, error, onChoose, onClose }) {
+  useEscapeKey(onClose, !!open && !loading)
+
   if (!open || !slot) return null
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="decline-choice-title">
       <div className="w-full max-w-md glass-panel rounded-3xl border border-theme shadow-2xl p-6 space-y-5 animate-fadeIn">
         <div className="text-center space-y-2">
           <div className="w-12 h-12 mx-auto rounded-2xl bg-brand/10 border border-brand-text/30 text-brand-text flex items-center justify-center">
             <CalendarClock className="w-6 h-6" />
           </div>
-          <h3 className="font-heading text-xl font-extrabold text-theme">
+          <h3 id="decline-choice-title" className="font-heading text-xl font-extrabold text-theme">
             Need a different slot?
           </h3>
           <p className="text-sm text-muted leading-relaxed">

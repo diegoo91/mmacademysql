@@ -4,8 +4,8 @@ import { api } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 
 export default function Comments() {
-  const { isAdmin } = useAuth()
-  const canEdit = isAdmin
+  const { hasPermission } = useAuth()
+  const canEdit = hasPermission('comments')
   const [comments, setComments] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
