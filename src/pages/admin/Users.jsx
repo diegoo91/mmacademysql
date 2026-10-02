@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRightLeft, CheckCircle2, Download, FileUp, Lock, Plus, Search, Shield, Unlock, Upload, X } from 'lucide-react'
 import { api, downloadFile } from '../../lib/api'
 import { formatSlotTime, formatDateMed } from '../../lib/time'
+import { packageAdvice } from '../../lib/packageAdvice'
 import { useAuth } from '../../context/AuthContext'
 import { useFeedback } from '../../context/FeedbackContext'
 import { useEscapeKey } from '../../lib/hooks'
+import Logo from '../../components/Logo'
 
 const PAGE_SIZE = 25
 
@@ -297,6 +299,8 @@ export function HistoryModal({ user, onClose }) {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [user.id])
 
+  const advice = packageAdvice(report?.sessions || sessions || [])
+
   const handleDownloadPDF = async () => {
     if (!report) return
     const { generateReceiptPDF } = await import('../../lib/receiptPDF')
@@ -309,14 +313,20 @@ export function HistoryModal({ user, onClose }) {
       <div className="w-full max-w-2xl glass-panel rounded-2xl border border-theme shadow-2xl p-6 max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-sm">{(user.name || '?').charAt(0)}</div>
+            <Logo className="w-10 h-10 rounded-full" />
             <div>
               <h3 id="modal-title-2" className="text-lg font-bold text-theme">{user.name} — Session Report</h3>
-              <p className="text-xs text-muted">{sessions.length} session{sessions.length !== 1 ? 's' : ''}{report && report.amount_owed > 0 && <span className="ml-2 text-amber-400 font-bold">EGP {report.amount_owed.toLocaleString()} owed</span>}</p>
+              <p className="text-xs text-muted">
+                {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+                {report && report.amount_owed > 0 && <span className="ml-2 text-amber-400 font-bold">EGP {report.amount_owed.toLocaleString()} owed</span>}
+                {!loading && advice.hasUnpaid && (
+                  <span className="ml-2 text-brand-text font-bold">→ clear-all: {advice.roundUp ?? '>16'}-pvt (EGP {advice.roundUpPrice.toLocaleString()})</span>
+                )}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {report && report.amount_owed > 0 && (
+            {report && (
               <button onClick={handleDownloadPDF} className="px-3 py-1.5 rounded-lg bg-amber-400/10 text-amber-400 text-xs font-bold hover:bg-amber-400/20 flex items-center gap-1">
                 <Download className="w-3 h-3" /> Receipt PDF
               </button>

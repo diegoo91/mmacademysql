@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRightLeft, DollarSign, Download, Edit, Gift, History, K
 import { api } from '../../lib/api'
 import { giftUnpaidSessions, confirmGift } from '../../lib/gift'
 import { formatSlotTime, formatDateMed } from '../../lib/time'
+import { packageAdvice } from '../../lib/packageAdvice'
 import { useAuth } from '../../context/AuthContext'
 import { useFeedback } from '../../context/FeedbackContext'
 import { useEscapeKey } from '../../lib/hooks'
@@ -346,6 +347,7 @@ export default function UserDetail() {
   const unpaidSessions = (report?.sessions || []).filter(s => !s.paid)
   const unpaidPrivate = unpaidSessions.filter(s => s.session_type !== 'group').length
   const unpaidGroup = unpaidSessions.filter(s => s.session_type === 'group').length
+  const advice = packageAdvice(report?.sessions || [])
 
   const handleGiftUnpaid = async () => {
     if (gifting) return
@@ -770,7 +772,12 @@ export default function UserDetail() {
                   EGP {amountOwed.toLocaleString()} owed
                 </span>
               )}
-              {amountOwed > 0 && (
+              {!reportLoading && advice.hasUnpaid && (
+                <span className="px-3 py-1 rounded-full bg-brand/10 text-brand-text text-xs font-bold" title="Private package that clears all unpaid sessions">
+                  Clear-all: {advice.roundUp ?? '>16'}-pvt · EGP {advice.roundUpPrice.toLocaleString()}
+                </span>
+              )}
+              {report && (
                 <button onClick={handleDownloadPDF} className="px-3 py-1.5 rounded-lg bg-amber-400/10 text-amber-400 text-xs font-bold hover:bg-amber-400/20 flex items-center gap-1">
                   <Download className="w-3 h-3" /> Receipt PDF
                 </button>

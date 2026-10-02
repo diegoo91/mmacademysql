@@ -86,8 +86,9 @@ export default function Payment() {
 
     return (
       <div className="min-h-screen bg-theme text-theme py-16 px-4 flex items-center justify-center relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-brand/15 rounded-full blur-[150px] pointer-events-none" />
-        <div className="max-w-xl w-full glass-panel rounded-3xl p-8 border border-theme shadow-2xl relative z-10 space-y-6 text-center animate-fadeIn">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-brand/15 rounded-full blur-[150px] pointer-events-none no-print" />
+        <div className="max-w-xl w-full glass-panel rounded-3xl p-8 border border-theme shadow-2xl relative z-10 space-y-6 text-center animate-fadeIn print-receipt">
+          <img src={`${import.meta.env.BASE_URL}images/logo-badge.png`} alt="MM Padel Academy" className="w-12 h-12 rounded-xl mx-auto shadow-lg" />
           <div className="w-20 h-20 bg-brand text-white rounded-3xl mx-auto flex items-center justify-center font-bold shadow-2xl shadow-brand/30">
             <CheckCircle2 className="w-12 h-12 stroke-[2.5]" />
           </div>
@@ -140,7 +141,7 @@ export default function Payment() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-3 pt-2 no-print">
             <a
               href={waUrl}
               target="_blank"
@@ -153,7 +154,7 @@ export default function Payment() {
             </a>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-1">
+          <div className="flex flex-col sm:flex-row gap-3 pt-1 no-print">
             <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-surface hover:bg-slate-200 dark:hover:bg-slate-800 text-theme font-bold text-xs border border-theme flex items-center justify-center gap-2 transition-all">
               <Printer className="w-4 h-4" /><span>Print Receipt</span>
             </button>
@@ -168,10 +169,10 @@ export default function Payment() {
 
   return (
     <div className="min-h-screen bg-theme text-theme py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      <div className="absolute top-10 right-1/4 w-[500px] h-[300px] bg-brand/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute top-10 right-1/4 w-[500px] h-[300px] bg-brand/10 rounded-full blur-[140px] pointer-events-none no-print" />
 
       <div className="max-w-6xl mx-auto relative z-10">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 no-print">
           <button onClick={() => navigate(isTournament ? (returnTo || '/tournament') : '/book')} className="inline-flex items-center gap-2 text-xs font-bold text-muted hover:text-slate-900 dark:hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4" /><span>{isTournament ? 'Back to Tournament' : 'Back to Booking Selection'}</span>
           </button>
