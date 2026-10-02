@@ -6,6 +6,7 @@ import { validateLength, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, reverseBalance, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
 import { notifyUser as deliverNotification } from '../utils/notify.js'
+import { checkCoachSlot } from '../utils/coachAvailability.js'
 
 const router = Router()
 
@@ -264,6 +265,17 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
     const conflict = await db.find('slots', s => s.id !== id && s.date === newDate && s.time === newTime && s.court === newCourt)
     if (conflict) return res.status(409).json({ error: 'Slot already exists at this date/time/court' })
 
+    // Coach availability + double-booking — only when the coach/when actually
+    // changes (avoids re-blocking legacy rows on unrelated edits). force=true
+    // is the admin's "Assign anyway" override from the UI.
+    const effCoach = coach_id !== undefined ? coach_id : slot.coach_id
+    const coachChanged = coach_id !== undefined && coach_id !== slot.coach_id
+    const whenChanged = newDate !== slot.date || newTime !== slot.time
+    if (effCoach && (coachChanged || whenChanged) && req.body.force !== true) {
+      const chk = await checkCoachSlot({ coach_id: effCoach, date: newDate, time: newTime, excludeSlotId: id })
+      if (!chk.ok) return res.status(409).json({ error: chk.message, code: chk.code, details: chk.details })
+    }
+
     const updates = {
       player_text: player_text ?? slot.player_text,
       date: newDate, time: newTime, court: newCourt,
@@ -406,6 +418,12 @@ router.post('/', authenticate, requirePermission('schedule'), async (req, res) =
     const err = validateLength('Player', player_text, LIMITS.playerText)
     if (err) return res.status(400).json({ error: err })
     if (await db.find('slots', s => s.date === date && s.time === time && s.court === court)) return res.status(409).json({ error: 'Slot already exists' })
+
+    // Coach availability + double-booking (force=true = "Assign anyway")
+    if (coach_id && req.body.force !== true) {
+      const chk = await checkCoachSlot({ coach_id, date, time })
+      if (!chk.ok) return res.status(409).json({ error: chk.message, code: chk.code, details: chk.details })
+    }
 
     const hasPlayer = player_text?.trim()
     const slotSessionType = session_type || 'private'

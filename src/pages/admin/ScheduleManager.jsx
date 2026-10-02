@@ -6,6 +6,8 @@ import { useAuth } from '../../context/AuthContext'
 import { useFeedback } from '../../context/FeedbackContext'
 import { useEscapeKey } from '../../lib/hooks'
 import PlayerSearchInput from '../../components/PlayerSearchInput'
+import CoachesAvailability from './CoachesAvailability'
+import { issueFor } from '../../lib/coachAvailability'
 import { TIME_LABELS, canonTime, formatSlotTime, formatDateShort } from '../../lib/time'
 import { ALL_TIMES, suggestNextSlotTime, timeToMin } from '../../lib/slotTime'
 
@@ -123,6 +125,7 @@ export default function ScheduleManager() {
   const { hasPermission, isSuperAdmin } = useAuth()
   const { toast } = useFeedback()
   const canEdit = hasPermission('schedule')
+  const canManageCoaches = isSuperAdmin || hasPermission('users')
   const [activeTab, setActiveTab] = useState('schedule')
   const [view, setView] = useState('day')
   const [date, setDate] = useState(() => toLocalDateStr(new Date()))
@@ -150,6 +153,8 @@ export default function ScheduleManager() {
   const [dayActionLoading, setDayActionLoading] = useState(null)
   const [coaches, setCoaches] = useState([])
   const [courtDefaults, setCourtDefaults] = useState([])
+  const [availData, setAvailData] = useState({ coaches: [] })
+  const [coachWarning, setCoachWarning] = useState(null)
   const [courtDefaultsDraft, setCourtDefaultsDraft] = useState({})
   const [courtDefaultsSaving, setCourtDefaultsSaving] = useState(false)
   const [applyFutureDefaults, setApplyFutureDefaults] = useState(true)
@@ -158,7 +163,8 @@ export default function ScheduleManager() {
     setAddSlot(null)
     setBalanceWarning(null)
     setPendingOverride(null)
-  }, !!addSlot || !!balanceWarning || !!pendingOverride)
+    setCoachWarning(null)
+  }, !!addSlot || !!balanceWarning || !!pendingOverride || !!coachWarning)
 
   const fetchSlots = () => {
     setLoading(true)
@@ -175,7 +181,11 @@ export default function ScheduleManager() {
     api.get('/conversion-requests').then(setConversionRequests).catch(() => {}).finally(() => setConvLoading(false))
   }
 
-  useEffect(() => { fetchSlots(); fetchConversionRequests(); fetchCoachesAndDefaults() }, [])
+  useEffect(() => { fetchSlots(); fetchConversionRequests(); fetchCoachesAndDefaults(); fetchAvailability() }, [])
+
+  const fetchAvailability = () => {
+    api.get('/coach-availability').then(d => setAvailData(d || { coaches: [] })).catch(() => {})
+  }
 
   const fetchCoachesAndDefaults = () => {
     api.get('/users').then(data => {
@@ -331,6 +341,18 @@ export default function ScheduleManager() {
     return { total: daySlots.length, paymentApproved, scheduleApproved, confirmed, pending }
   }, [date, slotsByDate])
 
+  // Existing slots that violate a coach's availability / double-book a coach
+  const coachIssues = useMemo(() => {
+    const map = new Map()
+    if (!availData?.coaches?.length) return map
+    for (const s of slots) {
+      if (!s.coach_id) continue
+      const issue = issueFor(availData, slots, { coach_id: s.coach_id, date: s.date, time: s.time, excludeId: s.id })
+      if (issue) map.set(s.id, issue)
+    }
+    return map
+  }, [slots, availData])
+
   const handleDeleteSlot = async (id) => {
     try { await api.del(`/slots/${id}`); fetchSlots() } catch (err) { toast.error(err.message || 'Failed to delete slot') }
   }
@@ -400,6 +422,11 @@ export default function ScheduleManager() {
       fetchSlots()
     } catch (err) {
       const msg = err.message || ''
+      if (err.code === 'COACH_UNAVAILABLE' || err.code === 'COACH_CONFLICT') {
+        const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
+        setCoachWarning({ message: err.message, payload: { ...addForm, player_text: joinedNames } })
+        return
+      }
       const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
       if (isBalanceConflict && !msg.includes('Slot already exists')) {
         const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
@@ -418,6 +445,23 @@ export default function ScheduleManager() {
       } else {
         toast.error(msg || 'Failed to add slot')
       }
+    }
+  }
+
+  const handleCoachForce = async () => {
+    if (!coachWarning) return
+    try {
+      await api.post('/slots', { ...coachWarning.payload, force: true })
+      setCoachWarning(null)
+      setAddSlot(null)
+      setAddForm({ date: '', time: '15:00', court: 1, player_text: '', session_type: null, coach_id: null })
+      setAddPlayers([''])
+      setSelectedPlayers([])
+      fetchSlots()
+      toast.success('Slot assigned anyway')
+    } catch (err) {
+      setCoachWarning(null)
+      toast.error(err.message || 'Failed to add slot')
     }
   }
 
@@ -537,6 +581,7 @@ export default function ScheduleManager() {
       <div className="flex items-center gap-2 bg-surface p-1.5 rounded-2xl border border-theme w-fit">
         {[
           { id: 'schedule', label: 'Schedule', icon: CalendarIcon },
+          ...(canManageCoaches ? [{ id: 'coaches', label: 'Coaches', icon: UserCheck }] : []),
           { id: 'upload', label: 'Upload', icon: Upload },
           { id: 'conversions', label: `Conversions${pendingConversions.length > 0 ? ` (${pendingConversions.length})` : ''}`, icon: FileSpreadsheet },
         ].map(tab => (
@@ -679,8 +724,9 @@ export default function ScheduleManager() {
                           </div>
                            {[row.slot1, row.slot2, row.slot3].map((slot, i) => {
                             const statusColor = STATUS_COLORS[slot?.status] || STATUS_COLORS.available
+                            const coachIssue = slot ? coachIssues.get(slot.id) : null
                             return (
-                            <div key={i} className={`px-4 py-3 border-l border-slate-200/60 dark:border-slate-800/60 text-xs font-bold text-center flex items-center justify-center gap-2 ${statusColor}`}>
+                            <div key={i} title={coachIssue || undefined} className={`px-4 py-3 border-l border-slate-200/60 dark:border-slate-800/60 text-xs font-bold text-center flex items-center justify-center gap-2 ${statusColor} ${coachIssue ? 'ring-2 ring-inset ring-rose-500/70' : ''}`}>
                               {slot ? (
                                 <>
                                   <div className="flex flex-col items-center gap-0.5 min-w-0">
@@ -749,8 +795,9 @@ export default function ScheduleManager() {
                           else if (statuses.every(s => s === 'player_confirmed')) weekColor = 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
                           else weekColor = 'bg-rose-500/15 border-rose-500/40 text-rose-300'
                         }
+                        const weekIssue = [s1, s2, s3].map(s => s && coachIssues.get(s.id)).filter(Boolean).join(' · ') || null
                         return (
-                           <div key={d} className={`p-2.5 rounded-xl border text-[11px] font-bold text-center leading-snug ${weekColor}`}>
+                           <div key={d} title={weekIssue || undefined} className={`p-2.5 rounded-xl border text-[11px] font-bold text-center leading-snug ${weekColor} ${weekIssue ? 'ring-2 ring-rose-500/70' : ''}`}>
                             {empty ? (
                               canEdit ? <button onClick={() => openAddSlot({ date: d, time })} className="text-brand-text hover:underline">+ Add</button> : 'Available'
                             ) : (
@@ -778,6 +825,10 @@ export default function ScheduleManager() {
             </div>
           )}
         </>
+      )}
+
+      {activeTab === 'coaches' && (
+        <CoachesAvailability data={availData} onChanged={fetchAvailability} canManage={canManageCoaches} />
       )}
 
       {activeTab === 'upload' && (
@@ -990,6 +1041,10 @@ export default function ScheduleManager() {
                     <option value="">None</option>
                     {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                  {(() => {
+                    const issue = issueFor(availData, slots, { coach_id: addForm.coach_id, date: addForm.date, time: addForm.time })
+                    return issue ? <p className="mt-1 text-[10px] font-bold text-rose-400">{issue}</p> : null
+                  })()}
                 </div>
               )}
             </div>
@@ -1002,7 +1057,7 @@ export default function ScheduleManager() {
       )}
 
       {editSlot && (
-        <EditSlotModal slot={editSlot} onClose={() => setEditSlot(null)} onSaved={() => { setEditSlot(null); fetchSlots() }} coaches={coaches} courtDefaults={courtDefaults} />
+        <EditSlotModal slot={editSlot} onClose={() => setEditSlot(null)} onSaved={() => { setEditSlot(null); fetchSlots() }} coaches={coaches} courtDefaults={courtDefaults} availability={availData} slots={slots} />
       )}
 
       {balanceWarning && (
@@ -1058,27 +1113,46 @@ export default function ScheduleManager() {
           </div>
         </div>
       )}
+
+      {coachWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="coach-warn-title">
+          <div className="w-full max-w-sm glass-panel rounded-2xl border border-amber-400/40 shadow-2xl p-6 text-center">
+            <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center bg-amber-500/20">
+              <span className="text-amber-400 text-2xl font-bold">!</span>
+            </div>
+            <h3 id="coach-warn-title" className="text-lg font-bold text-theme mb-2">Coach Availability</h3>
+            <p className="text-muted text-sm mb-4">{coachWarning.message}</p>
+            <p className="text-[11px] text-muted mb-4">Assign this slot to the coach anyway?</p>
+            <div className="flex gap-2">
+              <button onClick={() => setCoachWarning(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
+              <button onClick={handleCoachForce} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm">Assign Anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
+function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults, availability, slots }) {
   const { toast } = useFeedback()
   const existingParts = (slot.player_text || '').split(/\s*\/\s*/)
   const [form, setForm] = useState({ player_text: existingParts[0] || '', date: slot.date, time: canonTime(slot.time), court: slot.court, session_type: slot.session_type || null, coach_id: slot.coach_id || null })
   const [players, setPlayers] = useState(existingParts.length > 0 ? existingParts : [''])
   const [loading, setLoading] = useState(false)
   const [pendingOverride, setPendingOverride] = useState(null)
+  const [coachWarning, setCoachWarning] = useState(null)
 
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return
-      if (pendingOverride) setPendingOverride(null)
+      if (coachWarning) setCoachWarning(null)
+      else if (pendingOverride) setPendingOverride(null)
       else onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, pendingOverride])
+  }, [onClose, pendingOverride, coachWarning])
 
   const handleSave = async (balanceOverride) => {
     setLoading(true)
@@ -1090,17 +1164,37 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
       onSaved()
     } catch (err) {
       const msg = err.message || ''
-      const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
-      if (isBalanceConflict && !msg.includes('Slot already exists')) {
-        const stype = form.session_type || 'private'
-        setPendingOverride({
-          player: players.filter(n => n.trim()).join(', '),
-          sessionType: stype,
-          remaining: 0,
-        })
+      if (err.code === 'COACH_UNAVAILABLE' || err.code === 'COACH_CONFLICT') {
+        setCoachWarning({ message: err.message })
       } else {
-        toast.error(err.message || 'Failed to save')
+        const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
+        if (isBalanceConflict && !msg.includes('Slot already exists')) {
+          const stype = form.session_type || 'private'
+          setPendingOverride({
+            player: players.filter(n => n.trim()).join(', '),
+            sessionType: stype,
+            remaining: 0,
+          })
+        } else {
+          toast.error(err.message || 'Failed to save')
+        }
       }
+    }
+    setLoading(false)
+  }
+
+  const handleCoachForce = async () => {
+    if (!coachWarning) return
+    setLoading(true)
+    try {
+      const joinedNames = players.filter(n => n.trim()).join(' / ')
+      await api.put(`/slots/${slot.id}`, { ...form, player_text: joinedNames, force: true })
+      setCoachWarning(null)
+      onSaved()
+      toast.success('Slot assigned anyway')
+    } catch (err) {
+      setCoachWarning(null)
+      toast.error(err.message || 'Failed to save')
     }
     setLoading(false)
   }
@@ -1193,6 +1287,10 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
                 <option value="">None</option>
                 {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {(() => {
+                const issue = issueFor(availability, slots, { coach_id: form.coach_id, date: form.date, time: form.time, excludeId: slot.id })
+                return issue ? <p className="mt-1 text-[10px] font-bold text-rose-400">{issue}</p> : null
+              })()}
             </div>
           )}
         </div>
@@ -1219,6 +1317,23 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults }) {
               <button onClick={() => setPendingOverride(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
               <button onClick={() => handleOverrideConfirm('free')} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Add Free</button>
               <button onClick={() => handleOverrideConfirm('deduct')} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm">Deduct Anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {coachWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="coach-warn-title-2">
+          <div className="w-full max-w-sm glass-panel rounded-2xl border border-amber-400/40 shadow-2xl p-6 text-center">
+            <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center bg-amber-500/20">
+              <span className="text-amber-400 text-2xl font-bold">!</span>
+            </div>
+            <h3 id="coach-warn-title-2" className="text-lg font-bold text-theme mb-2">Coach Availability</h3>
+            <p className="text-muted text-sm mb-4">{coachWarning.message}</p>
+            <p className="text-[11px] text-muted mb-4">Save this slot with the coach assigned anyway?</p>
+            <div className="flex gap-2">
+              <button onClick={() => setCoachWarning(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
+              <button onClick={handleCoachForce} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm disabled:opacity-50">Assign Anyway</button>
             </div>
           </div>
         </div>

@@ -60,6 +60,8 @@ export const TABLES = [
   'notifications', 'conversion_requests', 'expenses', 'booking_requests',
   'payments', 'audit_logs', 'court_defaults', 'app_sessions', 'roles',
   'coach_daily_hours', 'coach_payments', 'push_subscriptions',
+  // coach availability references users → after users (delete order is reversed)
+  'coach_availability', 'coach_unavailable_dates',
   // tournament tables reference users → must come after users (delete order is reversed)
   'tournaments', 'tournament_signups', 'tournament_teams', 'tournament_matches',
   // journey tables reference users + assessment_templates → last (delete order reversed)
@@ -143,6 +145,8 @@ const DATE_COLS = {
   roles: ['created_at', 'updated_at'],
   coach_daily_hours: ['date', 'created_at', 'updated_at'],
   coach_payments: ['date', 'created_at'],
+  coach_availability: ['created_at', 'updated_at'],
+  coach_unavailable_dates: ['date', 'created_at', 'updated_at'],
   push_subscriptions: ['created_at', 'updated_at'],
   tournaments: ['registration_open_at', 'registration_close_at', 'created_at', 'updated_at'],
   tournament_signups: ['created_at', 'updated_at'],
