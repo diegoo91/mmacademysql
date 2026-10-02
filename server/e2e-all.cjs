@@ -242,8 +242,9 @@ async function run() {
   const putDefaults = await req('PUT', '/slots/court-defaults', { court: 1, coach_id: null }, adminToken)
   mark('PUT /slots/court-defaults (admin)', putDefaults.ok)
 
-  // court-default propagation: future slots adopt the new default coach,
-  // manual coach overrides are kept, applyToFuture:false touches no slots
+  // court-default propagation: EVERY future slot on the court adopts the new
+  // default coach (including manually-assigned ones), applyToFuture:false
+  // touches no slots
   {
     const cdCourt = 6
     const adminId = meAdmin.data?.user?.id
@@ -256,12 +257,12 @@ async function run() {
     if (slotA.ok && slotB.ok && newCoachId && playerId) {
       await req('PUT', `/slots/${slotB.data.id}`, { coach_id: playerId }, adminToken)
       const apply = await req('PUT', '/slots/court-defaults', { court: cdCourt, coach_id: newCoachId, applyToFuture: true }, adminToken)
-      mark('PUT /slots/court-defaults applyToFuture reports count', apply.ok && apply.data?.updatedSlots === 1, `updatedSlots=${apply.data?.updatedSlots}`)
+      mark('PUT /slots/court-defaults applyToFuture reports count', apply.ok && apply.data?.updatedSlots >= 2, `updatedSlots=${apply.data?.updatedSlots}`)
       const list = await req('GET', `/slots?court=${cdCourt}&from=${farFuture}&to=${farFuture}`, null, adminToken)
       const a = (list.data || []).find(s => s.id === slotA.data.id)
       const b = (list.data || []).find(s => s.id === slotB.data.id)
       mark('court-default: unassigned future slot adopts default coach', Number(a?.coach_id) === Number(newCoachId), `slot=${a?.coach_id} default=${newCoachId}`)
-      mark('court-default: manual coach override preserved', Number(b?.coach_id) === Number(playerId), `slot=${b?.coach_id} manual=${playerId}`)
+      mark('court-default: manual coach assignment overwritten by default', Number(b?.coach_id) === Number(newCoachId), `slot=${b?.coach_id} default=${newCoachId} (was ${playerId})`)
       cleanup.push({ method: 'DELETE', path: `/slots/${slotA.data.id}`, token: adminToken, label: 'court-default slot A' })
       cleanup.push({ method: 'DELETE', path: `/slots/${slotB.data.id}`, token: adminToken, label: 'court-default slot B' })
       await req('PUT', '/slots/court-defaults', { court: cdCourt, coach_id: null, applyToFuture: false }, adminToken)

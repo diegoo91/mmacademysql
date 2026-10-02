@@ -160,9 +160,9 @@ router.put('/court-defaults', authenticate, requirePermission('schedule'), async
     }
 
     // Apply the new default to existing future slots on this court.
-    // Manual overrides are kept: only slots whose coach was NULL or the
-    // previous default coach for this court are rewritten. Past slots,
-    // cancelled/denied slots, and manually-assigned coaches are untouched.
+    // Overwrites EVERY future slot's coach (empty cells and manual
+    // assignments alike) so the schedule matches the saved default.
+    // Past slots and cancelled/denied slots are never touched.
     let updatedSlots = 0
     if (applyToFuture) {
       const today = getCairoToday()
@@ -170,8 +170,7 @@ router.put('/court-defaults', authenticate, requirePermission('schedule'), async
         Number(s.court) === parseInt(court) &&
         s.date >= today &&
         s.status !== 'cancelled' &&
-        s.status !== 'denied' &&
-        (s.coach_id == null || s.coach_id === oldCoachId)
+        s.status !== 'denied'
       )
       for (const s of targets) {
         if ((s.coach_id || null) === newCoachId) continue

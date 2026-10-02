@@ -560,7 +560,7 @@ export default function ScheduleManager() {
               onChange={e => setApplyFutureDefaults(e.target.checked)}
               className="w-3.5 h-3.5 rounded accent-brand"
             />
-            <span className="text-[11px] text-muted">Apply to existing future slots on that court (keeps manual coach overrides, skips past/cancelled)</span>
+            <span className="text-[11px] text-muted">Apply to ALL existing future slots on that court (replaces any assigned coach; skips past/cancelled)</span>
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[1, 2, 3].map(court => (
