@@ -307,6 +307,9 @@ html {
   html {
     scroll-behavior: auto;
   }
+  .hero-video {
+    display: none !important;
+  }
   .reveal,
   .reveal.is-visible,
   .animate-marquee,
@@ -336,5 +339,87 @@ html {
   }
   video[autoplay] {
     display: none;
+  }
+}
+
+/* ---- Print / receipt (Stragent: receipts & reports) ---- */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  /* chrome never prints: navbar, footer, WhatsApp FAB, A2HS banner, actions */
+  header.sticky,
+  footer,
+  .no-print,
+  a[aria-label^="Chat on WhatsApp"] {
+    display: none !important;
+  }
+  main {
+    min-height: auto !important;
+  }
+  .animate-fadeIn,
+  .animate-rise {
+    animation: none !important;
+  }
+
+  /* The receipt card prints on forced light ink regardless of active theme */
+  .print-receipt,
+  .print-receipt * {
+    background: #fff !important;
+    background-color: #fff !important;
+    color: #0d1b18 !important;
+    border-color: #d1d5db !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    text-shadow: none !important;
+  }
+  .print-receipt {
+    border: 1px solid #d1d5db !important;
+    padding: 8mm !important;
+  }
+  .print-receipt .text-brand-text,
+  .print-receipt .text-brand {
+    color: #008f5a !important;
+  }
+  .print-receipt .text-muted {
+    color: #6b7280 !important;
+  }
+  .print-receipt .text-amber-400,
+  .print-receipt .text-amber-500,
+  .print-receipt .text-amber-600 {
+    color: #b45309 !important;
+  }
+  .print-receipt .text-rose-400,
+  .print-receipt .text-rose-500,
+  .print-receipt .text-red-500 {
+    color: #dc2626 !important;
+  }
+  .print-receipt .text-green-500,
+  .print-receipt .text-emerald-400,
+  .print-receipt .text-emerald-500,
+  .print-receipt .text-green-400 {
+    color: #16a34a !important;
+  }
+  .print-receipt .bg-brand {
+    background: #00a86b !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-receipt .bg-amber-400 {
+    background: #fbbf24 !important;
+    color: #0d1b18 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-receipt .border-theme,
+  .print-receipt .border-b,
+  .print-receipt .border-t {
+    border-color: #d1d5db !important;
   }
 }

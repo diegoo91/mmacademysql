@@ -603,3 +603,13 @@
 - ARIA polish: ScoreRing role="img", SkeletonPanel role="status".
 - Re-verified: oxlint 0 errors / 0 Journey findings, mojibake 0, build OK, api 200, vite transform 200, e2e 144/144 (141 journey-era checks + 3 court-default checks added by the concurrent slots workstream; journey block untouched).
 - Still local-only, uncommitted.
+
+Session: professional report analytics with charts (player + admin)
+- Journey.jsx: added round1/lensValue/trendPoints, TrendChart + TrendPanel (SVG score progression), PillarRadar (4-axis pillar profile), ReportAnalytics (ring + radar + score bands + strongest/focus). Hand-rolled SVG, no new deps.
+- Wired 6 touchpoints: player main (trend), player assessment view, player full report view, admin journey top (trend), admin assessment block, admin monthly block. Live updates from drafts.
+- Verification: oxlint 0 errors / 0 Journey findings; build OK; vite transform 200; api 200; e2e 144/144; mojibake 0; new classes in dist CSS.
+- INCIDENT: e2e failed (POST /journey/assessment 500, null value in column id). Root cause: local PG journey tables recreated externally without identity, FKs, CHECKs, UNIQUEs; orphan rows accumulated.
+- DB repaired: identity on journey_reports/journey_items/assessment_templates id columns; 13 constraints restored; orphans purged.
+- Hardened server/src/index.js ensureJourney: boot self-heal restores missing id identity + all 13 journey constraints; both branches tested (skip 13->13, add 12->13); CREATE DDL FKs named to match ensure names.
+- Post-repair: e2e 144/144 twice; post-run orphans=0 (ON DELETE CASCADE verified).
+- Uncommitted (local only): src/components/Journey.jsx, server/src/index.js, dist artifacts.

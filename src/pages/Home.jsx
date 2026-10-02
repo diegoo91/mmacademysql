@@ -26,6 +26,8 @@ import {
   ACADEMY_STATS,
   FAQS,
   GALLERY_IMAGES,
+  HERO_POSTER,
+  HERO_VIDEO,
   METHOD_STEPS,
   WHY_MM,
 } from '../data/homeShowcase'
@@ -263,6 +265,18 @@ export default function Home() {
         id="hero"
         className="relative py-28 lg:py-36 overflow-hidden border-b border-white/10 bg-[linear-gradient(165deg,#3D8B76_0%,#2A6B5C_42%,#1F5246_100%)] text-white"
       >
+        <video
+          src={HERO_VIDEO}
+          poster={HERO_POSTER}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+          className="hero-video absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/60 via-slate-950/55 to-slate-950/65 pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(255,255,255,0.18),transparent_60%)] pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_60%_at_50%_100%,rgba(13,27,24,0.45),transparent_55%)] pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-b from-transparent to-black/25 pointer-events-none" />
@@ -284,7 +298,7 @@ export default function Home() {
           </h1>
 
           <p
-            className="text-base sm:text-lg text-white/60 max-w-2xl mx-auto leading-relaxed animate-rise"
+            className="text-base sm:text-lg text-white/75 max-w-2xl mx-auto leading-relaxed animate-rise"
             style={{ animationDelay: '160ms' }}
           >
             Professional padel coaching across our {COURTS} dedicated courts &mdash; private coaching and
@@ -479,7 +493,7 @@ export default function Home() {
             </p>
           </Reveal>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {GALLERY_IMAGES.map((item, gIdx) => (
               <div
                 key={item.id}
@@ -506,13 +520,13 @@ export default function Home() {
                     playsInline
                     preload="metadata"
                     aria-hidden="true"
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    className="absolute inset-0 w-full h-full object-cover object-[center_28%] group-hover:scale-110 transition-transform duration-700"
                   />
                 ) : (
                   <img
                     src={item.image}
                     alt={item.title}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    className="absolute inset-0 w-full h-full object-cover object-[center_35%] group-hover:scale-110 transition-transform duration-700"
                   />
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent opacity-90 pointer-events-none" />

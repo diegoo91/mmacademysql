@@ -1,6 +1,12 @@
 // Showcase content for the Home page (imagery + marketing copy).
 // Pricing truth lives in pricingData.js — the numbers below mirror it.
 
+const BASE = import.meta.env.BASE_URL
+
+// Hero background video (Option 2 preview) — captured at the academy.
+export const HERO_VIDEO = `${BASE}videos/mm-padel-hero.mp4`
+export const HERO_POSTER = `${BASE}images/mm-padel-poster-hero.jpg`
+
 export const ACADEMY_STATS = [
   { label: 'Panoramic Courts', value: '3 Courts' },
   { label: 'Session Duration', value: '1 Hour' },
@@ -139,36 +145,58 @@ export const PROGRAMS = [
   },
 ]
 
+// Gallery — captured at MM Padel Academy (all footage/photos of Coach Mahmoud
+// Moharam except the Yasin Fathalla session card, which pairs both).
+// Background music on the Yasin & Defence and Control clips (original audio
+// removed): "Stomp" by Alex-Productions — CC BY 3.0. Required credit if this
+// ever ships: Stomp by Alex-Productions | https://onsound.eu/ | Royalty Free
+// Music by https://www.free-stock-music.com | CC BY 3.0
 export const GALLERY_IMAGES = [
   {
     id: 1,
-    title: 'Academy Court 1',
-    category: 'Courts',
-    image: `${import.meta.env.BASE_URL}images/hero.png`,
-    video: `${import.meta.env.BASE_URL}videos/padel-court.mp4`,
-    tag: 'Panoramic',
+    title: 'Coach Moharam — Match Serve',
+    category: 'Competition',
+    image: `${BASE}images/mm-padel-poster-serve.jpg`,
+    video: `${BASE}videos/mm-padel-serve.mp4`,
+    tag: 'Competition',
   },
   {
     id: 2,
-    title: 'Evening Training Session',
-    category: 'Evening Play',
-    image: `${import.meta.env.BASE_URL}images/court.png`,
-    video: `${import.meta.env.BASE_URL}videos/padel-sunset.mp4`,
-    tag: 'Evening Play',
+    title: 'Tournament Ready',
+    category: 'Competition',
+    image: `${BASE}images/mm-padel-gallery-ready.jpg`,
+    tag: 'Midar Tour',
   },
   {
     id: 3,
-    title: 'Group Training Session',
+    title: 'Golden Hour Footwork',
     category: 'Training',
-    image: `${import.meta.env.BASE_URL}images/clinic.png`,
-    video: `${import.meta.env.BASE_URL}videos/padel-racket.mp4`,
-    tag: '2-Person Drills',
+    image: `${BASE}images/mm-padel-poster-goldenfootwork.jpg`,
+    video: `${BASE}videos/mm-padel-goldenfootwork.mp4`,
+    tag: 'Technique',
   },
   {
     id: 4,
-    title: 'Player Lounge',
-    category: 'Facilities',
-    image: `${import.meta.env.BASE_URL}images/lounge.png`,
-    tag: 'Amenities',
+    title: 'Overhead Smash',
+    category: 'Training',
+    image: `${BASE}images/mm-padel-poster-overhead.jpg`,
+    video: `${BASE}videos/mm-padel-footwork.mp4`,
+    tag: 'Match Play',
+  },
+  {
+    id: 5,
+    title: 'Defence and Control',
+    category: 'Training',
+    image: `${BASE}images/mm-padel-poster-netplay.jpg`,
+    video: `${BASE}videos/mm-padel-netplay.mp4`,
+    tag: 'Day Session',
+  },
+  {
+    id: 6,
+    title: 'Yasin Fathalla × Coach Moharam',
+    category: 'Live Session',
+    image: `${BASE}images/mm-padel-poster-yasin.jpg`,
+    video: `${BASE}videos/mm-padel-yasin-session.mp4`,
+    tag: 'Live Session',
   },
 ]

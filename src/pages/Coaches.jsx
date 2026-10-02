@@ -5,6 +5,7 @@ const HEAD_COACH = {
   name: 'Mahmoud Moharam',
   title: 'Head Coach',
   initial: 'M',
+  photo: `${import.meta.env.BASE_URL}images/mm-padel-coach-moharam.jpg`,
   blurb: 'Mahmoud Moharam heads the coaching team at MM Padel Academy — a coach known for turning strong players into smart ones. He reads the game a split-second early, teaches technique that holds up under pressure, and tailors every session to the player in front of him. From the first footwork drill to match point, his sessions are demanding, precise, and genuinely fun — and every player leaves the court better than they walked in.',
   quote: 'Every rally has a lesson — train with purpose.',
 }
@@ -32,8 +33,16 @@ export default function Coaches() {
         {/* Head Coach */}
         <div className="glass-card rounded-2xl p-6 sm:p-10 max-w-3xl mx-auto text-center space-y-5 border border-gold/40">
           <div className="relative w-32 h-32 mx-auto">
-            <div className="w-32 h-32 rounded-full bg-gold/15 border-4 border-gold/50 shadow-lg shadow-gold/10 flex items-center justify-center text-gold text-5xl font-black font-heading">
-              {HEAD_COACH.initial}
+            <div className="w-32 h-32 rounded-full bg-gold/15 border-4 border-gold/50 shadow-lg shadow-gold/10 flex items-center justify-center text-gold text-5xl font-black font-heading overflow-hidden">
+              {HEAD_COACH.photo ? (
+                <img
+                  src={HEAD_COACH.photo}
+                  alt="Captain Mahmoud Moharam"
+                  className="w-full h-full object-cover object-[center_15%]"
+                />
+              ) : (
+                HEAD_COACH.initial
+              )}
             </div>
             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gold text-slate-950 text-[10px] font-extrabold uppercase tracking-wider shadow whitespace-nowrap">
               Head Coach

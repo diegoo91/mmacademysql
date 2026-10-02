@@ -5,7 +5,7 @@ import { formatDateMed } from '../lib/time'
 import {
   Rocket, ClipboardList, Send, Save, ArrowLeft, CheckCircle2, RotateCcw,
   Eye, EyeOff, PlayCircle, CalendarPlus, TrendingUp, Target, ListChecks,
-  ChevronDown, Minus, Plus, RefreshCw, AlertTriangle,
+  ChevronDown, Minus, Plus, RefreshCw, AlertTriangle, BarChart3,
 } from 'lucide-react'
 
 const STATUS_LABELS = {
@@ -208,6 +208,245 @@ function PillarRow({ pillarAverages, pillars }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function round1(n) {
+  return Math.round((n + Number.EPSILON) * 10) / 10
+}
+
+function lensValue(v) {
+  if (!v) return null
+  const f = scoreOf(v.final_score)
+  if (f !== null) return f
+  const a = scoreOf(v.admin_score)
+  if (a !== null) return a
+  return scoreOf(v.user_score)
+}
+
+function trendPoints(data) {
+  const pts = []
+  const a = data?.assessment
+  const aScore = a ? scoreOf(a.overall_score) : null
+  if (aScore !== null) pts.push({ label: 'Baseline', value: aScore })
+  const reports = [...(data?.reports || [])].sort((x, y) => (x.report_number || 0) - (y.report_number || 0))
+  for (const r of reports) {
+    const v = scoreOf(r.overall_score)
+    if (v !== null) pts.push({ label: `R${r.report_number}`, value: v })
+  }
+  return pts
+}
+
+const PILLAR_SHORT = { 1: 'Shots', 2: 'Fitness', 3: 'Movement', 4: 'Intel' }
+const PILLAR_FILL = { 1: 'fill-brand-text', 2: 'fill-rose-400', 3: 'fill-blue-400', 4: 'fill-gold' }
+
+function TrendChart({ points }) {
+  if (!points.length) return null
+  const W = 640, H = 190, L = 30, R = 16, T = 20, B = 30
+  const iw = W - L - R, ih = H - T - B
+  const px = (i) => points.length === 1 ? L + iw / 2 : L + (i * iw) / (points.length - 1)
+  const py = (v) => T + ih - (Math.max(0, Math.min(10, v)) / 10) * ih
+  const grid = [0, 2, 4, 6, 8, 10]
+  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${px(i).toFixed(1)},${py(p.value).toFixed(1)}`).join(' ')
+  const area = points.length > 1
+    ? `${line} L${px(points.length - 1).toFixed(1)},${T + ih} L${px(0).toFixed(1)},${T + ih} Z`
+    : ''
+  const desc = points.map(p => `${p.label} ${p.value} out of 10`).join(', ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`Score progression: ${desc}`}>
+      {grid.map(g => (
+        <g key={g}>
+          <line x1={L} x2={W - R} y1={py(g)} y2={py(g)} stroke="currentColor" strokeWidth="1" className="text-black/10 dark:text-white/10" />
+          <text x={L - 6} y={py(g) + 3} textAnchor="end" fontSize="9" fontWeight="800" fill="currentColor" className="text-muted">{g}</text>
+        </g>
+      ))}
+      {area && <path d={area} fill="currentColor" className="text-brand" fillOpacity="0.10" />}
+      {points.length > 1 && (
+        <path d={line} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-brand" />
+      )}
+      {points.map((p, i) => (
+        <g key={`${p.label}-${i}`}>
+          <title>{`${p.label}: ${p.value}/10`}</title>
+          <circle cx={px(i)} cy={py(p.value)} r="4.5" className="fill-white dark:fill-slate-900" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
+          <text x={px(i)} y={py(p.value) - 9} textAnchor="middle" fontSize="10" fontWeight="900" fill="currentColor" className="text-brand-text">{p.value}</text>
+          <text x={px(i)} y={H - 9} textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor" className="text-muted">{p.label}</text>
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+function TrendPanel({ points }) {
+  if (points.length < 2) return null
+  return (
+    <div className="rounded-2xl border border-theme bg-white/60 dark:bg-slate-900/50 p-4 sm:p-5 space-y-2.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h4 className="text-xs font-extrabold uppercase tracking-wider text-theme flex items-center gap-1.5">
+          <TrendingUp className="w-3.5 h-3.5 text-brand-text" /> Score progression
+        </h4>
+        <span className="text-[10px] font-bold text-muted">Overall score across reports · 0-10</span>
+      </div>
+      <TrendChart points={points} />
+    </div>
+  )
+}
+
+function PillarRadar({ averages, pillars }) {
+  const list = (pillars || []).slice().sort((a, b) => a.id - b.id)
+  if (!list.length) return null
+  const S = 380, C = S / 2, RAD = 110
+  const n = list.length
+  const angle = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n
+  const pt = (i, r) => [C + Math.cos(angle(i)) * r, C + Math.sin(angle(i)) * r]
+  const poly = (fn) => list.map((_, i) => pt(i, fn(i)).map(v => v.toFixed(1)).join(',')).join(' ')
+  const ringPoly = (level) => poly(() => (level / 10) * RAD)
+  const valueOf = (p) => scoreOf(averages?.[p.id])
+  const dataPoly = poly((i) => {
+    const v = valueOf(list[i])
+    return ((v === null ? 0 : Math.max(0, Math.min(10, v))) / 10) * RAD
+  })
+  const hasData = list.some(p => valueOf(p) !== null)
+  const desc = list.map(p => `${PILLAR_SHORT[p.id] || p.label} ${valueOf(p) ?? 'no score'} out of 10`).join(', ')
+  return (
+    <svg viewBox={`0 0 ${S} ${S}`} className="w-full h-auto max-w-[340px]" role="img" aria-label={`Pillar profile: ${desc}`}>
+      {[2, 4, 6, 8, 10].map(lvl => (
+        <polygon
+          key={lvl}
+          points={ringPoly(lvl)}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={lvl === 10 ? 1.5 : 1}
+          className={lvl === 10 ? 'text-black/20 dark:text-white/20' : 'text-black/10 dark:text-white/10'}
+        />
+      ))}
+      {list.map((_, i) => {
+        const [x, y] = pt(i, RAD)
+        return <line key={i} x1={C} y1={C} x2={x} y2={y} stroke="currentColor" strokeWidth="1" className="text-black/10 dark:text-white/10" />
+      })}
+      {hasData && (
+        <polygon
+          points={dataPoly}
+          fill="currentColor"
+          fillOpacity="0.15"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+          className="text-brand"
+        />
+      )}
+      {list.map((p, i) => {
+        const v = valueOf(p)
+        if (v === null) return null
+        const [x, y] = pt(i, (v / 10) * RAD)
+        return <circle key={p.id} cx={x} cy={y} r="4" className={PILLAR_FILL[p.id] || 'fill-brand-text'} />
+      })}
+      {list.map((p, i) => {
+        const [vx, vy] = pt(i, RAD)
+        const c = Math.cos(angle(i)), s = Math.sin(angle(i))
+        const anchor = c > 0.3 ? 'start' : c < -0.3 ? 'end' : 'middle'
+        const x = vx + c * 12
+        const y = vy + s * 12 + (s < -0.3 ? 0 : s > 0.3 ? 0 : 3.5) + (s < -0.3 ? -2 : s > 0.3 ? 8 : 0)
+        const v = valueOf(p)
+        return (
+          <text key={p.id} x={x} y={y} textAnchor={anchor} fontSize="11" fontWeight="800" fill="currentColor" className="text-theme">
+            {PILLAR_SHORT[p.id] || p.id}{' '}
+            <tspan fontWeight="900" fill="currentColor" className="text-brand-text">{v ?? '—'}</tspan>
+          </text>
+        )
+      })}
+    </svg>
+  )
+}
+
+const SCORE_BANDS = [
+  { label: 'Excellent', range: '9-10', cls: 'bg-emerald-500' },
+  { label: 'Strong', range: '7-8', cls: 'bg-brand' },
+  { label: 'Developing', range: '4-6', cls: 'bg-amber-500' },
+  { label: 'Needs work', range: '1-3', cls: 'bg-rose-500' },
+]
+
+function ReportAnalytics({ values, grouped, pillars }) {
+  const rows = []
+  for (const g of grouped || []) {
+    for (const sec of g.sections) {
+      for (const t of sec.items) {
+        const s = lensValue((values || {})[t.id])
+        if (s !== null) rows.push({ id: t.id, name: t.name, pillar: g.pillar, score: s })
+      }
+    }
+  }
+  if (!rows.length) return null
+  const overall = round1(rows.reduce((sum, r) => sum + r.score, 0) / rows.length)
+  const byPillar = {}
+  for (const r of rows) {
+    if (!byPillar[r.pillar]) byPillar[r.pillar] = []
+    byPillar[r.pillar].push(r.score)
+  }
+  const pillarAverages = {}
+  for (const p of pillars || []) {
+    const arr = byPillar[p.id]
+    pillarAverages[p.id] = arr && arr.length ? round1(arr.reduce((s, n) => s + n, 0) / arr.length) : null
+  }
+  const counts = [0, 0, 0, 0]
+  for (const r of rows) counts[r.score >= 9 ? 0 : r.score >= 7 ? 1 : r.score >= 4 ? 2 : 3]++
+  const sorted = [...rows].sort((a, b) => b.score - a.score)
+  const strongest = sorted.slice(0, 3)
+  const focus = rows.length >= 6 ? sorted.slice(-3).reverse() : []
+  const total = rows.length
+  return (
+    <div className="rounded-2xl border border-theme bg-white/60 dark:bg-slate-900/50 p-4 sm:p-5 space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h4 className="text-xs font-extrabold uppercase tracking-wider text-theme flex items-center gap-1.5">
+          <BarChart3 className="w-3.5 h-3.5 text-brand-text" /> Report analytics
+        </h4>
+        <span className="text-[10px] font-bold text-muted">{total} skills scored</span>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 items-start">
+        <div className="flex flex-col items-center gap-2">
+          <ScoreRing value={overall} size={96} />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Overall score</span>
+        </div>
+        <div className="flex flex-col items-center gap-1 sm:col-span-2 lg:col-span-1">
+          <PillarRadar averages={pillarAverages} pillars={pillars} />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Pillar profile · 0-10</span>
+        </div>
+        <div className="space-y-2 w-full sm:col-span-2 lg:col-span-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted block">Score distribution</span>
+          {SCORE_BANDS.map((b, i) => {
+            const pct = total ? Math.round((counts[i] / total) * 100) : 0
+            return (
+              <div key={b.label} className="space-y-1">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="font-bold text-theme">{b.label} <span className="text-muted font-semibold">{b.range}</span></span>
+                  <span className="font-heading font-black text-theme">{counts[i]} <span className="text-muted text-[10px] font-bold">{pct}%</span></span>
+                </div>
+                <div className="h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                  <div className={`h-full rounded-full ${b.cls} transition-all duration-500`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      {strongest.length > 0 && focus.length > 0 && (
+        <div className="grid sm:grid-cols-2 gap-3 pt-3 border-t border-theme">
+          {[
+            { title: 'Strongest skills', list: strongest },
+            { title: 'Focus areas', list: focus },
+          ].map(col => (
+            <div key={col.title} className="space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted">{col.title}</span>
+              {col.list.map(it => (
+                <div key={it.id} className="flex items-center justify-between gap-2 rounded-lg border border-theme bg-white/50 dark:bg-slate-900/40 px-2.5 py-1.5">
+                  <span className="text-[11px] font-bold text-theme truncate">{it.name}</span>
+                  <ScoreBadge value={it.score} />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -753,6 +992,7 @@ export default function MyJourneySection() {
   const assessment = data.assessment
   const assessScored = Object.values(values).filter(v => scoreOf(v.user_score) !== null).length
   const assessEditable = !!assessment && ['draft', 'returned'].includes(assessment.status)
+  const trend = trendPoints(data)
 
   if (view === 'assessment' && assessment) {
     const editable = ['draft', 'returned'].includes(assessment.status)
@@ -789,6 +1029,12 @@ export default function MyJourneySection() {
             className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-xs text-theme placeholder:text-muted focus:border-brand-text focus:outline-none resize-y"
           />
         )}
+
+        <ReportAnalytics
+          values={editable ? { ...values, ...draft } : values}
+          grouped={grouped}
+          pillars={pillars}
+        />
 
         <SkillsList
           grouped={grouped}
@@ -857,6 +1103,11 @@ export default function MyJourneySection() {
             </div>
           )}
           <CommentsBlock report={report} />
+          <ReportAnalytics
+            values={editable ? { ...valuesFromItems(report.items), ...draft } : valuesFromItems(report.items)}
+            grouped={grouped}
+            pillars={pillars}
+          />
           <SkillsList
             grouped={grouped}
             pillars={pillars}
@@ -927,6 +1178,7 @@ export default function MyJourneySection() {
 
       <SummaryCards summary={summary} />
       <PillarRow pillarAverages={summary.pillar_averages} pillars={pillars} />
+      <TrendPanel points={trend} />
 
       {summary.needs_assessment ? (
         <EmptyJourney summary={summary} onStart={openAssessment} busy={busy === 'start'} />
@@ -1172,6 +1424,7 @@ export function JourneyTab({ userId }) {
   if (!data) return null
 
   const { summary, pillars, assessment } = data
+  const trend = trendPoints(data)
 
   const renderActions = (report, values) => {
     const busyKey = (n) => busy === `${n}-${report.id}`
@@ -1226,6 +1479,7 @@ export function JourneyTab({ userId }) {
         </div>
         <SummaryCards summary={summary} />
         <PillarRow pillarAverages={summary.pillar_averages} pillars={pillars} />
+        <TrendPanel points={trend} />
 
         {/* create next monthly report */}
         <div className="rounded-xl border border-theme bg-white/50 dark:bg-slate-900/40 p-4 flex flex-wrap items-end gap-3">
@@ -1281,6 +1535,11 @@ export function JourneyTab({ userId }) {
             className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-xs text-theme placeholder:text-muted focus:border-brand-text focus:outline-none resize-y"
           />
           <CommentsBlock report={assessment} />
+          <ReportAnalytics
+            values={{ ...valuesFromItems(assessment.items), ...assessmentValues }}
+            grouped={grouped}
+            pillars={pillars}
+          />
           <SkillsList
             grouped={grouped}
             pillars={pillars}
@@ -1373,6 +1632,11 @@ export function JourneyTab({ userId }) {
                   className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-xs text-theme placeholder:text-muted focus:border-brand-text focus:outline-none resize-y"
                 />
                 <CommentsBlock report={r} />
+                <ReportAnalytics
+                  values={{ ...valuesFromItems(r.items), ...adminValues }}
+                  grouped={grouped}
+                  pillars={pillars}
+                />
                 <SkillsList
                   grouped={grouped}
                   pillars={pillars}
