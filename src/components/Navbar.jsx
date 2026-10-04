@@ -351,6 +351,21 @@ export default function Navbar() {
             </Link>
           ))}
 
+          {user && (
+            <Link
+              to="/profile"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center justify-between px-4 py-3 rounded-xl text-base font-semibold transition-colors ${
+                isActive('/profile')
+                  ? 'bg-brand text-white font-bold'
+                  : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-900'
+              }`}
+            >
+              <span>My Profile</span>
+              <ChevronRight className="w-5 h-5 opacity-60" />
+            </Link>
+          )}
+
           <div className="pt-4 border-t border-theme flex flex-col gap-2">
             <button
               onClick={toggleTheme}
