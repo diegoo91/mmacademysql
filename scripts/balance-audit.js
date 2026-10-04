@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * Phase 0 — READ-ONLY balance audit against prod Postgres (SELECT only).
+ * Phase 0 — READ-ONLY balance audit against Postgres (SELECT only).
  *
  * Usage:
- *   node scripts/balance-audit.js            human-readable report
- *   node scripts/balance-audit.js --json     also writes scripts/payments-backups/balance-audit-<ts>.json
- *   node scripts/balance-audit.js --filter=titos   only players/slots matching substring
+ *   node scripts/balance-audit.js                    prod report (default)
+ *   node scripts/balance-audit.js --source=localpg   local Postgres report
+ *   node scripts/balance-audit.js --json             also writes scripts/payments-backups/balance-audit-<ts>.json
+ *   node scripts/balance-audit.js --filter=titos     only players/slots matching substring
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { simulateFifo } from '../server/src/utils/convertBalance.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -26,31 +28,37 @@ const dstr = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d |
 
 let client = null
 async function pgConnect() {
-  const env = readFileSync(join(ROOT, 'server', '.env'), 'utf8')
-  const DATABASE_URL = env.match(/^PROD_DATABASE_URL=(.*)$/m)?.[1]?.trim() || env.match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim()
-  if (!DATABASE_URL) { console.error('PROD_DATABASE_URL (or DATABASE_URL) missing in server/.env'); process.exit(1) }
+  const SOURCE = getArg('source', 'prod')
+  let DATABASE_URL
+  if (SOURCE === 'localpg') {
+    DATABASE_URL = process.env.LOCAL_PGURL
+    if (!DATABASE_URL) {
+      const env = readFileSync(join(ROOT, 'server', '.env'), 'utf8')
+      const g = (k, d) => env.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1]?.trim() || d
+      DATABASE_URL = `postgresql://${encodeURIComponent(g('DB_USER', 'postgres'))}:${encodeURIComponent(g('DB_PASSWORD', 'root'))}@${g('DB_HOST', 'localhost')}:${g('DB_PORT', '5432')}/${g('DB_NAME', 'mmacademy')}`
+    }
+  } else {
+    const env = readFileSync(join(ROOT, 'server', '.env'), 'utf8')
+    DATABASE_URL = env.match(/^PROD_DATABASE_URL=(.*)$/m)?.[1]?.trim() || env.match(/^DATABASE_URL=(.*)$/m)?.[1]?.trim()
+  }
+  if (!DATABASE_URL) { console.error('No database URL (localpg: root .env DB_*; prod: PROD_DATABASE_URL in server/.env)'); process.exit(1) }
   const { Client } = require('pg')
-  client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  client = new Client({ connectionString: DATABASE_URL, ssl: DATABASE_URL.includes('supabase') ? { rejectUnauthorized: false } : false })
   await client.connect()
+  console.log(`source: ${SOURCE} (${DATABASE_URL.includes('supabase') ? 'supabase' : 'local'})`)
 }
 
-const expired = u => !!u.cycle_expires_at && new Date(u.cycle_expires_at.replace(' ', 'T') + 'Z') < new Date()
+const expired = u => {
+  const v = u.cycle_expires_at
+  if (!v) return false
+  return (v instanceof Date ? v : new Date(String(v).replace(' ', 'T') + 'Z')) < new Date()
+}
 
-/** FIFO expected remaining from paid credits vs a given slot set (same conversion rules as sessionPaid.js). */
+/** FIFO expected remaining from paid credits vs a given slot set (shared engine: server/src/utils/convertBalance.js). */
 function fifo(paidPriv, paidGrp, slotList) {
-  let p = paidPriv, g = paidGrp
   const sorted = [...slotList].sort((a, b) => dstr(a.date).localeCompare(dstr(b.date)) || String(a.time || '').localeCompare(String(b.time || '')))
-  for (const s of sorted) {
-    const t = s.session_type || 'private'
-    if (t === 'private') {
-      if (p > 0) p--
-      else if (g >= 2) g -= 2
-    } else {
-      if (g > 0) g--
-      else if (p > 0) { p--; g += 1 }
-    }
-  }
-  return { priv: p, grp: g }
+  const walk = simulateFifo(paidPriv, paidGrp, sorted)
+  return { priv: walk.remaining.private, grp: walk.remaining.group }
 }
 
 async function audit() {

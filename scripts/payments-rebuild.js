@@ -22,6 +22,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { simulateFifo } from '../server/src/utils/convertBalance.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -96,17 +97,8 @@ function computeReport(users, pays, slots) {
       .filter(s => { if (!s.player_text) return false; return s.player_text.split(/[/+]/).map(n => norm(n)).includes(norm(u.name)) })
       .sort((a, b) => dstr(a.date).localeCompare(dstr(b.date)) || String(a.time || '').localeCompare(String(b.time || '')))
 
-    // FIFO consumption identical to sessionPaid.js
-    for (const s of mySlots) {
-      const t = s.session_type || 'private'
-      if (t === 'private') {
-        if (poolPriv > 0) poolPriv--
-        else if (poolGrp >= 2) poolGrp -= 2
-      } else {
-        if (poolGrp > 0) poolGrp--
-        else if (poolPriv > 0) { poolPriv--; poolGrp += 1 }
-      }
-    }
+    // FIFO consumption — shared engine (server/src/utils/convertBalance.js)
+    const walk = simulateFifo(poolPriv, poolGrp, mySlots)
 
     const before = {
       private_balance: Number(u.private_balance) || 0,
@@ -114,7 +106,7 @@ function computeReport(users, pays, slots) {
       cycle_private: Number(u.cycle_private) || 0,
       cycle_group: Number(u.cycle_group) || 0,
     }
-    const after = { private_balance: poolPriv, group_balance: poolGrp, cycle_private: 0, cycle_group: 0 }
+    const after = { private_balance: walk.remaining.private, group_balance: walk.remaining.group, cycle_private: 0, cycle_group: 0 }
     const changed = before.private_balance !== after.private_balance || before.group_balance !== after.group_balance || before.cycle_private !== 0 || before.cycle_group !== 0
     report.push({ id: u.id, name: u.name, paidSlots: myPays.length, consumedSlots: mySlots.length, before, after, changed })
   }

@@ -44,8 +44,14 @@ export default function Payments() {
   const [submitting, setSubmitting] = useState(false)
   const [countsTouched, setCountsTouched] = useState(false)
   // The amount drives the session counts (package priced on the server);
-  // typing into the count fields switches to a manual override.
-  const { allocation } = useAllocationPreview({ playerId: form.player_id, amount: form.amount })
+  // typing into the count fields switches to a manual override and the hint
+  // previews the split FOR the entered counts (conversion-aware).
+  const { allocation } = useAllocationPreview({
+    playerId: form.player_id,
+    amount: form.amount,
+    privateSessions: countsTouched ? form.private_sessions : undefined,
+    groupSessions: countsTouched ? form.group_sessions : undefined,
+  })
   useEffect(() => {
     if (countsTouched || !allocation) return
     setForm(f => ({
@@ -309,7 +315,7 @@ export default function Payments() {
               <input type="number" min="0" value={form.group_sessions} onChange={e => { setCountsTouched(true); setForm({ ...form, group_sessions: e.target.value }) }} className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm" />
             </div>
           </div>
-          <AllocationHint allocation={countsTouched ? null : allocation} />
+          <AllocationHint allocation={allocation} />
           <div>
             <label className="block text-xs font-semibold text-muted mb-1">Notes</label>
             <input type="text" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="e.g. 8 Group, 3 Private + 2 Group" className="w-full px-3 py-2 rounded-xl bg-surface border border-theme text-theme text-sm" />
@@ -586,8 +592,15 @@ function EditPaymentModal({ payment, players, onClose, onSaved }) {
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   // Amount drives the counts (excludes this payment so its own credit can't
-  // pay for the sessions it covers); typing a count switches to manual.
-  const { allocation } = useAllocationPreview({ playerId: form.player_id, amount: form.amount, excludeId: payment.id })
+  // pay for the sessions it covers); typing a count switches to manual and
+  // the hint previews the split for the entered counts.
+  const { allocation } = useAllocationPreview({
+    playerId: form.player_id,
+    amount: form.amount,
+    excludeId: payment.id,
+    privateSessions: countsTouched ? form.private_sessions : undefined,
+    groupSessions: countsTouched ? form.group_sessions : undefined,
+  })
   useEffect(() => {
     if (countsTouched || !allocation) return
     setForm(f => ({
@@ -667,7 +680,7 @@ function EditPaymentModal({ payment, players, onClose, onSaved }) {
               <input type="number" min="0" value={form.group_sessions} onChange={(e) => { setCountsTouched(true); set('group_sessions')(e) }} className={inputCls} />
             </div>
           </div>
-          <AllocationHint allocation={countsTouched ? null : allocation} />
+          <AllocationHint allocation={allocation} />
           <div>
             <label className="block text-xs font-bold text-muted mb-1">Notes</label>
             <textarea value={form.notes} onChange={set('notes')} rows={2} className={inputCls + ' resize-none'} />

@@ -3,8 +3,9 @@ const fmt = (n) => (Number(n) || 0).toLocaleString('en-EG')
 /**
  * Breakdown line under the amount field of a payment form:
  * what the money covers (existing unpaid sessions, package priced) and what
- * it adds as new sessions. Purely informational — the server re-derives the
- * same numbers when the payment is saved.
+ * it adds as new sessions — conversion-aware (1P = 2G), computed with the
+ * session counts currently in the form. Purely informational — the server
+ * re-derives the same numbers when the payment is saved.
  */
 export function AllocationHint({ allocation }) {
   if (!allocation) return null
@@ -19,13 +20,7 @@ export function AllocationHint({ allocation }) {
   const remaining = allocation.remaining_unpaid || {}
   const remainingCount = (remaining.private || 0) + (remaining.group || 0)
 
-  if (owed === 0 && !credit) return null
-
-  const bits = []
-  if (owed > 0) bits.push(`Owed: EGP ${fmt(owed)}`)
-  if (covered) bits.push(`covers ${coveredP}P / ${coveredG}G of unpaid`)
-  if (credit) bits.push(`+ ${creditP}P / ${creditG}G new credit`)
-  if (owed > 0 && !covered) bits.push('no unpaid sessions covered')
+  if (owed === 0 && !credit && !allocation.warning) return null
 
   return (
     <div className="mt-2 text-[11px] leading-relaxed rounded-lg border border-brand-text/20 bg-brand/5 px-3 py-2 text-muted">
@@ -40,8 +35,13 @@ export function AllocationHint({ allocation }) {
           Still unpaid after this: {remaining.private || 0}P / {remaining.group || 0}G (EGP {fmt(remaining.amount || 0)})
         </div>
       )}
-      {owed === 0 && credit && (
+      {owed === 0 && credit && !allocation.warning && (
         <div className="mt-0.5 text-muted">No unpaid sessions — the full amount is credited to the balance.</div>
+      )}
+      {allocation.warning && (
+        <div className="mt-0.5 text-amber-400 font-semibold">
+          {allocation.warning} The split above uses your entered counts (1P = 2G conversion applied).
+        </div>
       )}
     </div>
   )

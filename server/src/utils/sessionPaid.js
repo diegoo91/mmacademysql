@@ -1,5 +1,6 @@
 import db from '../db.js'
 import { packagePrice } from './pricing.js'
+import { simulateFifo } from './convertBalance.js'
 
 /**
  * Shared paid-FIFO engine — single source of truth for per-slot paid status.
@@ -34,40 +35,32 @@ export async function computePlayerSessions(player, { excludePaymentId = null } 
     poolGrp += p.group_sessions || 0
   }
 
-  const sessions = []
+  const entries = []
   for (const s of playerSlots) {
     const booking = s.booking_id ? await db.get('bookings', s.booking_id) : null
     const directPayment = booking
       ? await db.find('payments', p => p.booking_id === booking.id && p.status === 'payment_approved' && p.id !== excludePaymentId)
       : null
     const sessionType = s.session_type || (booking ? booking.session_type : null) || 'private'
-
-    let paid = false
-    let paidVia = null
-    if (directPayment || booking?.paid) {
-      paid = true
-      paidVia = 'payment'
-    } else if (s.status === 'payment_approved') {
-      // Slot-level payment already approved (slot carries the payment, e.g. a
-      // player swap left no booking link) — attended or not, it is paid.
-      paid = true
-      paidVia = 'payment'
-    } else {
-      if (sessionType === 'private') {
-        if (poolPriv > 0) { poolPriv--; paid = true; paidVia = 'payment' }
-        else if (poolGrp >= 2) { poolGrp -= 2; paid = true; paidVia = 'converted' }
-      } else {
-        if (poolGrp > 0) { poolGrp--; paid = true; paidVia = 'payment' }
-        else if (poolPriv > 0) { poolPriv--; poolGrp += 1; paid = true; paidVia = 'converted' }
-      }
-    }
-
-    sessions.push({
-      date: s.date, time: s.time, court: s.court,
-      session_type: sessionType, paid, paid_via: paidVia,
-      booking_ref: booking ? booking.ref : null, status: s.status,
-    })
+    // Slot-level payment already approved (slot carries the payment, e.g. a
+    // player swap left no booking link) — attended or not, it is paid.
+    const externallyPaid = !!(directPayment || booking?.paid || s.status === 'payment_approved')
+    entries.push({ slot: s, booking, sessionType, externallyPaid })
   }
+
+  const walk = simulateFifo(
+    poolPriv,
+    poolGrp,
+    entries.map(e => ({ session_type: e.sessionType, _external: e.externallyPaid })),
+    { isExternallyPaid: (s) => s._external },
+  )
+
+  const sessions = entries.map((e, i) => ({
+    date: e.slot.date, time: e.slot.time, court: e.slot.court,
+    session_type: e.sessionType,
+    paid: walk.results[i].paid, paid_via: walk.results[i].paid_via,
+    booking_ref: e.booking ? e.booking.ref : null, status: e.slot.status,
+  }))
 
   sessions.reverse()
 

@@ -198,8 +198,14 @@ function PaymentModal({ user, onClose, onDone }) {
   const [error, setError] = useState('')
   const [countsTouched, setCountsTouched] = useState(false)
   // Amount drives the session counts (package priced against unpaid sessions);
-  // typing into the count fields switches to a manual override.
-  const { allocation } = useAllocationPreview({ playerId: user.id, amount: form.amount })
+  // typing into the count fields switches to a manual override and the hint
+  // previews the split FOR the entered counts (conversion-aware).
+  const { allocation } = useAllocationPreview({
+    playerId: user.id,
+    amount: form.amount,
+    privateSessions: countsTouched ? form.private_sessions : undefined,
+    groupSessions: countsTouched ? form.group_sessions : undefined,
+  })
   useEffect(() => {
     if (countsTouched || !allocation) return
     setForm(f => ({
@@ -268,7 +274,7 @@ function PaymentModal({ user, onClose, onDone }) {
               <input type="number" min="0" value={form.group_sessions} onChange={e => { setCountsTouched(true); setForm({ ...form, group_sessions: e.target.value }) }} placeholder="0" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
             </div>
           </div>
-          <AllocationHint allocation={countsTouched ? null : allocation} />
+          <AllocationHint allocation={allocation} />
           <div>
             <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Notes</label>
             <input type="text" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="e.g. 3 Private + 2 Group" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
