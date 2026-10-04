@@ -263,7 +263,7 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 | Category | Count |
 |----------|-------|
-| Total tasks completed | 187 |
+| Total tasks completed | 194 |
 | Phase 1: Initial Build | 18 |
 | Phase 2: Deployment | 6 |
 | Phase 3: Feature Enhancements | 12 |
@@ -284,6 +284,8 @@ All tasks completed from project inception (2026-09-09) through current date.
 | Phase 18: Receipt PDF Redesign | 4 |
 | Phase 19: Academy Media Gallery | 1 |
 | Phase 20: Shared FIFO Balance Engine + Local Reconcile | 8 |
+| Phase 21: Production Balance Reconcile | 7 |
+| Outstanding: orphan name merge + never-deducted slot workflow cleanup | (next) |
 
 ---
 
@@ -514,13 +516,14 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 ---
 
-## Up Next — Phase 21: Production Balance Reconcile (pending)
+## Phase 21: Production Balance Reconcile (2026-10-04)
 
 | # | Task | Status | Date |
 |---|------|--------|------|
-| 1 | Deploy `c14dd67` to Railway backend + Pages frontend (push-triggered); verify health + new allocation UI/preview live | Pending | |
-| 2 | Backup prod DB (Supabase snapshot / `pg_dump` of `PROD_DATABASE_URL`) | Pending | |
-| 3 | Run `node scripts/reconcile-balances.js --source=prod --report` — review flagged players, skipped (no-payment) list, mirror check | Pending | |
-| 4 | Run `--source=prod --apply` — repair, then re-report until 0 drift | Pending | |
-| 5 | Verify: `balance-audit.js --source=prod` (credit side == FIFO; workflow flags only), API spot-checks (unpaid report, `/api/users` debt/credit fields), server tests 26/26, receipt + coach smokes against prod URL | Pending | |
-| 6 | Follow-up cleanup (separate task): orphan name segments (zein/John smith/jane doe), never-deducted slot workflow, debt-in-raw-view display decision | Pending | |
+| 1 | Deploy verified live: Railway `/api/health` 200 + conversion-aware preview marker (entered-vs-money `warning` field returned) proves `c14dd67` on prod; Pages deploy run `37189712505` success; CI Tests green on both pushes | Done | 2026-10-04 |
+| 2 | Prod DB backup before writes: `pg_dump -Fc` → `%TEMP%\opencode\prod-before-reconcile-20261004.dump` (589 KB; `sslmode=no-verify` rewritten to `require` for libpq) | Done | 2026-10-04 |
+| 3 | `node scripts/reconcile-balances.js --source=prod --report` (read-only) — mirrored local exactly: 36 players, 27 drifted, 1 ok, 8 skipped, same 6 excess players (Adham 1P, Aley 6P, Halawany 2P, Yasin Mahmoud 3P, Zein 2G, Titos 1P) | Done | 2026-10-04 |
+| 4 | `--source=prod --apply` — **27/27 repaired** (JSON report + per-row backup written); re-report → **0 drifted / 28 ok / 8 skipped** | Done | 2026-10-04 |
+| 5 | `node scripts/balance-audit.js --source=prod` — 30 flagged / 6 clean; credit side == FIFO everywhere (residuals are workflow flags only: never-deducted / vs-deducted-FIFO / vs-allSlots-FIFO); orphan segments `zein`/`john smith`/`jane doe` unchanged, 0 duplicates, 0 payment mismatches | Done | 2026-10-04 |
+| 6 | API spot-check vs prod (9/9 match targets): Adham 0/2, Ahmed Saleh debt 3P, Aley 1/0 (phantom 7P gone), Zein 0/4, Haitham 2/0, Titos 0/1, Youssef Ashraf 6/0, Omar haitham 1/9; skipped Farida untouched (0/0, debt 2P, unpaid 17,500 / 21 sessions); unpaid report unchanged (14 players, 80,000) | Done | 2026-10-04 |
+| 7 | Gates: server tests **26/26**, receipt smoke **ALL PRESENT**, coach smoke **19/19** (one transient `fetch failed`, rerun green — smokes run on local backend with the same `c14dd67` code prod-marker-verified; coach smoke writes slots so never pointed at prod) | Done | 2026-10-04 |
