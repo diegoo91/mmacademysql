@@ -263,7 +263,7 @@ All tasks completed from project inception (2026-09-09) through current date.
 
 | Category | Count |
 |----------|-------|
-| Total tasks completed | 157 |
+| Total tasks completed | 187 |
 | Phase 1: Initial Build | 18 |
 | Phase 2: Deployment | 6 |
 | Phase 3: Feature Enhancements | 12 |
@@ -278,6 +278,12 @@ All tasks completed from project inception (2026-09-09) through current date.
 | Phase 12: Session Polish & UX | 6 |
 | Phase 13: Balance Integrity & UserDetail Rework | 5 |
 | Phase 14: Coach Balance Backfill | 3 |
+| Phase 15: Coaching Journey & Progress Reports | 9 |
+| Phase 16: Package-Priced Unpaid Report + Money-Driven Allocation | 4 |
+| Phase 17: Schedule Integrity & Coach Availability | 4 |
+| Phase 18: Receipt PDF Redesign | 4 |
+| Phase 19: Academy Media Gallery | 1 |
+| Phase 20: Shared FIFO Balance Engine + Local Reconcile | 8 |
 
 ---
 
@@ -328,6 +334,8 @@ All tasks completed from project inception (2026-09-09) through current date.
 | 41 | Reports vs Payments totals disagreed (missing All-Time preset) | All-Time preset default + approved-only totals + "Received (Filtered)" | 2026-09-25 |
 | 42 | Remaining-sessions display overstated (private counted 3× as group) | True-total display: group = real credits, convertible amount surfaced as `group_from_private` note | 2026-09-25 |
 | 43 | Prod slots 214/216 mis-attributed names + orphan user 26 (bare "Youssef") | Renamed to canonical players, +1 group deducted per slot, orphan deleted; slot 213 skipped per rejection | 2026-09-25 |
+| 44 | Court-default save overwrote coach on ALL future slots (not just default-less ones) | Apply only where coach is empty + full-future pass fix (`75839d9`, `6d05562`) | 2026-10-02 |
+| 45 | Payment counts credited per-bucket while sessions list cross-converted (1P=2G) → phantom credit + group debt never settled ("8P paid, both sides still owed") | Shared `simulateFifo` engine, conversion-aware `allocateFromSessions`, UI entered-vs-money warning, local reconcile repair (`c14dd67`) | 2026-10-04 |
 
 ---
 
@@ -354,6 +362,8 @@ All tasks completed from project inception (2026-09-09) through current date.
 | True-total display + separate convertible note | Balances show real remaining; "available as group (up to X)" note instead of hidden pooling — matches conversion rule 1 priv = 2 group |
 | Balance fixes via script with backups + audit rows | `apply-balance-fixes.js`: validations, optimistic-lock guards, tx rollback, backup JSON, `audit_logs` rows — repeatable/verifiable prod data ops |
 | Coach balance = SUM(coach_daily_hours) − SUM(coach_payments) | Hours worked upserted per day (UNIQUE coach+date); backfill done via transactional SQL + audit rows with pre/post verification |
+| One shared FIFO engine (`convertBalance.simulateFifo`) for every balance consumer | Three duplicated loops had drifted from per-bucket caps (root cause of the phantom-credit class); sessions list, reports, rebuild, audit, allocation and reconcile now walk identical state |
+| Reconcile = deterministic re-seed to empty-pool truth + cumulative FIFO replay | Reverse-then-replay churned into oscillating excess buckets; re-seeding makes starting state/columns irrelevant → one-pass exactness, replay converges, trim is a safety no-op |
 
 ---
 
@@ -369,6 +379,63 @@ All tasks completed from project inception (2026-09-09) through current date.
 | 6 | UserDetail.jsx: `Journey` tab in the player tab bar — full admin workflow: create monthly report (month picker + gating hints), admin-score/final-score editing with "Finals ← admin scores" helper, start review, return with feedback prompt, mark reviewed, publish, edit a published report | Done | 2026-10-01 |
 | 7 | Decisions: report authorship = admins + coaches via existing `players` permission (zero RBAC changes); completed session = `player_confirmed` slot on/before today (mirrors `enrichPlayer` name matching); players only see published reports fully (returned reports editable, drafts metadata-only) | Done | 2026-10-01 |
 | 8 | Verification: oxlint 0 errors (0 warnings in Journey.jsx), `npm run build` OK, e2e extended with 41 journey checks (RBAC 403s, validation 400s, full lifecycle, progress math) — **141/141 passed** | Done | 2026-10-01 |
+| 9 | Interface redesign + analytics committed as checkpoint `4a7e10d` (dense SkillsList R1-R6, ScoreRing, sticky action bars, TrendChart/PillarRadar/ReportAnalytics, journey-constraint boot self-heal after orphan-row incident) — e2e **144/144** | Done | 2026-10-02 |
+
+---
+
+## Phase 16: Package-Priced Unpaid Report + Money-Driven Allocation (2026-09-30 → 2026-10-01)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Module permission gating on API routes + payment editing (`PUT /payments/:id`) + slot deduct integrity guards (`e24596d`) | Done | 2026-09-30 |
+| 2 | Package-priced unpaid report (`packagePrice`: 16P = 14,000 + 3G = 1,500 → 15,500 EGP, not 17,500) + money-driven payment allocation preview (`9b70bf9`) | Done | 2026-10-01 |
+| 3 | Pricing regression suite + prod invariant audit + CI gate (`ff962f8`) — server↔frontend pricing parity for counts 0..64 | Done | 2026-10-01 |
+| 4 | Fix: FeedbackProvider mount + base-absolute sw/manifest URLs (`e5e2e7e`) | Done | 2026-10-01 |
+
+---
+
+## Phase 17: Schedule Integrity & Coach Availability (2026-10-01 → 2026-10-02)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Load all slots so dates outside the today±30 window render (`ed47ea2`) | Done | 2026-10-01 |
+| 2 | Saved court-default coach applied to existing future slots (`75839d9`) | Done | 2026-10-01 |
+| 3 | Fix: court default no longer overwrites coach on ALL future slots (`6d05562`) | Done | 2026-10-02 |
+| 4 | Coach availability management (weekly + date exceptions) with assignment enforcement in ScheduleManager (`5ea0eec`); coach-availability smoke **19/19** | Done | 2026-10-02 |
+
+---
+
+## Phase 18: Receipt PDF Redesign (2026-10-02 → 2026-10-03)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Redesigned receipt PDF: partial-payment options + two-step package box + "WHAT YOU OWE" framing (`922d885`) | Done | 2026-10-02 |
+| 2 | Drop "pay any amount" carry-over line from next-step box (`eb915c0`) | Done | 2026-10-03 |
+| 3 | Hero recommendation band so players see the package, not just the debt (`0a6c764`) | Done | 2026-10-03 |
+| 4 | Receipt smoke (`server/_smoke-receipt.mjs` → ALL PRESENT) + real-data receipt vs Farida (21 sessions, 17,500 EGP → 286 KB PDF) + **user acceptance** | Done | 2026-10-03 |
+
+---
+
+## Phase 19: Academy Media Gallery (2026-10-02)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Media gallery checkpoint: hero video + Moharam portrait on redesigned pages (`a5ea837`) | Done | 2026-10-02 |
+
+---
+
+## Phase 20: Shared FIFO Balance Engine + Local Reconcile (2026-10-04)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Root-cause audit: three duplicated FIFO loops vs `paymentAllocation` per-bucket caps (`coverGroup = min(covered.group, 0) = 0`) — counts credited per-bucket while the sessions list cross-converts (1P = 2G) → phantom credit + group debt never settled (the "8P vs 1P+12G" bug) | Done | 2026-10-04 |
+| 2 | `server/src/utils/convertBalance.js` — pure `simulateFifo(poolP, poolG, slots, {isExternallyPaid})` as the single source of truth; rewired `sessionPaid.js`, `payments-rebuild.js`, `balance-audit.js` — zero-drift baselines (audit/unpaid/receipt outputs identical) | Done | 2026-10-04 |
+| 3 | `paymentAllocation.js` rewritten — pure `allocateFromSessions` (chronological slots) + conversion-aware covered/credit split + `warning` when entered counts ≠ money-derived (live previews verified: money 5000 → covered (4,2); explicit 8P/0G → covered (7,2) + warning) | Done | 2026-10-04 |
+| 4 | UI: `fetchPaymentPreview`/`useAllocationPreview` send explicit private/group counts when touched; `AllocationHint` entered-vs-money warning block; removed `countsTouched ? null` suppression in Payments add/edit + UserDetail | Done | 2026-10-04 |
+| 5 | `planPaymentReversal` extracted to `server/src/utils/paymentReversal.js` (routes import it) + regression tests F1–F5 + simulateFifo pins — server tests **26/26** | Done | 2026-10-04 |
+| 6 | `scripts/balance-audit.js --source=localpg` added; prod DB pulled local (`pull-supabase-to-local --force --skip-schema`, 3892 rows, pre-pull backup taken); Phase-0 audit: 36 players / 33 flagged, 3 orphan name segments, 0 duplicates | Done | 2026-10-04 |
+| 7 | `scripts/reconcile-balances.js --report/--apply` — deterministic RE-SEED to empty-pool truth + cumulative FIFO replay + engine-exact settlement columns (routes' `applyAllocation` math, cell for cell) + trim/verify per player; JSON backups + `balance.reconcile` audit rows; mirror-safety abort vs `computePlayerSessions`; replay converges to a fixed point (no drift loops) | Done | 2026-10-04 |
+| 8 | Local repair **27/27 players, 0 drift on re-report** (8 skipped = no manual payments, untouched); API spot-check matches (Adham credit 0/2, Ahmed debt 3P, Aley phantom 7P→1P, Titos excess removed, Youssef Ashraf 6P restored); gates: tests 26/26, receipt ALL PRESENT, coach 19/19, oxlint 0, build 0; pushed `c14dd67` | Done | 2026-10-04 |
 
 ---
 
@@ -444,3 +511,16 @@ All tasks completed from project inception (2026-09-09) through current date.
 | `src/pages/admin/ScheduleManager.jsx` | Cell dropdown + two-step delete; group-avail check includes convertible private (`grp + priv*2`) |
 | `src/pages/Profile.jsx` | "Up to X as group" conversion note; time utils |
 | Other logo/time files | `Navbar`, `Footer`, `LoginModal`, `Login`, `DeclineChoiceModal`, `Book`, `Schedule`, `Dashboard`, `Users` — logo swap + time-format wiring |
+
+---
+
+## Up Next — Phase 21: Production Balance Reconcile (pending)
+
+| # | Task | Status | Date |
+|---|------|--------|------|
+| 1 | Deploy `c14dd67` to Railway backend + Pages frontend (push-triggered); verify health + new allocation UI/preview live | Pending | |
+| 2 | Backup prod DB (Supabase snapshot / `pg_dump` of `PROD_DATABASE_URL`) | Pending | |
+| 3 | Run `node scripts/reconcile-balances.js --source=prod --report` — review flagged players, skipped (no-payment) list, mirror check | Pending | |
+| 4 | Run `--source=prod --apply` — repair, then re-report until 0 drift | Pending | |
+| 5 | Verify: `balance-audit.js --source=prod` (credit side == FIFO; workflow flags only), API spot-checks (unpaid report, `/api/users` debt/credit fields), server tests 26/26, receipt + coach smokes against prod URL | Pending | |
+| 6 | Follow-up cleanup (separate task): orphan name segments (zein/John smith/jane doe), never-deducted slot workflow, debt-in-raw-view display decision | Pending | |
