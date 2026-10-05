@@ -504,7 +504,15 @@ router.delete('/coach-payments/:id', requirePermission('dashboard'), async (req,
 router.get('/unpaid', requirePermission('dashboard'), async (req, res) => {
   try {
     const unpaid = await computeUnpaidPlayers()
-    res.json({ unpaid_players: unpaid, total_owed: unpaid.reduce((s, p) => s + p.amount_owed, 0) })
+    const totalSession = unpaid.reduce((s, p) => s + (p.sessions_owed || 0), 0)
+    const totalCash = unpaid.reduce((s, p) => s + (p.cash_owed || 0), 0)
+    const totalOwed = unpaid.reduce((s, p) => s + (p.amount_owed || 0), 0)
+    res.json({
+      unpaid_players: unpaid,
+      total_owed: totalOwed,
+      total_session_owed: totalSession,
+      total_cash_owed: totalCash,
+    })
   } catch (err) {
     console.error('Unpaid players report error:', err)
     res.status(500).json({ error: 'Internal server error' })

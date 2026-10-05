@@ -243,10 +243,14 @@ router.get('/:id/report', async (req, res) => {
       if (!perms.includes('players')) return res.status(403).json({ error: 'Access denied' })
     }
     const { sessions, amountOwed } = await computePlayerSessions(player)
+    const cashBalance = Number(player.cash_balance) || 0
+    const cashOwed = cashBalance < 0 ? -cashBalance : 0
     res.json({
       player: { id: player.id, name: player.name, email: player.email, phone: player.phone },
       sessions,
-      amount_owed: amountOwed,
+      // total owed: unpaid-session package price + cash shortfall
+      amount_owed: amountOwed + cashOwed,
+      cash_owed: cashOwed,
     })
   } catch (err) {
     console.error('Player report error:', err)

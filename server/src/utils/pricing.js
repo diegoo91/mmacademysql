@@ -94,13 +94,110 @@ export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0) {
 }
 
 /**
- * Free credit for leftover money that covers nothing unpaid — same search but
- * unbounded (capped at what the single-session rates could ever buy).
+ * Cheapest per-session rate in a tier table (e.g. private 16-pack = 875/session).
+ * sessionsForAmount needs this — capping at the SINGLE rate assumes no session
+ * ever costs less than one, which is false with bulk discounts and made the
+ * 16-pack / 18-private answers unreachable (14,000 → 11P+9G instead of 16P).
+ */
+function cheapestRate(type) {
+  const tier = PRICING[type]
+  let best = Infinity
+  for (const [k, v] of Object.entries(tier)) {
+    const n = Number(k)
+    if (Number.isFinite(n) && n > 0) best = Math.min(best, v / n)
+  }
+  return Number.isFinite(best) && best > 0 ? best : 1
+}
+
+/**
+ * Free credit for money that buys NEW sessions — same search but unbounded
+ * (capped at what the cheapest per-session rate could ever buy, so bulk
+ * packages are reachable: 14,000 → 16P, 16,000 → 18P).
  */
 export function sessionsForAmount(amount) {
   const cap = Math.max(0, Math.floor(Number(amount) || 0))
   if (cap <= 0) return { private: 0, group: 0, value: 0 }
-  const maxP = Math.ceil(cap / PRICING.private[1]) + 1
-  const maxG = Math.ceil(cap / PRICING.group[1]) + 1
+  const maxP = Math.ceil(cap / cheapestRate('private')) + 1
+  const maxG = Math.ceil(cap / cheapestRate('group')) + 1
   return bestCoverage(cap, maxP, maxG)
+}
+
+// ---------------------------------------------------------------------------
+// Best-Package Rule (locked spec)
+//
+// A payment over 2 sessions is mapped to the NEAREST single-tier pack —
+// never single-session rates:
+//   * pack = (p, g) with p ∈ {0,4,8,12,16}, g ∈ {0,4,8,16} (each component a
+//     named package tier, mixed pairs allowed — Farida's 16P+8G = 17,500),
+//   * the pack is nearest to the CASH; upward packs may exceed it by at most
+//     15% (the "don't cost them a lot" cap),
+//   * DEBT PULL: when the cash-nearest pack is dusty (not an exact fit) AND
+//     the session debt exceeds that pack, re-target to the debt — a player
+//     clearing debt buys the pack that covers it (Farida's 16,000 against a
+//     17,500 debt → the 17,500 pack, −1,500 owed). An exact cash pack is
+//     never overridden (7,000 → the 8-pack stays, partial debt stays session
+//     debt),
+//   * ties → smaller pack (less owed), then more private,
+//   * values above the (16,16) = 21,000 catalog peel (16,16) packs first.
+//
+// The difference cash − pack_value is the signed CASH GAP the caller records
+// on the ledger: negative = shortfall the player pays next month, positive =
+// prepaid cash carried forward. For pools ≤ 2 sessions the caller keeps the
+// exact value-max mix (singles allowed) — the exemption for small payments.
+// ---------------------------------------------------------------------------
+export const PACK_PRIVATE_TIERS = [0, 4, 8, 12, 16]
+export const PACK_GROUP_TIERS = [0, 4, 8, 16]
+export const PACK_UPWARD_TOLERANCE = 0.15
+
+export function nearestPackPool(amount, debt = 0) {
+  const a = Math.max(0, Number(amount) || 0)
+  const d = Math.max(0, Number(debt) || 0)
+  if (a <= 0) return { private: 0, group: 0, value: 0 }
+
+  const maxPackValue = (PRICING.private[16] || 0) + (PRICING.group[16] || 0)
+
+  const pickFor = (target) => {
+    let remAmount = a
+    let remTarget = target
+    let peelP = 0
+    let peelG = 0
+    let peelValue = 0
+    while (remTarget > maxPackValue && remAmount > maxPackValue) {
+      peelP += 16
+      peelG += 16
+      peelValue += maxPackValue
+      remTarget -= maxPackValue
+      remAmount -= maxPackValue
+    }
+    const cap = remAmount * (1 + PACK_UPWARD_TOLERANCE)
+    const EPS = 1e-6
+    let best = null
+    for (const p of PACK_PRIVATE_TIERS) {
+      for (const g of PACK_GROUP_TIERS) {
+        const value = (PRICING.private[p] || 0) + (PRICING.group[g] || 0)
+        if (value > cap + EPS) continue
+        const dist = Math.abs(value - remTarget)
+        if (
+          !best ||
+          dist < best.dist ||
+          (dist === best.dist && value < best.value) ||
+          (dist === best.dist && value === best.value && p > best.p)
+        ) {
+          best = { p, g, value, dist }
+        }
+      }
+    }
+    if (!best) return { private: peelP, group: peelG, value: peelValue }
+    return { private: peelP + best.p, group: peelG + best.g, value: peelValue + best.value }
+  }
+
+  const base = pickFor(a)
+  const baseDist = Math.abs(base.value - a)
+  // Debt pull: only when the cash-nearest pack is dusty AND the debt exceeds
+  // it — an exact cash pack (7,000 → 8-pack) is never overridden.
+  if (baseDist > 1e-6 && d > base.value + 1e-6) {
+    const pulled = pickFor(Math.max(a, d))
+    if (pulled.value >= base.value) return pulled
+  }
+  return base
 }

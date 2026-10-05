@@ -116,6 +116,81 @@ test('F5 reversal is exact: delete of the F1 payment restores the pre-payment bu
   assert.equal(plan.newCycG, 0)
 })
 
+test('F6 package-first (Yasin PAY-0035 reported case): 7P+1G unpaid, EGP 7,000 → 8P pool, all settled, 1G credited', () => {
+  // chronological exactly like his slots: P(8/31), G(9/1... actually 9/2), then 6P
+  const unpaid = newestFirst(chrono(['private', 'group', ...Array(6).fill('private')]))
+  const a = allocateFromSessions(unpaid, { amount: 7000, amountOwed: packagePrice(7, 1) })
+
+  assert.equal(a.derived, true)
+  assert.equal(a.private_sessions, 8, 'the 8-pack must be reachable for 7,000')
+  assert.equal(a.group_sessions, 0)
+  assert.deepEqual([a.covered_private, a.covered_group], [7, 1], 'everything owed gets settled')
+  assert.deepEqual([a.credit_private, a.credit_group], [0, 1], 'half of 1P left over → 1 group session')
+  assert.deepEqual(a.remaining_unpaid, { private: 0, group: 0, amount: 0 })
+  assert.equal(a.warning, null)
+  assert.equal(a.cash_gap, 0, 'exact pack → no cash gap')
+})
+
+// --- Best-Package Rule (locked spec) -------------------------------------
+
+test('F7 Best-Package Farida: 18P+3G unpaid (17,500), EGP 16,000 → 16P+8G pack, all settled, −1,500 shortfall', () => {
+  const unpaid = newestFirst(chrono([...Array(18).fill('private'), ...Array(3).fill('group')]))
+  const a = allocateFromSessions(unpaid, { amount: 16000, amountOwed: packagePrice(18, 3) })
+
+  assert.equal(a.derived, true)
+  assert.equal(a.private_sessions, 16, 'debt pull → the 17,500 pack')
+  assert.equal(a.group_sessions, 8)
+  assert.equal(a.pool_value, 17500)
+  assert.deepEqual([a.covered_private, a.covered_group], [18, 3], 'all 21 slots settled')
+  assert.deepEqual([a.credit_private, a.credit_group], [0, 1], '16P+8G covers everything, 1G left')
+  assert.deepEqual(a.remaining_unpaid, { private: 0, group: 0, amount: 0 })
+  assert.equal(a.cash_gap, -1500, 'she paid 16,000 for a 17,500 pack → owes 1,500')
+  assert.equal(a.cash_balance_after, -1500)
+})
+
+test('F8 ≤2-session exemption: small payments keep exact singles', () => {
+  assert.equal(allocateFromSessions([], { amount: 1000, amountOwed: 0 }).private_sessions, 1)
+  assert.equal(allocateFromSessions([], { amount: 1000, amountOwed: 0 }).group_sessions, 0)
+  const s1500 = allocateFromSessions([], { amount: 1500, amountOwed: 0 })
+  assert.deepEqual([s1500.private_sessions, s1500.group_sessions], [1, 1])
+  const s2000 = allocateFromSessions([], { amount: 2000, amountOwed: 0 })
+  assert.deepEqual([s2000.private_sessions, s2000.group_sessions], [2, 0])
+  assert.equal(s2000.cash_gap, 0)
+})
+
+test('F9 cash ledger: shortfall clears first, prepaid carries forward, zero payment spends nothing', () => {
+  // owes 1,500 cash, pays 5,000 → net 3,500 buys the (0,8) pack, cash lands on 0
+  const clear = allocateFromSessions([], { amount: 5000, amountOwed: 0, cashBalance: -1500 })
+  assert.deepEqual([clear.private_sessions, clear.group_sessions], [0, 8])
+  assert.equal(clear.cash_gap, 1500)
+  assert.equal(clear.cash_balance_after, 0)
+
+  // prepaid +700, pays 1,800 → pack (0,4)=1,800 within cash, prepaid still there
+  const prepaid = allocateFromSessions([], { amount: 1800, amountOwed: 0, cashBalance: 700 })
+  assert.deepEqual([prepaid.private_sessions, prepaid.group_sessions], [0, 4])
+  assert.equal(prepaid.cash_gap, 0)
+  assert.equal(prepaid.cash_balance_after, 700)
+
+  // zero payment never spends prepaid
+  const zero = allocateFromSessions([], { amount: 0, amountOwed: 0, cashBalance: 700 })
+  assert.deepEqual([zero.private_sessions, zero.group_sessions], [0, 0])
+  assert.equal(zero.cash_gap, 0)
+  assert.equal(zero.cash_balance_after, 700)
+})
+
+test('F10 explicit over-credit (Alaa PAY-0030): 6P+4G entered for 7,000 → −400 shortfall recorded, warning shown', () => {
+  const unpaid = newestFirst(chrono([...Array(2).fill('private'), ...Array(4).fill('group')]))
+  const a = allocateFromSessions(unpaid, {
+    amount: 7000, amountOwed: packagePrice(2, 4),
+    private_sessions: 6, group_sessions: 4,
+  })
+  assert.equal(a.derived, false)
+  assert.deepEqual([a.private_sessions, a.group_sessions], [6, 4])
+  assert.equal(a.pool_value, 7400)
+  assert.equal(a.cash_gap, -400, 'pack costs 400 more than paid → collectible shortfall')
+  assert.ok(a.warning, 'admin is told the entry differs from the derived pack')
+})
+
 test('simulateFifo: covered/uncovered counters, paid_via flags, external-paid bypass', () => {
   const walk = simulateFifo(1, 0, [{ session_type: 'group' }, { session_type: 'private' }, { session_type: 'group' }])
   // G converts the 1P (→ 2G, uses 1), 1G left pays the private slot? No:

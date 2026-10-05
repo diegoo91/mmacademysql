@@ -436,9 +436,9 @@ export default function Reports() {
               <AlertTriangle className="w-5 h-5 text-amber-400" /> Unpaid Players
               <button onClick={() => {
                 const rows = (unpaidPlayers?.unpaid_players || []).map(p => [
-                  p.name, p.unpaid_sessions, p.unpaid_private, p.unpaid_group, `EGP ${p.amount_owed.toLocaleString()}`
+                  p.name, p.unpaid_sessions, p.unpaid_private, p.unpaid_group, `EGP ${p.amount_owed.toLocaleString()}`, `EGP ${(p.cash_owed || 0).toLocaleString()}`
                 ])
-                downloadCSV(`unpaid_players.csv`, ['Player', 'Unpaid Sessions', 'Private', 'Group', 'Amount Owed'], rows)
+                downloadCSV(`unpaid_players.csv`, ['Player', 'Unpaid Sessions', 'Private', 'Group', 'Amount Owed (total)', 'Cash Shortfall'], rows)
               }} className="ml-auto px-2 py-1 rounded-lg text-[10px] font-bold text-muted hover:text-brand-text hover:bg-brand/10 flex items-center gap-1">
                 <Download className="w-3 h-3" /> CSV
               </button>
@@ -460,7 +460,10 @@ export default function Reports() {
                       <div className="w-8 h-8 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xs">{p.name.charAt(0)}</div>
                       <div>
                         <span className="font-semibold text-theme text-sm">{p.name}</span>
-                        <div className="text-[10px] text-muted">{p.unpaid_sessions} unpaid ({p.unpaid_private}P + {p.unpaid_group}G)</div>
+                        <div className="text-[10px] text-muted">
+                          {p.unpaid_sessions} unpaid ({p.unpaid_private}P + {p.unpaid_group}G)
+                          {p.cash_owed > 0 && <span className="text-rose-500 font-bold"> · EGP {p.cash_owed.toLocaleString()} shortfall</span>}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

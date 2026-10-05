@@ -244,6 +244,7 @@ export default function Profile() {
   const debtPrivate = Math.max(0, Number(user.debt_private) || 0)
   const debtGroup = Math.max(0, Number(user.debt_group) || 0)
   const debtLabel = [debtPrivate > 0 ? `${debtPrivate} private` : '', debtGroup > 0 ? `${debtGroup} group` : ''].filter(Boolean).join(' · ')
+  const cashOwed = Math.max(0, Number(user.cash_owed) || 0)
 
   const visibleBookings = user?.role === 'player'
     ? bookings.filter(b => b.status !== 'cancelled' && b.status !== 'denied')
@@ -531,6 +532,9 @@ export default function Profile() {
             {debtLabel && (
               <p className="text-[11px] text-rose-400 font-semibold text-center mt-2">Outstanding: {debtLabel} owed — settle at the academy.</p>
             )}
+            {cashOwed > 0 && (
+              <p className="text-[11px] text-rose-400 font-semibold text-center mt-2">Outstanding: EGP {cashOwed.toLocaleString()} package shortfall owed — settle at the academy.</p>
+            )}
             <ConversionRequestButton privateRemaining={totalPrivateRemaining} groupRemaining={totalGroupRemaining} />
           </div>
         ) : (
@@ -539,6 +543,9 @@ export default function Profile() {
             <p className="text-sm text-muted">Buy a session package to book courts this month. Unused sessions expire on the 14th of the following month.</p>
             {debtLabel && (
               <p className="text-xs font-semibold text-rose-400">Outstanding: {debtLabel} owed — settle at the academy.</p>
+            )}
+            {cashOwed > 0 && (
+              <p className="text-xs font-semibold text-rose-400">Outstanding: EGP {cashOwed.toLocaleString()} package shortfall owed — settle at the academy.</p>
             )}
             <Link
               to="/book"

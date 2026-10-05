@@ -1,15 +1,26 @@
 import { computePlayerSessions } from './sessionPaid.js'
-import { bestCoverage, sessionsForAmount, packagePrice } from './pricing.js'
+import { sessionsForAmount, packagePrice, nearestPackPool } from './pricing.js'
 import { simulateFifo } from './convertBalance.js'
 
 /**
- * Money-driven payment allocation — conversion-aware.
+ * Money-driven payment allocation — conversion-aware, PACKAGE-FIRST.
  *
- * The amount paid decides the session totals, in this order:
- *   1. Settle EXISTING unpaid sessions first — package-priced, so EGP 7,000
- *      covers 8 of 9 unpaid private sessions (8-pack) and leaves 1 unpaid.
- *   2. Whatever money is left over buys NEW sessions.
- * Admin-entered totals (private_sessions/group_sessions) override step 2.
+ * The amount paid decides the session totals (Best-Package Rule):
+ *   * pool ≤ 2 sessions → the exact value-max mix (singles allowed — the
+ *     small-payment exemption),
+ *   * pool > 2 sessions → the nearest single-tier pack sized by
+ *     max(cash available, session debt) — never single-session rates.
+ * pack_value − cash is the signed CASH GAP recorded on the ledger: negative
+ * = shortfall paid next month (users.cash_balance), positive = prepaid
+ * carried. Admin-entered totals (private_sessions/group_sessions) override
+ * the derived pool; their gap is recorded too.
+ *
+ * Package-first (not "price the debt first") is deliberate: debt-first
+ * fragmented bulk deals against fragments (7 private owed = 4-pack + 3 singles
+ * = 6,600), shrinking an exact-7,000 package payment down to a 7-pool and
+ * stranding 400 EGP with nowhere to go. Yasin Fathallah hit exactly this.
+ * The cost of package-first is that a small debt + big payment can credit
+ * discount-priced sessions — accepted, documented in docs/task_complete.md.
  *
  * The covered/credit split is then derived by walking the player's UNPAID
  * slots FIFO with those totals through the SAME engine that marks slots paid
@@ -37,7 +48,13 @@ export async function computePaymentAllocation(player, {
   excludePaymentId = null,
 } = {}) {
   const { sessions, amountOwed } = await computePlayerSessions(player, { excludePaymentId })
-  return allocateFromSessions(sessions, { amountOwed, amount, private_sessions, group_sessions })
+  return allocateFromSessions(sessions, {
+    amountOwed,
+    amount,
+    private_sessions,
+    group_sessions,
+    cashBalance: Number(player.cash_balance) || 0,
+  })
 }
 
 /**
@@ -48,29 +65,36 @@ export async function computePaymentAllocation(player, {
 export function allocateFromSessions(sessions, {
   amountOwed = 0,
   amount = 0,
+  cashBalance = 0,
   private_sessions = undefined,
   group_sessions = undefined,
 } = {}) {
   const paidAmount = Math.max(0, parseFloat(amount) || 0)
+  const cashBefore = Number(cashBalance) || 0
+  // Cash ledger order: an existing shortfall is paid off first, prepaid cash
+  // adds to what this payment can buy. A zero payment never spends prepaid.
+  const shortfallCleared = paidAmount > 0 && cashBefore < 0 ? Math.min(paidAmount, -cashBefore) : 0
+  const prepaidUsed = paidAmount > 0 && cashBefore > 0 ? cashBefore : 0
+  const netForPack = paidAmount > 0 ? paidAmount - shortfallCleared + prepaidUsed : 0
+
   const explicitCounts = private_sessions !== undefined || group_sessions !== undefined
   const explicitP = Math.max(0, parseInt(private_sessions, 10) || 0)
   const explicitG = Math.max(0, parseInt(group_sessions, 10) || 0)
   const unpaidPrivate = sessions.filter(s => !s.paid && s.session_type !== 'group').length
   const unpaidGroup = sessions.filter(s => !s.paid && s.session_type === 'group').length
 
-  // 1) money applied to the existing debt (package priced, never over it)
-  const towardDebt = Math.min(paidAmount, amountOwed)
-  const coverage = bestCoverage(towardDebt, unpaidPrivate, unpaidGroup)
+  // 1) the amount buys the pool (admin-entered counts win if given):
+  //    ≤ 2 sessions → exact value-max mix (singles allowed);
+  //    else → nearest single-tier pack (Best-Package Rule).
+  const valueMax = sessionsForAmount(netForPack)
+  const derived = valueMax.private + valueMax.group <= 2
+    ? valueMax
+    : nearestPackPool(netForPack, amountOwed)
+  const totalPrivate = explicitCounts ? explicitP : derived.private
+  const totalGroup = explicitCounts ? explicitG : derived.group
+  const poolValue = packagePrice(totalPrivate, totalGroup)
 
-  // 2) leftover money buys new sessions (admin-entered counts win if given)
-  const leftover = Math.max(0, paidAmount - coverage.value)
-  const autoCredit = leftover > 0 ? sessionsForAmount(leftover) : { private: 0, group: 0, value: 0 }
-  const moneyPrivate = coverage.private + autoCredit.private
-  const moneyGroup = coverage.group + autoCredit.group
-  const totalPrivate = explicitCounts ? explicitP : moneyPrivate
-  const totalGroup = explicitCounts ? explicitG : moneyGroup
-
-  // 3) conversion-aware split: FIFO over the unpaid slots (sessions list is
+  // 2) conversion-aware split: FIFO over the unpaid slots (sessions list is
   //    newest-first — filter keeps that order, reverse restores chronological)
   const walk = simulateFifo(totalPrivate, totalGroup, sessions.filter(s => !s.paid).reverse())
 
@@ -79,10 +103,15 @@ export function allocateFromSessions(sessions, {
   const coverPrivate = walk.covered.private
   const coverGroup = walk.covered.group
 
+  // Signed cash gap applied to users.cash_balance: negative = shortfall the
+  // player owes next month, positive = prepaid carried forward.
+  const cashGap = paidAmount - poolValue
+  const cashAfter = cashBefore + cashGap
+
   // Entered counts diverging from what the amount itself derives — tell the admin.
   let warning = null
-  if (explicitCounts && (explicitP !== moneyPrivate || explicitG !== moneyGroup)) {
-    warning = `Entered ${explicitP}P / ${explicitG}G differs from the amount-derived ${moneyPrivate}P / ${moneyGroup}G.`
+  if (explicitCounts && (explicitP !== derived.private || explicitG !== derived.group)) {
+    warning = `Entered ${explicitP}P / ${explicitG}G differs from the amount-derived ${derived.private}P / ${derived.group}G.`
   }
 
   return {
@@ -96,6 +125,10 @@ export function allocateFromSessions(sessions, {
     credit_group: creditGroup,
     private_sessions: totalPrivate,
     group_sessions: totalGroup,
+    pool_value: poolValue,
+    cash_gap: cashGap,
+    cash_balance_before: cashBefore,
+    cash_balance_after: cashAfter,
     remaining_unpaid: {
       private: walk.uncovered.private,
       group: walk.uncovered.group,

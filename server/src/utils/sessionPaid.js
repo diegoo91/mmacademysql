@@ -73,8 +73,13 @@ export async function computePlayerSessions(player, { excludePaymentId = null } 
 }
 
 /**
- * Compute unpaid players report — all players with unpaid sessions.
- * Returns [{ id, name, unpaid_sessions, unpaid_private, unpaid_group, amount_owed, sessions: [...] }]
+ * Compute unpaid players report — all players with unpaid sessions OR an
+ * outstanding cash shortfall (package value beyond what they paid; a player
+ * can owe cash with zero unpaid sessions, e.g. after a round-up pack edit).
+ * amount_owed is the TOTAL owed (session package price + cash shortfall);
+ * sessions_owed and cash_owed are its components.
+ * Returns [{ id, name, unpaid_sessions, unpaid_private, unpaid_group,
+ *            amount_owed, sessions_owed, cash_owed, sessions: [...] }]
  */
 export async function computeUnpaidPlayers() {
   const players = await db.findAll('users', u => u.role === 'player')
@@ -82,7 +87,9 @@ export async function computeUnpaidPlayers() {
 
   for (const player of players) {
     const { sessions, amountOwed, unpaidPrivate, unpaidGroup } = await computePlayerSessions(player)
-    if (unpaidPrivate + unpaidGroup === 0) continue
+    const cashBalance = Number(player.cash_balance) || 0
+    const cashOwed = cashBalance < 0 ? -cashBalance : 0
+    if (unpaidPrivate + unpaidGroup === 0 && cashOwed <= 0) continue
 
     results.push({
       id: player.id,
@@ -92,7 +99,9 @@ export async function computeUnpaidPlayers() {
       unpaid_sessions: unpaidPrivate + unpaidGroup,
       unpaid_private: unpaidPrivate,
       unpaid_group: unpaidGroup,
-      amount_owed: amountOwed,
+      amount_owed: amountOwed + cashOwed,
+      sessions_owed: amountOwed,
+      cash_owed: cashOwed,
       sessions: sessions.filter(s => !s.paid),
     })
   }

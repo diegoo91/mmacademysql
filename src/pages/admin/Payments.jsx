@@ -126,21 +126,36 @@ export default function Payments() {
 
   // When a payment settled existing debt first, tell the admin exactly what
   // happened: offset first, remainder credited to this month's package.
+  // Cash effects (shortfall cleared / added / prepaid) report on their own —
+  // a payment that only moves the cash balance must not close silently.
   const notifySettlement = (res, formOverride) => {
     const s = res?.settlement
-    if (!s || (!s.settled_private && !s.settled_group)) return
+    const a = res?.allocation
+    const hasSettled = !!(s && (s.settled_private > 0 || s.settled_group > 0))
+    const gap = Number(a?.cash_gap) || 0
+    const before = Number(a?.cash_balance_before) || 0
+    const cleared = before < 0 && gap > 0 ? Math.min(gap, -before) : 0
+    const prepaid = gap > 0 ? gap - cleared : 0
+    const added = gap < 0 ? -gap : 0
+    if (!hasSettled && !cleared && !prepaid && !added) return
     const pSessions = res?.private_sessions ?? formOverride?.private_sessions ?? 0
     const gSessions = res?.group_sessions ?? formOverride?.group_sessions ?? 0
-    const owed = [
-      s.settled_private > 0 ? `${s.settled_private} private` : null,
-      s.settled_group > 0 ? `${s.settled_group} group` : null,
-    ].filter(Boolean).join(' + ')
-    toast.success(
-      `Payment recorded.\n\n` +
-      `Paid: ${pSessions} private / ${gSessions} group\n` +
-      `Offset existing debt first: ${owed}\n` +
-      `Credited to this month's package: ${s.credited_private} private / ${s.credited_group} group`
-    )
+    const lines = []
+    if (hasSettled) {
+      const owed = [
+        s.settled_private > 0 ? `${s.settled_private} private` : null,
+        s.settled_group > 0 ? `${s.settled_group} group` : null,
+      ].filter(Boolean).join(' + ')
+      lines.push(
+        `Paid: ${pSessions} private / ${gSessions} group`,
+        `Offset existing debt first: ${owed}`,
+        `Credited to this month's package: ${s.credited_private} private / ${s.credited_group} group`
+      )
+    }
+    if (cleared > 0) lines.push(`Cleared EGP ${cleared.toLocaleString()} cash shortfall`)
+    if (added > 0) lines.push(`Cash balance reduced by EGP ${added.toLocaleString()} (below pack value)`)
+    if (prepaid > 0) lines.push(`EGP ${prepaid.toLocaleString()} added to cash balance (prepaid)`)
+    toast.success(`Payment recorded.\n\n` + lines.join('\n'))
   }
 
   // Per-row balance effect: debt offset (if any) + what entered the cycle.

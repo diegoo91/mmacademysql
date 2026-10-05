@@ -35,7 +35,9 @@ async function notify(userId, kind, title, body, link) {
  *      nothing enters the cycle — those sessions are consumed by the slots
  *      they pay for),
  *   2. the leftover part is credited through creditCycle (which settles any
- *      remaining debt first, then fills the cycle).
+ *      remaining debt first, then fills the cycle),
+ *   3. the signed cash gap moves users.cash_balance (negative = shortfall
+ *      owed next month, positive = prepaid carried forward).
  * Returns the combined settlement stored on the payment row.
  */
 async function applyAllocation(playerId, allocation) {
@@ -44,6 +46,12 @@ async function applyAllocation(playerId, allocation) {
   const credit = await creditCycle(playerId, allocation.credit_private, allocation.credit_group)
   const creditSettlement = credit?.settlement || EMPTY_SETTLEMENT
   const settledPart = settled?.settlement || EMPTY_SETTLEMENT
+  const cashGap = Number(allocation.cash_gap) || 0
+  if (cashGap !== 0) {
+    const user = await db.get('users', playerId)
+    const before = Number(user?.cash_balance) || 0
+    await db.update('users', playerId, { cash_balance: before + cashGap })
+  }
   return {
     settled_private: (settledPart.settled_private || 0) + (creditSettlement.settled_private || 0),
     settled_group: (settledPart.settled_group || 0) + (creditSettlement.settled_group || 0),
@@ -52,12 +60,13 @@ async function applyAllocation(playerId, allocation) {
   }
 }
 
-async function storeSettlement(paymentId, settlement) {
+async function storeSettlement(paymentId, settlement, cashGap = 0) {
   await db.update('payments', paymentId, {
     settled_private: settlement.settled_private,
     settled_group: settlement.settled_group,
     credited_private: settlement.credited_private,
     credited_group: settlement.credited_group,
+    cash_gap: cashGap,
   })
 }
 
@@ -152,7 +161,7 @@ router.post('/', async (req, res) => {
       const credit = await creditCycle(playerId, rowPrivate, rowGroup)
       settlement = credit?.settlement || EMPTY_SETTLEMENT
     }
-    await storeSettlement(payment.id, settlement)
+    await storeSettlement(payment.id, settlement, allocation ? Number(allocation.cash_gap) || 0 : 0)
     payment = { ...payment, ...settlement }
     const userAfter = await db.get('users', playerId)
     const snap = (u) => u ? {
@@ -160,6 +169,7 @@ router.post('/', async (req, res) => {
       group_balance: u.group_balance,
       cycle_private: u.cycle_private,
       cycle_group: u.cycle_group,
+      cash_balance: u.cash_balance,
     } : null
     await auditCreate(req, 'payment', payment.id, { ref, method, amount, player_id: playerId, private_sessions: rowPrivate, group_sessions: rowGroup, allocation, settlement })
     await auditBalanceChange(req, 'user', playerId, snap(userBefore), { ...snap(userAfter), settlement }, 'payment.credit.cycle')
@@ -242,15 +252,15 @@ router.put('/:id/approve', async (req, res) => {
         const credit = await creditCycle(payment.player_id, privateAdd, groupAdd)
         settlement = credit?.settlement || EMPTY_SETTLEMENT
       }
-      await storeSettlement(payment.id, settlement)
+      await storeSettlement(payment.id, settlement, allocation ? Number(allocation.cash_gap) || 0 : 0)
     }
 
     await auditUpdate(req, 'payment', payment.id, { status: payment.status }, { status: STATUS.PAYMENT_APPROVED, ref: payment.ref, allocation, settlement })
     if (payment.player_id) {
       const userAfter = await db.get('users', payment.player_id)
       await auditBalanceChange(req, 'user', payment.player_id,
-        { private_balance: userBefore?.private_balance, group_balance: userBefore?.group_balance, cycle_private: userBefore?.cycle_private, cycle_group: userBefore?.cycle_group },
-        { private_balance: userAfter?.private_balance, group_balance: userAfter?.group_balance, cycle_private: userAfter?.cycle_private, cycle_group: userAfter?.cycle_group, settlement },
+        { private_balance: userBefore?.private_balance, group_balance: userBefore?.group_balance, cycle_private: userBefore?.cycle_private, cycle_group: userBefore?.cycle_group, cash_balance: userBefore?.cash_balance },
+        { private_balance: userAfter?.private_balance, group_balance: userAfter?.group_balance, cycle_private: userAfter?.cycle_private, cycle_group: userAfter?.cycle_group, cash_balance: userAfter?.cash_balance, settlement },
         'payment.approve')
     }
 
@@ -371,7 +381,12 @@ router.put('/:id', async (req, res) => {
     const amountChanged = amount !== undefined && (Math.max(0, parseFloat(amount) || 0)) !== (parseFloat(payment.amount) || 0)
     // Amount edits only churn balances when they can change the split
     // (money-driven allocation); otherwise date/notes/method stay cosmetic.
-    const creditChanged = wasApproved && (playerChanged || totalsChanged || (amountChanged && !!allocation))
+    // `reapply: true` forces the reverse-and-recredit cycle even when nothing
+    // on the row changes — used to backfill cash_gap on rows created before
+    // the cash ledger existed (re-applied with identical values, so balances
+    // settle to the same state while the gap gets recorded).
+    const creditChanged = wasApproved && (playerChanged || totalsChanged || (amountChanged && !!allocation) ||
+      (req.body.reapply === true && !!allocation))
 
     let userBefore = null
     let reversal = null
@@ -386,6 +401,8 @@ router.put('/:id', async (req, res) => {
         await db.update('users', user.id, {
           private_balance: plan.newLegP, group_balance: plan.newLegG,
           cycle_private: plan.newCycP, cycle_group: plan.newCycG,
+          // undo this payment's cash gap so the re-credit can apply the new one
+          cash_balance: (Number(user.cash_balance) || 0) - (Number(payment.cash_gap) || 0),
         })
         reversal = plan.reversal
       }
@@ -412,7 +429,7 @@ router.put('/:id', async (req, res) => {
         const credit = await creditCycle(edited.player_id, num(edited.private_sessions), num(edited.group_sessions))
         settlement = credit?.settlement || EMPTY_SETTLEMENT
       }
-      await storeSettlement(id, settlement)
+      await storeSettlement(id, settlement, allocation ? Number(allocation.cash_gap) || 0 : 0)
     }
 
     const updated = await db.get('payments', id)
@@ -424,6 +441,7 @@ router.put('/:id', async (req, res) => {
     const snap = (u) => u ? {
       private_balance: u.private_balance, group_balance: u.group_balance,
       cycle_private: u.cycle_private, cycle_group: u.cycle_group,
+      cash_balance: u.cash_balance,
     } : null
     if (reversal && userBefore) {
       const userMid = await db.get('users', payment.player_id)
@@ -462,13 +480,15 @@ router.delete('/:id', async (req, res) => {
           await tx.update('users', user.id, {
             private_balance: newLegP, group_balance: newLegG,
             cycle_private: newCycP, cycle_group: newCycG,
+            // undo this payment's cash gap (delete restores the ledger exactly)
+            cash_balance: (Number(user.cash_balance) || 0) - (Number(payment.cash_gap) || 0),
           })
           await tx.remove('payments', id)
         })
         await auditDelete(req, 'payment', id, { ref: payment.ref, status: payment.status, player_id: payment.player_id, amount: payment.amount, settlement: hasSettlement ? { settled_private: payment.settled_private, settled_group: payment.settled_group, credited_private: payment.credited_private, credited_group: payment.credited_group } : null })
         await auditBalanceChange(req, 'user', payment.player_id,
-          { private_balance: user.private_balance, group_balance: user.group_balance, cycle_private: user.cycle_private, cycle_group: user.cycle_group },
-          { private_balance: newLegP, group_balance: newLegG, cycle_private: newCycP, cycle_group: newCycG, reversal },
+          { private_balance: user.private_balance, group_balance: user.group_balance, cycle_private: user.cycle_private, cycle_group: user.cycle_group, cash_balance: user.cash_balance },
+          { private_balance: newLegP, group_balance: newLegG, cycle_private: newCycP, cycle_group: newCycG, cash_balance: (Number(user.cash_balance) || 0) - (Number(payment.cash_gap) || 0), reversal },
           'payment.delete.reverse')
       } else {
         await db.remove('payments', id)

@@ -20,6 +20,7 @@ import {
   packagePrice,
   bestCoverage,
   sessionsForAmount,
+  nearestPackPool,
 } from '../src/utils/pricing.js'
 import {
   PRICING as FRONT_PRICING,
@@ -177,10 +178,100 @@ describe('sessionsForAmount — leftover credit', () => {
     assert.deepEqual(sessionsForAmount(0), { private: 0, group: 0, value: 0 })
   })
 
+  // Regression: the search cap used to assume no session costs less than the
+  // SINGLE rate, so bulk packages were unreachable — 14,000 returned 11P+9G
+  // instead of the 16-pack, 16,000 returned 17P+2G instead of 18 private.
+  it('exact tier amounts buy the tier (bulk rates reachable)', () => {
+    assert.deepEqual(sessionsForAmount(3600), { private: 4, group: 0, value: 3600 })
+    assert.deepEqual(sessionsForAmount(10800), { private: 12, group: 0, value: 10800 })
+    assert.deepEqual(sessionsForAmount(14000), { private: 16, group: 0, value: 14000 })
+    assert.deepEqual(sessionsForAmount(16000), { private: 18, group: 0, value: 16000 })
+  })
+
+  it('equals exhaustive search for every amount tested (cap is always sufficient)', () => {
+    /** Same tie rules as bestCoverage: max value, then more private, then more sessions. */
+    function brute(amount) {
+      let best = { private: 0, group: 0, value: 0 }
+      for (let p = 0; p <= 60; p++) {
+        for (let g = 0; g <= 60; g++) {
+          const value = calculatePrice('private', p) + calculatePrice('group', g)
+          if (value > amount) continue
+          if (
+            value > best.value ||
+            (value === best.value && p > best.private) ||
+            (value === best.value && p === best.private && p + g > best.private + best.group)
+          ) best = { private: p, group: g, value }
+        }
+      }
+      return best
+    }
+    for (const amount of [500, 1000, 1500, 1800, 3500, 3600, 7000, 7200, 8000, 10800, 14000, 15500, 16000, 20000, 25000]) {
+      const got = sessionsForAmount(amount)
+      assert.deepEqual(got, brute(amount), `sessionsForAmount(${amount})`)
+      assert.ok(got.value <= amount, `sessionsForAmount(${amount}) value ${got.value} > amount`)
+    }
+  })
+
   it('never spends more than the amount', () => {
     for (const amount of [1, 999, 1001, 3500, 6999, 13999, 25000]) {
       const got = sessionsForAmount(amount)
       assert.ok(got.value <= amount, `sessionsForAmount(${amount}) value ${got.value} > amount`)
+    }
+  })
+})
+
+describe('nearestPackPool — Best-Package Rule', () => {
+  it('approved pack table (cash vs debt)', () => {
+    // Farida: 16,000 against a 17,500 debt → the 17,500 pack (16P+8G),
+    // 1,500 shortfall — "pay for the nearest package, owe the rest"
+    assert.deepEqual(nearestPackPool(16000, 17500), { private: 16, group: 8, value: 17500 })
+    assert.deepEqual(nearestPackPool(7000), { private: 8, group: 0, value: 7000 })
+    assert.deepEqual(nearestPackPool(5000), { private: 4, group: 4, value: 5400 })
+    assert.deepEqual(nearestPackPool(2500), { private: 0, group: 4, value: 1800 })
+    assert.deepEqual(nearestPackPool(3500), { private: 0, group: 8, value: 3500 })
+    assert.deepEqual(nearestPackPool(3600), { private: 4, group: 0, value: 3600 })
+    assert.deepEqual(nearestPackPool(10800), { private: 12, group: 0, value: 10800 })
+    assert.deepEqual(nearestPackPool(14000), { private: 16, group: 0, value: 14000 })
+  })
+
+  it('15% upward cap: packs too far above the cash are rejected', () => {
+    // 3,000: the (4,0)=3,600 pack is +20% → rejected → best in-budget (0,4)
+    assert.deepEqual(nearestPackPool(3000), { private: 0, group: 4, value: 1800 })
+    // 5,000: (4,4)=5,400 is +8% → allowed (the approved table row)
+    assert.deepEqual(nearestPackPool(5000), { private: 4, group: 4, value: 5400 })
+    // 2,500: (4,0)=3,600 is +44% → rejected → round-down (0,4), +700 prepaid
+    const p2500 = nearestPackPool(2500)
+    assert.deepEqual(p2500, { private: 0, group: 4, value: 1800 })
+    assert.equal(2500 - p2500.value, 700)
+  })
+
+  it('debt pulls the target up only within the cap', () => {
+    // partial 15,000 against a 17,500 debt: (16,8)=17,500 exceeds the cap
+    // (2,500 > 2,250) → best in-budget pack (16,4)=15,800
+    assert.deepEqual(nearestPackPool(15000, 17500), { private: 16, group: 4, value: 15800 })
+    // full cash with debt: exact debt pack, shortfall −1,500
+    const farida = nearestPackPool(16000, 17500)
+    assert.equal(16000 - farida.value, -1500)
+  })
+
+  it('zero / negative inputs', () => {
+    assert.deepEqual(nearestPackPool(0), { private: 0, group: 0, value: 0 })
+    assert.deepEqual(nearestPackPool(-100), { private: 0, group: 0, value: 0 })
+    assert.deepEqual(nearestPackPool(0, 5000), { private: 0, group: 0, value: 0 })
+  })
+
+  it('peels (16,16) packs above the catalog', () => {
+    // 50,000: 2 × (16,16)=42,000 peeled, remainder 8,000 → (8,4)=8,800 (+10%)
+    assert.deepEqual(nearestPackPool(50000), { private: 40, group: 36, value: 50800 })
+    // 100,000: 4 × 21,000 peeled, remainder 16,000 → (16,4)=15,800
+    assert.deepEqual(nearestPackPool(100000), { private: 80, group: 68, value: 99800 })
+  })
+
+  it('never selects single-session tiers (multiples of 4 only)', () => {
+    for (const amount of [100, 1000, 2500, 3000, 3333, 4500, 5000, 7200, 15500, 16000, 50000]) {
+      const r = nearestPackPool(amount)
+      assert.equal(r.private % 4, 0, `private ${r.private} for ${amount} not pack-pure`)
+      assert.equal(r.group % 4, 0, `group ${r.group} for ${amount} not pack-pure`)
     }
   })
 })

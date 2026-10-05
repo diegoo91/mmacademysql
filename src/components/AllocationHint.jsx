@@ -10,7 +10,12 @@ const fmt = (n) => (Number(n) || 0).toLocaleString('en-EG')
 export function AllocationHint({ allocation }) {
   if (!allocation) return null
 
-  const owed = allocation.amount_owed || 0
+  const sessionsOwed = allocation.amount_owed || 0
+  const cashBefore = Number(allocation.cash_balance_before) || 0
+  const cashOwed = Math.max(0, -cashBefore)
+  const gap = Number(allocation.cash_gap) || 0
+  const cashCleared = cashBefore < 0 && gap > 0 ? Math.min(gap, -cashBefore) : 0
+  const owed = sessionsOwed + cashOwed
   const coveredP = allocation.covered_private || 0
   const coveredG = allocation.covered_group || 0
   const creditP = allocation.credit_private || 0
@@ -26,16 +31,21 @@ export function AllocationHint({ allocation }) {
     <div className="mt-2 text-[11px] leading-relaxed rounded-lg border border-brand-text/20 bg-brand/5 px-3 py-2 text-muted">
       <div className="flex flex-wrap gap-x-3">
         {owed > 0 && <span className="font-bold text-theme">Owed: EGP {fmt(owed)}</span>}
+        {cashOwed > 0 && (
+          <span className="text-rose-400 font-semibold">
+            incl. EGP {fmt(cashOwed)} shortfall{cashCleared > 0 ? `, EGP ${fmt(cashCleared)} cleared first` : ''}
+          </span>
+        )}
         {covered && <span className="text-amber-500 font-semibold">Covers {coveredP}P / {coveredG}G unpaid (EGP {fmt(allocation.covered_value || 0)})</span>}
         {credit && <span className="text-emerald-400 font-semibold">Adds {creditP}P / {creditG}G to balance</span>}
-        {!covered && owed > 0 && <span className="text-muted">Nothing applied to unpaid sessions</span>}
+        {!covered && sessionsOwed > 0 && <span className="text-muted">Nothing applied to unpaid sessions</span>}
       </div>
       {remainingCount > 0 && (
         <div className="mt-0.5 text-rose-400 font-semibold">
           Still unpaid after this: {remaining.private || 0}P / {remaining.group || 0}G (EGP {fmt(remaining.amount || 0)})
         </div>
       )}
-      {owed === 0 && credit && !allocation.warning && (
+      {sessionsOwed === 0 && cashOwed === 0 && credit && !allocation.warning && (
         <div className="mt-0.5 text-muted">No unpaid sessions — the full amount is credited to the balance.</div>
       )}
       {allocation.warning && (

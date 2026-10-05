@@ -1,7 +1,7 @@
 /**
- * PROD (Supabase) — READ-ONLY invariant audit for payments / balance / unpaid.
+ * READ-ONLY invariant audit for payments / balance / unpaid (Best-Package Rule).
  *
- * Answers "will the old bugs come back?" by asserting, against REAL prod data,
+ * Answers "will the old bugs come back?" by asserting, against REAL data,
  * the invariants those bugs violated:
  *
  *   A. PRICING      server tier table == public frontend table (drift here
@@ -11,22 +11,30 @@
  *   B. PAID SLOTS   a slot whose status is payment_approved always counts as
  *                   paid in the session engine (the slot-341 swap bug).
  *   C. ALLOCATION   for every money-driven allocation, checked against the
- *                   frontend oracle: covered ≤ unpaid, covered value ≤ money,
- *                   totals = covered + credit, remaining == price(before-covered).
+ *                   frontend oracle: covered ≤ unpaid, remaining ==
+ *                   price(before − covered), counts non-negative integers,
+ *                   and the cash ledger is self-consistent
+ *                   (cash_gap = amount − pool value, after = before + gap).
+ *                   NOTE: covered session VALUE may exceed the cash paid —
+ *                   that is the legal round-up shortfall (users.cash_balance),
+ *                   no longer a balance hole by itself.
  *   D. STORED ROWS  every approved player payment: sane counts/amount, and a
  *                   drift report — stored counts vs what the amount would
  *                   auto-derive now, plus rows crediting more session VALUE
- *                   than they paid (the balance-hole pattern).
+ *                   than they paid WITHOUT a recorded cash shortfall (the
+ *                   unfunded balance-hole pattern; funded shortfalls report
+ *                   as info).
  *
  * NEVER WRITES — only compute* helpers and db.findAll/get are used.
  * Exits non-zero if any FAIL is recorded. WARNs need eyeballing, not failure.
  *
- * Usage:  cd server && node audit-invariants.mjs     (needs .env → PROD_DATABASE_URL)
+ * Usage:  cd server && node audit-invariants.mjs
+ *         (targets PROD_DATABASE_URL by default; AUDIT_TARGET=local → local DB)
  */
 import 'dotenv/config'
 
 process.env.DB_ENABLED = 'true'
-process.env.DATABASE_URL = process.env.PROD_DATABASE_URL
+if (process.env.AUDIT_TARGET !== 'local') process.env.DATABASE_URL = process.env.PROD_DATABASE_URL
 
 const { computeUnpaidPlayers, computePlayerSessions } = await import('./src/utils/sessionPaid.js')
 const { computePaymentAllocation } = await import('./src/utils/paymentAllocation.js')
@@ -136,13 +144,23 @@ const farida = players.find(u => (u.name || '').toLowerCase().includes('farida')
 if (farida) {
   const rep = await computePlayerSessions(farida)
   info('Farida unpaid/owed', { private: rep.unpaidPrivate, group: rep.unpaidGroup, owed: rep.amountOwed })
-  assertEq('Farida owed = 15,500 (16P + 3G)', rep.amountOwed, 15500)
+  // exact counts are history (payments/edits change them) — assert the
+  // PRICING invariant instead: owed must equal the oracle price of the counts
+  if (rep.unpaidPrivate + rep.unpaidGroup > 0) {
+    assertEq('Farida owed == oracle price of her unpaid counts', rep.amountOwed, oraclePrice(rep.unpaidPrivate, rep.unpaidGroup))
+  }
   const slot341 = rep.sessions.find(s => s.date === '2026-09-30' && s.time.startsWith('19:00'))
-  assertTrue(
-    'slot 341 (2026-09-30 19:00) counts as paid',
-    !!slot341 && slot341.paid === true,
-    slot341 ? { paid: slot341.paid, status: slot341.status, type: slot341.session_type } : 'slot missing',
-  )
+  if (slot341 && slot341.status === 'payment_approved') {
+    assertTrue(
+      'slot 341 (2026-09-30 19:00) counts as paid',
+      slot341.paid === true,
+      { paid: slot341.paid, status: slot341.status, type: slot341.session_type },
+    )
+  } else if (slot341) {
+    info('slot 341 status is not payment_approved — paid flag follows its status', { paid: slot341.paid, status: slot341.status })
+  } else {
+    warn('slot 341 (2026-09-30 19:00) not in Farida sessions — schedule moved, spot-case skipped')
+  }
 } else {
   warn('Farida not found — spot-case skipped (player may have been renamed)')
 }
@@ -157,16 +175,15 @@ for (const row of unpaidList) {
   if (!player) continue
   for (const amt of [...amountsToTest, row.amount_owed]) {
     const a = await computePaymentAllocation(player, { amount: amt })
-    const coveredValOracle = oraclePrice(a.covered_private, a.covered_group)
     const still = oraclePrice(a.remaining_unpaid.private, a.remaining_unpaid.group)
-    const towardDebt = Math.min(amt, a.amount_owed)
+    const poolValue = oraclePrice(a.private_sessions, a.group_sessions)
     const problems = []
     if (a.covered_private > a.unpaid_before.private) problems.push('covered_private > unpaid')
     if (a.covered_group > a.unpaid_before.group) problems.push('covered_group > unpaid')
-    if (coveredValOracle > towardDebt) problems.push(`covered value ${coveredValOracle} > money toward debt ${towardDebt}`)
-    if (coveredValOracle > amt) problems.push('covered value > amount paid')
-    if (a.private_sessions !== a.covered_private + a.credit_private) problems.push('private totals != covered + credit')
-    if (a.group_sessions !== a.covered_group + a.credit_group) problems.push('group totals != covered + credit')
+    // covered VALUE may exceed cash paid only as a recorded shortfall (round-up)
+    const impliedGap = amt - poolValue
+    if ((a.cash_gap ?? 0) !== impliedGap) problems.push(`cash_gap ${a.cash_gap} != amount − pool value (${impliedGap})`)
+    if ((a.cash_balance_after ?? 0) !== (a.cash_balance_before ?? 0) + impliedGap) problems.push('cash_balance_after != before + gap')
     if (still !== a.remaining_unpaid.amount) problems.push('remaining_unpaid.amount != oracle price')
     if (still !== oraclePrice(a.unpaid_before.private - a.covered_private, a.unpaid_before.group - a.covered_group)) {
       problems.push('remaining != price(before - covered)')
@@ -184,6 +201,7 @@ const payments = (await db.findAll('payments')).filter(p => p.status === 'paymen
 info('approved player payments (money-driven rows)', payments.length)
 let derivedMatches = 0
 const staleValueRows = []
+const fundedShortfalls = []
 const driftRows = []
 for (const p of payments) {
   const player = players.find(u => u.id === p.player_id)
@@ -200,12 +218,14 @@ for (const p of payments) {
     fail(`payment ${p.id} has bad counts [${player.name}]`, [storedP, storedG])
   }
 
-  // Value credited vs money paid — a row crediting more value than it paid is
-  // the classic balance-hole. Legal only when the admin gave a discount/gift
-  // (manual override), so report as WARN with the row so it can be inspected.
+  // Value credited vs money paid — legal now ONLY when the row carries a
+  // recorded cash shortfall (payments.cash_gap < 0 → collectible, tracked in
+  // users.cash_balance). Value > paid with NO recorded gap = unfunded hole.
   const storedValue = oraclePrice(storedP, storedG)
+  const rowGap = parseFloat(p.cash_gap) || 0
   if (storedValue > amount) {
-    staleValueRows.push({ id: p.id, name: player.name, amount, stored: [storedP, storedG], value: storedValue })
+    if (rowGap < 0) fundedShortfalls.push({ id: p.id, name: player.name, amount, stored: [storedP, storedG], value: storedValue, cash_gap: rowGap })
+    else staleValueRows.push({ id: p.id, name: player.name, amount, stored: [storedP, storedG], value: storedValue })
   }
 
   // What this row would auto-derive now (own credit excluded) vs what is stored.
@@ -224,7 +244,8 @@ for (const p of payments) {
 }
 info(`rows matching fresh auto-derivation: ${derivedMatches}/${payments.length}`)
 if (driftRows.length) warn(`${driftRows.length} row(s) differ from auto-derivation (override/legacy)`, driftRows.slice(0, 15))
-if (staleValueRows.length) warn(`${staleValueRows.length} row(s) credit more session value than paid`, staleValueRows.slice(0, 15))
+if (fundedShortfalls.length) info(`${fundedShortfalls.length} row(s) credit more value than cash paid, all funded by a recorded cash shortfall`, fundedShortfalls.slice(0, 15))
+if (staleValueRows.length) warn(`${staleValueRows.length} row(s) credit more session value than paid WITHOUT a recorded shortfall (unfunded)`, staleValueRows.slice(0, 15))
 if (!driftRows.length && !staleValueRows.length) ok('all stored payment rows consistent with the engine')
 
 console.log(`\n=== RESULT: ${failures} FAIL, ${warnings} WARN ===`)

@@ -237,6 +237,32 @@ try {
   console.log('Migration check for cycle balance columns skipped:', err.message)
 }
 
+// Migration: cash ledger columns (idempotent)
+// users.cash_balance — signed cash position: negative = shortfall the player
+// owes next month (package value beyond what they paid), positive = prepaid.
+// payments.cash_gap — the signed delta this payment applied to it
+// (cash_balance_after = cash_balance_before + cash_gap), so reversal and
+// delete can restore exactly.
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    const cashCols = [
+      ['users', 'cash_balance', 'NUMERIC(12,2) NOT NULL DEFAULT 0'],
+      ['payments', 'cash_gap', 'NUMERIC(12,2) NOT NULL DEFAULT 0'],
+    ]
+    for (const [tbl, name, type] of cashCols) {
+      const has = await knex.schema.hasColumn(tbl, name)
+      if (!has) {
+        await knex.raw(`ALTER TABLE ${tbl} ADD COLUMN ${name} ${type}`)
+        console.log(`Migration: added ${tbl}.${name}`)
+      }
+    }
+  }
+} catch (err) {
+  console.log('Migration check for cash ledger columns skipped:', err.message)
+}
+
 // Ensure roles table exists and has the 4 system roles (safe idempotent migration)
 async function ensureRoles() {
   try {

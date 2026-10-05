@@ -111,9 +111,9 @@ function ensureSpace(doc, y, needed, state) {
   return 24
 }
 
-function summaryCard(doc, y, advice, totalSessions, amountOwed) {
+function summaryCard(doc, y, advice, totalSessions, totalOwed, cashOwed = 0) {
   const paid = totalSessions - advice.unpaidPrivate - advice.unpaidGroup
-  const showBreakdown = amountOwed > 0
+  const showBreakdown = totalOwed > 0
   const h = showBreakdown ? 26 : 22
   doc.setFillColor(...C.headerBg)
   doc.roundedRect(M, y, RIGHT - M, h, 2.5, 2.5, 'F')
@@ -137,9 +137,9 @@ function summaryCard(doc, y, advice, totalSessions, amountOwed) {
   doc.setTextColor(...C.muted)
   doc.text('YOU OWE', M + 98, y + 6.5)
   doc.setFontSize(14)
-  if (amountOwed > 0) {
+  if (totalOwed > 0) {
     doc.setTextColor(...C.rose)
-    doc.text(egp(amountOwed), M + 98, y + 17)
+    doc.text(egp(totalOwed), M + 98, y + 17)
   } else {
     doc.setTextColor(...C.greenText)
     doc.text('All clear', M + 98, y + 17)
@@ -152,7 +152,8 @@ function summaryCard(doc, y, advice, totalSessions, amountOwed) {
     const bits = []
     if (advice.unpaidPrivate) bits.push(`${plural(advice.unpaidPrivate, 'private session')} — ${egp(calculatePrice('private', advice.unpaidPrivate))}`)
     if (advice.unpaidGroup) bits.push(`${plural(advice.unpaidGroup, 'group session')} — ${egp(calculatePrice('group', advice.unpaidGroup))}`)
-    bits.push('1 hour each, per player, package price')
+    if (cashOwed > 0) bits.push(`${egp(cashOwed)} package shortfall — due next month`)
+    if (!cashOwed) bits.push('1 hour each, per player, package price')
     doc.text(bits.join(' · '), M + 7, y + 23)
   }
   return y + h + 3
@@ -234,7 +235,7 @@ function nextStepBox(doc, y, advice, amountOwed) {
   return y + boxH + 3
 }
 
-function settledBox(doc, y) {
+function settledBox(doc, y, cashOwed = 0) {
   doc.setFillColor(...C.paleGreen)
   doc.setDrawColor(...C.green)
   doc.setLineWidth(0.4)
@@ -242,7 +243,10 @@ function settledBox(doc, y) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.setTextColor(...C.greenText)
-  doc.text('All sessions are paid — nothing owing. Enjoy your games!', M + 5, y + 8.5)
+  const msg = cashOwed > 0
+    ? `All sessions are paid. Package shortfall ${egp(cashOwed)} is due next month.`
+    : 'All sessions are paid — nothing owing. Enjoy your games!'
+  doc.text(msg, M + 5, y + 8.5)
   return y + 16
 }
 
@@ -344,12 +348,14 @@ function footers(doc) {
 }
 
 export function generateReceiptPDF(reportData) {
-  const { player = {}, sessions = [], amount_owed = 0 } = reportData || {}
+  const { player = {}, sessions = [], amount_owed = 0, cash_owed = 0 } = reportData || {}
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const generated = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
   const advice = packageAdvice(sessions)
-  const owed = Number(amount_owed) || 0
+  // amount_owed arrives as the TOTAL owed (sessions + cash shortfall)
+  const totalOwed = Number(amount_owed) || 0
+  const cashOwed = Number(cash_owed) || 0
 
   brandHeader(doc, generated)
 
@@ -367,17 +373,17 @@ export function generateReceiptPDF(reportData) {
   if (contactBits.length) doc.text(contactBits.join('  ·  '), M, y + 5)
   y += 12
 
-  y = summaryCard(doc, y, advice, sessions.length, owed)
-  if (advice.hasUnpaid) y = nextStepBox(doc, y, advice, owed)
-  else if (sessions.length) y = settledBox(doc, y)
+  y = summaryCard(doc, y, advice, sessions.length, totalOwed, cashOwed)
+  if (advice.hasUnpaid) y = nextStepBox(doc, y, advice, totalOwed)
+  else if (sessions.length) y = settledBox(doc, y, cashOwed)
 
   y += 2
   sectionLabel(doc, 'Your sessions', M, y)
   y += 3.5
-  const state = { afterBreak: false, bottom: 274 - (owed > 0 ? 16 : 11) }
+  const state = { afterBreak: false, bottom: 274 - (totalOwed > 0 ? 16 : 11) }
   y = sessionRows(doc, y, sessions, state)
   y += 2
-  y = paymentNote(doc, y, owed)
+  y = paymentNote(doc, y, totalOwed)
 
   footers(doc)
   return doc
