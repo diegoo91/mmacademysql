@@ -51,3 +51,6 @@ scripts/payments-backups/
 # Spreadsheet files (may contain credentials)
 *.xlsx
 export-credentials.xlsx
+
+# Player data snapshots (PII - never commit)
+server/data/*.json
