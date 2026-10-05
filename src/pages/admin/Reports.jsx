@@ -72,6 +72,7 @@ export default function Reports() {
   const [giftingId, setGiftingId] = useState(null)
   const [giftMsg, setGiftMsg] = useState('')
   const [remainingSessions, setRemainingSessions] = useState(null)
+  const [period, setPeriod] = useState(null)
 
   const fetchReport = () => {
     setLoading(true)
@@ -84,7 +85,17 @@ export default function Reports() {
     api.get(`/reports/summary?${params}`).then(setData).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchReport(); if (canViewExtras) { fetchCoachHours(); fetchCoachBalance(); fetchUnpaidPlayers(); fetchRemainingSessions() } }, [preset, from, to])
+  useEffect(() => { fetchReport(); if (canViewExtras) { fetchCoachHours(); fetchCoachBalance(); fetchUnpaidPlayers(); fetchRemainingSessions(); fetchPeriod() } }, [preset, from, to])
+
+  const fetchPeriod = () => {
+    const params = new URLSearchParams()
+    params.set('preset', preset)
+    if (preset === 'custom') {
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+    }
+    api.get(`/reports/period-statement?${params}`).then(setPeriod).catch(() => setPeriod(null))
+  }
 
   const fetchCoachHours = () => {
     const params = new URLSearchParams()
@@ -242,6 +253,112 @@ export default function Reports() {
               </button>
             </div>
           </div>
+
+          {canViewExtras && period && (
+            <div className="glass-panel rounded-2xl p-6 border border-theme">
+              <h3 className="font-heading font-extrabold text-theme text-lg mb-4 flex items-center gap-2 flex-wrap">
+                <TrendingUp className="w-5 h-5 text-brand-text" /> Period Statement
+                <span className="text-[10px] font-bold text-muted bg-surface border border-theme rounded-full px-2.5 py-1">
+                  {period.range.from ? `${period.range.from} → ${period.range.to}` : 'All time'}
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {[
+                  { label: 'Private sessions', value: period.sessions.private, cls: 'text-theme' },
+                  { label: 'Group sessions', value: period.sessions.group, cls: 'text-blue-500' },
+                  { label: 'Expenses', value: `EGP ${period.expenses.toLocaleString()}`, cls: 'text-rose-400' },
+                  { label: 'Payments received', value: `EGP ${period.payments_received.toLocaleString()}`, cls: 'text-emerald-400' },
+                  { label: 'Should gain', value: `EGP ${period.should_gain.toLocaleString()}`, cls: 'text-brand-text' },
+                  { label: 'Unpaid sessions', value: `EGP ${period.unpaid.value.toLocaleString()}`, cls: 'text-amber-400' },
+                  { label: 'Packages sold', value: `${period.packages.count} packs`, cls: 'text-theme', sub: `${period.packages.sessions} sessions · EGP ${period.packages.value.toLocaleString()}` },
+                  { label: 'Pvt w/o package', value: period.private_split.without.count, cls: 'text-cyan-500', sub: `EGP ${period.private_split.without.egp.toLocaleString()}` },
+                ].map(cell => (
+                  <div key={cell.label} className="rounded-xl bg-surface border border-theme p-3">
+                    <p className="text-[10px] font-bold text-muted uppercase">{cell.label}</p>
+                    <p className={`font-heading text-lg font-black mt-0.5 ${cell.cls}`}>{cell.value}</p>
+                    {cell.sub && <p className="text-[10px] text-muted mt-0.5">{cell.sub}</p>}
+                  </div>
+                ))}
+              </div>
+              {period.prepay.payments.length > 0 && (
+                <p className="text-[11px] text-muted mt-3">
+                  Payment split of EGP {period.prepay.totals.received.toLocaleString()}: for period sessions EGP {period.prepay.totals.for_period.toLocaleString()}
+                  · for future scheduled EGP {period.prepay.totals.for_future.toLocaleString()}
+                  · <span className="font-bold text-amber-400">prepaid, not yet scheduled EGP {period.prepay.totals.prepay.toLocaleString()}</span>
+                  {period.prepay.totals.arrears > 0 && <> · arrears before period EGP {period.prepay.totals.arrears.toLocaleString()}</>}
+                </p>
+              )}
+              <p className="text-[11px] text-muted mt-1">
+                Private sessions check: {period.private_split.package.count} package + {period.private_split.without.count} without package + {period.unpaid.private} unpaid = {period.sessions.private}
+              </p>
+              <p className="text-[11px] text-muted mt-1">
+                Should gain = payments received + unpaid value · Unpaid in window: {period.unpaid.sessions} sessions ({period.unpaid.private}P + {period.unpaid.group}G) across {period.unpaid.players.length} player(s)
+              </p>
+              {period.prepay.payments.length > 0 && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-[11px] font-bold text-brand-text select-none">Per-payment split ({period.prepay.payments.length})</summary>
+                  <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-theme">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-surface">
+                        <tr className="text-left text-[10px] uppercase font-bold text-muted">
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Player</th>
+                          <th className="px-3 py-2">Ref</th>
+                          <th className="px-3 py-2 text-right">Amount</th>
+                          <th className="px-3 py-2 text-right">Period</th>
+                          <th className="px-3 py-2 text-right">Future sched.</th>
+                          <th className="px-3 py-2 text-right">Prepaid</th>
+                          <th className="px-3 py-2 text-right">Arrears</th>
+                          <th className="px-3 py-2">Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {period.prepay.payments.map(m => (
+                          <tr key={m.id} className="border-t border-theme">
+                            <td className="px-3 py-1.5">{m.date}</td>
+                            <td className="px-3 py-1.5 font-semibold text-theme">{m.player}</td>
+                            <td className="px-3 py-1.5 text-muted">{m.ref}</td>
+                            <td className="px-3 py-1.5 text-right font-bold">{m.amount.toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-right text-emerald-400">{m.for_period.toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-right text-blue-500">{m.for_future.toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-amber-400">{m.prepay.toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-right text-rose-400">{m.arrears.toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-muted">
+                              {m.pack ? `Pack ${m.private_sessions}P${m.group_sessions ? `+${m.group_sessions}G` : ''}` : `${m.private_sessions}P+${m.group_sessions}G`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
+              {period.unpaid.players.length > 0 && (
+                <div className="mt-3 max-h-56 overflow-y-auto rounded-xl border border-theme">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-surface">
+                      <tr className="text-left text-[10px] uppercase font-bold text-muted">
+                        <th className="px-3 py-2">Player</th>
+                        <th className="px-3 py-2 text-right">Private</th>
+                        <th className="px-3 py-2 text-right">Group</th>
+                        <th className="px-3 py-2 text-right">EGP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {period.unpaid.players.map(p => (
+                        <tr key={p.id} className="border-t border-theme">
+                          <td className="px-3 py-1.5 font-semibold text-theme">{p.name}</td>
+                          <td className="px-3 py-1.5 text-right">{p.private}</td>
+                          <td className="px-3 py-1.5 text-right">{p.group}</td>
+                          <td className="px-3 py-1.5 text-right font-bold text-amber-400">{p.value.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="glass-panel rounded-2xl p-6 border border-theme">

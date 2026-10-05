@@ -4,6 +4,8 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/rbac.js'
 import { computeUnpaidPlayers } from '../utils/sessionPaid.js'
+import { packagePrice } from '../utils/pricing.js'
+import { buildPeriodSplit } from '../utils/periodSplit.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
 const router = Router()
@@ -185,6 +187,111 @@ router.get('/summary', requirePermission('dashboard'), async (req, res) => {
     })
   } catch (err) {
     console.error('Reports summary error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ── GET /period-statement — the 6-number statement for a date range ────
+// 1) private sessions  2) group sessions  (all scheduled slots with players;
+//    each attendee counts once under the slot's type)
+// 3) expenses  4) payments received (by payment date — a September payment
+//    covering October sessions counts in September)
+// 5) should_gain = payments received + unpaid sessions value in the window
+// 6) unpaid sessions value — windowed per player, repriced with the same
+//    package tiers as the unpaid report (confirmed unpaid sessions only:
+//    unconfirmed slots are counted above but never billed here)
+router.get('/period-statement', requirePermission('dashboard'), async (req, res) => {
+  try {
+    const { from, to, preset } = req.query
+    let rangeFrom = from || null
+    let rangeTo = to || null
+    const now = new Date()
+    if (preset === 'week') {
+      const d = new Date(now); d.setDate(now.getDate() - 7); rangeFrom = d.toISOString().slice(0, 10); rangeTo = now.toISOString().slice(0, 10)
+    } else if (preset === 'month') {
+      rangeFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+      rangeTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    } else if (preset === 'all') {
+      rangeFrom = null
+      rangeTo = null
+    }
+    const inRange = (v) => (!rangeFrom || v >= rangeFrom) && (!rangeTo || v <= rangeTo)
+
+    // 1 + 2 — scheduled sessions in the window
+    const slots = (await db.findAll('slots')).filter(s => inRange(s.date) && s.player_text && s.player_text !== 'Available')
+    let privSessions = 0
+    let grpSessions = 0
+    let privSlots = 0
+    let grpSlots = 0
+    for (const s of slots) {
+      const names = [...new Set(s.player_text.split(/[/+]/).map(n => n.trim().toLowerCase()).filter(Boolean))]
+      if (s.session_type === 'group') { grpSessions += names.length; grpSlots++ } else { privSessions += names.length; privSlots++ }
+    }
+
+    // 3 — expenses in the window
+    const expenses = (await db.findAll('expenses'))
+      .filter(e => inRange(e.date))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+
+    // 4 — payments received (same source rules as /summary)
+    const paidStatuses = ['player_confirmed', 'payment_approved', 'schedule_approved']
+    const paidBookings = (await db.findAll('bookings')).filter(b => paidStatuses.includes(b.status))
+      .filter(b => inRange((b.paidAt || b.updated_at || b.created_at || '').slice(0, 10)))
+    const bookingTotal = paidBookings.reduce((s, b) => s + (Number(b.amountPaid) || Number(b.total) || 0), 0)
+    const standalone = (await db.findAll('payments')).filter(p => p.status === 'payment_approved' && inRange(p.date))
+    const standaloneTotal = standalone.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+    const paymentsReceived = bookingTotal + standaloneTotal
+
+    // 6 — windowed unpaid sessions, repriced per player with package tiers
+    const unpaidPlayers = []
+    let unpaidPriv = 0
+    let unpaidGrp = 0
+    let unpaidValue = 0
+    const allUnpaid = await computeUnpaidPlayers()
+    for (const p of allUnpaid) {
+      const win = (p.sessions || []).filter(s => inRange(s.date))
+      if (!win.length) continue
+      const wp = win.filter(s => s.session_type !== 'group').length
+      const wg = win.filter(s => s.session_type === 'group').length
+      const value = packagePrice(wp, wg)
+      unpaidPlayers.push({ id: p.id, name: p.name, private: wp, group: wg, value })
+      unpaidPriv += wp
+      unpaidGrp += wg
+      unpaidValue += value
+    }
+    unpaidPlayers.sort((a, b) => b.value - a.value)
+
+    // memo attribution: prepay split per payment, packages sold, private
+    // sessions paid without a named pack (see utils/periodSplit.js)
+    const split = await buildPeriodSplit({ from: rangeFrom, to: rangeTo })
+
+    res.json({
+      range: { from: rangeFrom, to: rangeTo, preset: preset || 'custom' },
+      sessions: {
+        private: privSessions,
+        group: grpSessions,
+        total: privSessions + grpSessions,
+        slots: slots.length,
+        slots_private: privSlots,
+        slots_group: grpSlots,
+      },
+      expenses,
+      payments_received: paymentsReceived,
+      should_gain: paymentsReceived + unpaidValue,
+      unpaid: {
+        private: unpaidPriv,
+        group: unpaidGrp,
+        sessions: unpaidPriv + unpaidGrp,
+        value: unpaidValue,
+        players: unpaidPlayers,
+      },
+      prepay: split.prepay,
+      packages: split.packages,
+      private_split: split.privateSplit,
+    })
+  } catch (err) {
+    console.error('Period statement error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
