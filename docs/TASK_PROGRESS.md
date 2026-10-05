@@ -507,13 +507,13 @@
 
 **Still open (Wave 2 backlog):** pagination for admin Users list (backend already supports page/limit in routes/users.js) + Payments (route has none - needs route work), UserDetail tabs/layout (880-line single scroll), Dashboard KPI rework, rose-500 destructive-button consistency. All uncommitted (commit ONLY on explicit approval; no prod contact).
 
-## 2026-09-30 — Wave 2c: pagination + Profile debt/credits
+## 2026-09-30 ï¿½ Wave 2c: pagination + Profile debt/credits
 
-- **Users + Payments tables paginated (client-side):** `PAGE_SIZE = 25` in both; page state resets on search/filter change; footer shows `Showing X–Y of Z` + Prev / `Page N of M` / Next (hidden when under 25 rows). Instant search kept (all rows still in memory, only 25 in DOM). No backend change — Payments route has no page/limit, client-side avoided route work; Users route already supports it if ever needed.
+- **Users + Payments tables paginated (client-side):** `PAGE_SIZE = 25` in both; page state resets on search/filter change; footer shows `Showing Xï¿½Y of Z` + Prev / `Page N of M` / Next (hidden when under 25 rows). Instant search kept (all rows still in memory, only 25 in DOM). No backend change ï¿½ Payments route has no page/limit, client-side avoided route work; Users route already supports it if ever needed.
 - **Profile `totalPrivateRemaining` + debt (Stragent.md:167 "remaining private/group, cycle, debt"):**
-  - Cards now render `totalPrivateRemaining` / `totalGroupRemaining` (was duplicate inline `max(0, cycle+legacy)` math — same value, single source now).
+  - Cards now render `totalPrivateRemaining` / `totalGroupRemaining` (was duplicate inline `max(0, cycle+legacy)` math ï¿½ same value, single source now).
   - `/auth/me` (`server/src/routes/auth.js` `safeUserPayload`) now returns `debt_private` / `debt_group` (>= 0 magnitudes, same convention as `users.js` enrichPlayer).
-  - Profile shows `Outstanding: X private · Y group owed — settle at the academy.` (rose) inside the credits panel AND inside the "No active package" empty state — debt was previously invisible to players (auth payload clamps legacy to >= 0, so client could not detect it).
+  - Profile shows `Outstanding: X private ï¿½ Y group owed ï¿½ settle at the academy.` (rose) inside the credits panel AND inside the "No active package" empty state ï¿½ debt was previously invisible to players (auth payload clamps legacy to >= 0, so client could not detect it).
   - Verified: oxlint 0 errors, client build OK, `node --check auth.js` OK.
 - Server stayed up throughout (localhost only). No commits.
 
@@ -521,12 +521,12 @@
 
 - **UserDetail tabs (Stragent.md:453 "Avoid displaying all information simultaneously. Use sections/tabs"):**
   - Added `tab` state + tab bar (matches ScheduleManager pill style, `role=tablist`/`role=tab`/`aria-selected`): **Overview | Balances | Sessions | Payments** (Payments tab only when `canPay`).
-  - Top stays always-visible per spec: header/quick actions, contact grid, then money row now `sm:grid-cols-3` = Amount Owed + Total Paid + **new merged Remaining card** (`5P · 0G`, "1P = 2G · this month X/Y", full-width on mobile per Stragent:434).
+  - Top stays always-visible per spec: header/quick actions, contact grid, then money row now `sm:grid-cols-3` = Amount Owed + Total Paid + **new merged Remaining card** (`5P ï¿½ 0G`, "1P = 2G ï¿½ this month X/Y", full-width on mobile per Stragent:434).
   - Overview: used-sessions stats (4 tiles; removed the duplicate "Remaining" tile now shown in the merged card) + Notes. Balances: legacy/cycle/debt/expiry/write-off panel. Sessions: session history. Payments: payment history (empty state now shows instead of hiding the panel).
 - **Dashboard KPI rework:**
   - KPI grid `xl:grid-cols-6` -> `sm:grid-cols-2 lg:grid-cols-3` (no more 6-across squeeze); StatCard gained a `sub` line: Users "N players", Bookings "N active", Revenue "approved payments", Occupancy now `27%` big + "12 of 45 slots filled" (was unreadable `12/45 (27%)`).
   - `handleDecide` silent `catch {}` (old line 71) now surfaces `toast.error` via FeedbackContext.
-  - Session Credits table: group cell now shows `· up to X as group` when `group_from_private > 0` (same money-truth note as Reports/UserDetail/Profile).
+  - Session Credits table: group cell now shows `ï¿½ up to X as group` when `group_from_private > 0` (same money-truth note as Reports/UserDetail/Profile).
 - **Server quote endpoint for conversions:** `GET /api/conversion-requests/quote?from=private|group&count=N[&player_id=]` in `server/src/routes/conversion-requests.js`.
   - Mirrors **approval math** (legacy buckets only - cycle package stays as-is, matching PUT /:id/approve): returns `{max, yields, allowed, reason, legacy_*, effective_*}`. player_id != self requires `conversions` permission (getUserPermissions).
   - Fixes the client-side gap where the form's max used effective balances (cycle credits) but approval converts legacy only - now the UI gets `allowed:false` + reason ("Active package credits stay with this cycle...") and the submit button disables.
@@ -575,7 +575,7 @@
 ## 2026-10-01 - Fixes: journey UI corruption, per-report state, admin-start-assessment
 
 - **"Failed to fetch" root cause:** three duplicate backend chains (npm run dev x3, node --watch x2) were fighting over port 5174. Killed all, restarted ONE with log capture (`%TEMP%\opencode\server.log`). Exact player submit flow reproduced clean (57-check style smoke: signup -> journey -> assessment -> PUT 33 scores -> submit, all 2xx).
-- **Journey.jsx encoding:** file had 361 double-encoded UTF-8 chars (arrows/dashes rendered as "â†"/"â€”" in UI). Fixed byte-wise via windows-1252 reverse-map script (`%TEMP%\opencode\fix-mojibake.cjs`, backup `Journey.jsx.bak`); 0 mojibake left.
+- **Journey.jsx encoding:** file had 361 double-encoded UTF-8 chars (arrows/dashes rendered as "ï¿½"/"â€”" in UI). Fixed byte-wise via windows-1252 reverse-map script (`%TEMP%\opencode\fix-mojibake.cjs`, backup `Journey.jsx.bak`); 0 mojibake left.
 - **Per-report state bug (admin panel):** opening a previous monthly report showed the ACTIVE report's numbers because adminValues was not reloaded per report. Fixed: report header click now reloads that report's saved values into adminValues.
 - **Player old scores now visible to admin:** SkillsList admin mode shows "player X" self-score chip next to admin/final inputs, and the player's per-skill comment (read-only) in the coach-comment row.
 - **Admin starts initial assessment (feature):** POST /api/journey/assessment accepts optional `user_id`; non-self requires `players` permission (403 otherwise), 404 unknown user, 409 duplicate, notifies the player ("Your coach started your initial assessment"). JourneyTab empty state replaced with "Start initial assessment" button + handler `startAssessmentForPlayer`.
