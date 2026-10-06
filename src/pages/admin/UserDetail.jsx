@@ -778,9 +778,9 @@ export default function UserDetail() {
                   EGP {amountOwed.toLocaleString()} owed
                 </span>
               )}
-              {!reportLoading && advice.hasUnpaid && (
-                <span className="px-3 py-1 rounded-full bg-brand/10 text-brand-text text-xs font-bold" title="Private package that clears all unpaid sessions">
-                  Clear-all: {advice.roundUp ?? '>16'}-pvt · EGP {advice.roundUpPrice.toLocaleString()}
+              {!reportLoading && advice.hasUnpaid && advice.clearAll && (
+                <span className="px-3 py-1 rounded-full bg-brand/10 text-brand-text text-xs font-bold" title="Pack that clears all unpaid sessions at an exact pack price">
+                  Clear-all: {advice.clearAll.label} · EGP {advice.clearAll.price.toLocaleString()}
                 </span>
               )}
               {report && (

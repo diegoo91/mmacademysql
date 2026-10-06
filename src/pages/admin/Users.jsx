@@ -319,8 +319,8 @@ export function HistoryModal({ user, onClose }) {
               <p className="text-xs text-muted">
                 {sessions.length} session{sessions.length !== 1 ? 's' : ''}
                 {report && report.amount_owed > 0 && <span className="ml-2 text-amber-400 font-bold">EGP {report.amount_owed.toLocaleString()} owed</span>}
-                {!loading && advice.hasUnpaid && (
-                  <span className="ml-2 text-brand-text font-bold">→ clear-all: {advice.roundUp ?? '>16'}-pvt (EGP {advice.roundUpPrice.toLocaleString()})</span>
+                {!loading && advice.hasUnpaid && advice.clearAll && (
+                  <span className="ml-2 text-brand-text font-bold" title="Pack that clears all unpaid sessions at an exact pack price">→ clear-all: {advice.clearAll.label} (EGP {advice.clearAll.price.toLocaleString()})</span>
                 )}
               </p>
             </div>

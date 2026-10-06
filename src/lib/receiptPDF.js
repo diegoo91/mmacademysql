@@ -160,12 +160,14 @@ function summaryCard(doc, y, advice, totalSessions, totalOwed, cashOwed = 0) {
 }
 
 function nextStepBox(doc, y, advice, amountOwed) {
-  if (!advice.hasUnpaid) return y
+  if (!advice.hasUnpaid || !advice.clearAll) return y
 
-  const bandTitle = advice.roundUp === null
-    ? 'BEST NEXT STEP — PAY IN TWO STEPS'
-    : 'RECOMMENDED — BEST NEXT STEP'
-  const boxH = advice.roundUp === null ? 39 : (advice.nearest !== advice.roundUp ? 34 : 29)
+  const clear = advice.clearAll
+  const estRemainder = Math.max(0, Math.round((Number(amountOwed) || 0) - advice.nearestPrice))
+  // Split line only when the smaller nearest pack leaves a real remainder
+  // still due and isn't the clear-all price itself.
+  const splitOption = advice.nearestPrice !== clear.price && estRemainder > 0
+  const boxH = splitOption ? 34 : 29
 
   // Hero: pale-green body, inverted green band header, gold rule, strong border
   doc.setFillColor(...C.paleGreen)
@@ -182,56 +184,36 @@ function nextStepBox(doc, y, advice, amountOwed) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(...C.white)
-  doc.text(bandTitle, M + 5, y + 5.3)
+  doc.text('RECOMMENDED \u2014 BEST NEXT STEP', M + 5, y + 5.3)
 
-  if (advice.roundUp === null) {
-    // Debt above 16 equiv sessions: two-step plan leads, lump sum kept
-    const estStep1 = Math.max(0, Math.round((Number(amountOwed) || 0) - PRICING.private[16]))
-    doc.setFontSize(14)
-    doc.setTextColor(...C.ink)
-    doc.text('16-Session Private Package', M + 5, y + 15.5)
-    doc.setTextColor(...C.greenText)
-    doc.text(egp(PRICING.private[16]), RIGHT - 5, y + 15.5, { align: 'right' })
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...C.muted)
-    const totalUnpaid = advice.unpaidPrivate + advice.unpaidGroup
-    doc.text(`Step 1, pay now — covers most of your ${plural(totalUnpaid, 'session')}.`, M + 5, y + 21)
-    if (advice.secondStep) {
-      doc.text(`Step 2, next month — about ${egp(estStep1)} left: ${advice.secondStep}-Session Package, ${egp(advice.secondStepPrice)}.`, M + 5, y + 26)
-    }
-    doc.text(`Or clear everything at once: ${advice.packsNeeded} \u00D7 16-Session Package — ${egp(advice.roundUpPrice)}.`, M + 5, y + 31)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...C.greenText)
-    doc.text('Pay by InstaPay or cash — details below.', M + 5, y + 35.5)
-    return y + boxH + 3
-  }
-
-  const splitOption = advice.nearest !== advice.roundUp
-  const estRemainder = Math.max(0, Math.round((Number(amountOwed) || 0) - advice.nearestPrice))
+  // The exact pack the allocator would sell for this debt (cash_gap = 0)
+  const packName = clear.group === 0
+    ? `${clear.private}-Session Private Package`
+    : clear.private === 0
+      ? `${clear.group}-Session Group Package`
+      : `${clear.private} Private + ${clear.group} Group Package`
 
   doc.setFontSize(14)
   doc.setTextColor(...C.ink)
-  doc.text(`${advice.roundUp}-Session Private Package`, M + 5, y + 15.5)
+  doc.text(packName, M + 5, y + 15.5)
   doc.setTextColor(...C.greenText)
-  doc.text(egp(advice.roundUpPrice), RIGHT - 5, y + 15.5, { align: 'right' })
+  doc.text(egp(clear.price), RIGHT - 5, y + 15.5, { align: 'right' })
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(...C.muted)
   const totalUnpaid = advice.unpaidPrivate + advice.unpaidGroup
   const covers = `Covers all ${plural(totalUnpaid, 'session')} you owe (${advice.unpaidPrivate} private + ${advice.unpaidGroup} group)`
-  const extra = advice.roundUpSurplus > 0
-    ? `, plus ${plural(advice.roundUpSurplus, 'extra session')} credited`
-    : ' — exact match, nothing left over'
+  const extra = clear.creditSessions > 0
+    ? `, plus ${plural(clear.creditSessions, 'extra session')} credited`
+    : ' \u2014 exact match, nothing left over'
   doc.text(`${covers}${extra}.`, M + 5, y + 21)
   if (splitOption) {
-    doc.text(`Or the ${advice.nearest}-Session Package — ${egp(advice.nearestPrice)} now (about ${egp(estRemainder)} still due after).`, M + 5, y + 26)
+    doc.text(`Or the ${advice.nearest}-Session Package \u2014 ${egp(advice.nearestPrice)} now (about ${egp(estRemainder)} still due after).`, M + 5, y + 26)
   }
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...C.greenText)
-  doc.text('Pay by InstaPay or cash — details below.', M + 5, splitOption ? y + 31 : y + 26)
+  doc.text('Pay by InstaPay or cash \u2014 details below.', M + 5, splitOption ? y + 31 : y + 26)
   return y + boxH + 3
 }
 

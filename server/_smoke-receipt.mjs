@@ -37,10 +37,10 @@ const checks = [
   '6 group sessions',
   'EGP 2,800',
   'RECOMMENDED \u0097 BEST NEXT STEP',
-  '12-Session Private Package',
-  'EGP 10,800',
+  '8 Private + 4 Group Package',
+  'EGP 8,800',
   'Covers all 12 sessions you owe',
-  'plus 3 extra sessions credited',
+  'plus 1 extra session credited',
   'Or the 8-Session Package',
   'EGP 7,000',
   'about EGP 1,400 still due after',
@@ -118,19 +118,21 @@ const t4 = run('farida', {
   amount_owed: 17500,
 }, 'server/backups/_receipt_smoke4.pdf')
 for (const s of [
-  'BEST NEXT STEP \u0097 PAY IN TWO STEPS',
-  '16-Session Private Package',
+  'RECOMMENDED \u0097 BEST NEXT STEP',
+  '16 Private + 8 Group Package',
+  'EGP 17,500',
+  'Covers all 21 sessions you owe',
+  '18 private + 3 group',
+  'plus 1 extra session credited',
   'EGP 14,000',
-  'Step 1, pay now \u0097 covers most of your 21 sessions.',
-  'Step 2, next month \u0097 about EGP 3,500 left: 4-Session Package, EGP 3,600.',
-  'Or clear everything at once: 2 \u00D7 16-Session Package \u0097 EGP 28,000.',
+  'about EGP 3,500 still due after',
   'Pay by InstaPay or cash \u0097 details below.',
 ]) {
   const ok = t4.includes(s)
   if (!ok) miss++
   console.log((ok ? 'OK  ' : 'MISS') + ' | multipack: ' + JSON.stringify(s))
 }
-for (const s of ['16 + singles', 'Or pay any amount', 'extra sessions credited']) {
+for (const s of ['16 + singles', 'Or pay any amount', 'PAY IN TWO STEPS', 'Step 1, pay now', '2 \u00D7 16-Session']) {
   const absent = !t4.includes(s)
   if (!absent) miss++
   console.log((absent ? 'OK  ' : 'MISS') + ' | multipack-absent: ' + JSON.stringify(s))
