@@ -10,7 +10,7 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, cookieOptions, p
 import { authenticate } from '../middleware/auth.js'
 import { getUserPermissions } from '../middleware/rbac.js'
 import { checkLoginLockout, recordLoginFailure, clearLoginAttempts } from '../middleware/login-backoff.js'
-import { validateLength, LIMITS } from '../middleware/validation.js'
+import { validateLength, validateNickname, normalizePhone, phoneKey, isPhoneIdentifier, LIMITS } from '../middleware/validation.js'
 import { createSession, findActiveSession, rotateSession, deactivateSession } from '../utils/token-revocation.js'
 import { auditLogin, auditLogout, auditUpdate, auditCreate } from '../middleware/audit.js'
 import { ensureCycleFresh, effectivePrivate, effectiveGroupBalance, monthlyDisplay } from '../utils/balance.js'
@@ -20,7 +20,7 @@ async function safeUserPayload(user) {
   const u = fresh || user
   const monthly = monthlyDisplay(u)
   return {
-    id: u.id, name: u.name, email: u.email, role: u.role, skill_level: u.skill_level,
+    id: u.id, name: u.name, nickname: u.nickname || null, email: u.email, phone: u.phone || '', role: u.role, skill_level: u.skill_level,
     force_password_change: u.force_password_change, account_status: u.account_status || 'active',
     private_balance: Math.max(0, u.private_balance || 0),
     group_balance: Math.max(0, u.group_balance || 0),
@@ -67,23 +67,32 @@ const router = Router()
 
 router.post('/signup', async (req, res) => {
   try {
-    const { name, email, phone, dob, password, skillLevel } = req.body
+    const { name, email, phone, dob, password, skillLevel, nickname } = req.body
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' })
-    const err = validateLength('name', name, LIMITS.name) || validateLength('email', email, LIMITS.email) || validateLength('phone', phone, LIMITS.phone)
+    const err = validateLength('name', name, LIMITS.name) || validateLength('email', email, LIMITS.email) || validateLength('phone', phone, LIMITS.phone) || validateNickname(nickname)
     if (err) return res.status(400).json({ error: err })
     if (typeof password !== 'string' || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
     if (password.length > 72) return res.status(400).json({ error: 'Password must not exceed 72 characters' })
     if (await db.find('users', u => u.email === email)) return res.status(409).json({ error: 'Email already registered' })
+    const cleanNickname = typeof nickname === 'string' && nickname.trim() ? nickname.trim() : null
+    if (cleanNickname && await db.find('users', u => u.nickname && u.nickname.toLowerCase() === cleanNickname.toLowerCase())) {
+      return res.status(409).json({ error: 'Nickname already taken' })
+    }
+    const normPhone = normalizePhone(phone)
+    if (normPhone) {
+      const phoneOwner = await db.find('users', u => u.phone && phoneKey(u.phone) === phoneKey(normPhone))
+      if (phoneOwner) return res.status(409).json({ error: 'A user with this mobile number already exists' })
+    }
     const hash = await bcrypt.hash(password, 12)
     const memberSince = new Date().getFullYear().toString()
-    const user = await db.insert('users', { name, email, phone: phone || '', dob: dob || '', password_hash: hash, role: 'player', skill_level: skillLevel || 'Intermediate', member_since: memberSince, force_password_change: 0, notes: '', private_balance: 0, group_balance: 0, is_claimed: true, member_code: await nextMemberCode() })
+    const user = await db.insert('users', { name, nickname: cleanNickname, email, phone: normPhone, dob: dob || '', password_hash: hash, role: 'player', skill_level: skillLevel || 'Intermediate', member_since: memberSince, force_password_change: 0, notes: '', private_balance: 0, group_balance: 0, is_claimed: true, member_code: await nextMemberCode() })
     const safe = await safeUserPayload(user)
     safe.force_password_change = 0
     const accessToken = signAccessToken(safe)
     const { token: refreshToken, expiresAt } = signRefreshToken(safe)
     await createSession(user.id, refreshToken, expiresAt)
     res.cookie('refreshToken', refreshToken, cookieOptions(REFRESH_MAX_AGE))
-    await auditCreate(req, 'user', user.id, { name, email, role: 'player', skill_level: skillLevel || 'Intermediate' })
+    await auditCreate(req, 'user', user.id, { name, nickname: cleanNickname, email, role: 'player', skill_level: skillLevel || 'Intermediate' })
     res.json({ user: safe, accessToken, refreshToken })
   } catch (err) {
     console.error('Signup error:', err)
@@ -93,21 +102,38 @@ router.post('/signup', async (req, res) => {
 
 router.post('/login', checkLoginLockout, async (req, res) => {
   try {
-    const { email, password } = req.body
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' })
-    const user = await db.find('users', u => u.email === email)
+    const { password } = req.body
+    const identifier = (req.body.identifier || req.body.email || req.body.phone || '').trim()
+    if (!identifier || !password) return res.status(400).json({ error: 'Email/mobile number and password are required' })
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown'
+
+    let user = null
+    let ambiguousPhone = false
+    if (isPhoneIdentifier(identifier)) {
+      const key = phoneKey(identifier)
+      const matches = (await db.findAll('users')).filter(u => u.phone && phoneKey(u.phone) === key)
+      if (matches.length > 1) ambiguousPhone = true
+      else user = matches[0] || null
+    } else {
+      const email = identifier.toLowerCase()
+      user = await db.find('users', u => (u.email || '').toLowerCase() === email) || null
+    }
+
+    if (ambiguousPhone) {
+      await auditLogin(req, false, identifier)
+      return res.status(409).json({ error: 'Multiple accounts share this mobile number. Please log in with your email.' })
+    }
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-      recordLoginFailure(email, ip)
-      await auditLogin(req, false, email)
-      return res.status(401).json({ error: 'Invalid email or password' })
+      recordLoginFailure(identifier, ip)
+      await auditLogin(req, false, identifier)
+      return res.status(401).json({ error: 'Invalid email/mobile number or password' })
     }
     if (user.account_status && user.account_status !== 'active') {
-      await auditLogin(req, false, email)
+      await auditLogin(req, false, identifier)
       return res.status(403).json({ error: user.account_status === 'locked' ? 'Account is locked. Contact an administrator.' : 'Account is suspended. Contact an administrator.' })
     }
-    clearLoginAttempts(email, req.ip || req.connection?.remoteAddress || 'unknown')
-    await auditLogin(req, true, email)
+    clearLoginAttempts(identifier, ip)
+    await auditLogin(req, true, identifier)
     const permissions = await getUserPermissions(user)
     const safe = await safeUserPayload(user)
     safe.permissions = permissions
@@ -223,14 +249,31 @@ router.post('/force-change-password', authenticate, async (req, res) => {
 
 router.put('/profile', authenticate, async (req, res) => {
   try {
-    const { name, phone, skill_level } = req.body
+    const { name, phone, skill_level, nickname } = req.body
+    const err = nickname !== undefined && validateNickname(nickname)
+    if (err) return res.status(400).json({ error: err })
     const updates = {}
     if (name) updates.name = name
-    if (phone !== undefined) updates.phone = phone
+    if (phone !== undefined) {
+      const normPhone = normalizePhone(phone)
+      if (normPhone) {
+        const phoneOwner = await db.find('users', u => u.id !== req.user.id && u.phone && phoneKey(u.phone) === phoneKey(normPhone))
+        if (phoneOwner) return res.status(409).json({ error: 'A user with this mobile number already exists' })
+      }
+      updates.phone = normPhone
+    }
     if (skill_level) updates.skill_level = skill_level
+    if (nickname !== undefined) {
+      const cleanNickname = typeof nickname === 'string' && nickname.trim() ? nickname.trim() : null
+      if (cleanNickname) {
+        const taken = await db.find('users', u => u.id !== req.user.id && u.nickname && u.nickname.toLowerCase() === cleanNickname.toLowerCase())
+        if (taken) return res.status(409).json({ error: 'Nickname already taken' })
+      }
+      updates.nickname = cleanNickname
+    }
     const user = await db.update('users', req.user.id, updates)
     if (!user) return res.status(404).json({ error: 'User not found' })
-    await auditUpdate(req, 'user', req.user.id, null, { name: updates.name, phone: updates.phone, skill_level: updates.skill_level })
+    await auditUpdate(req, 'user', req.user.id, null, { name: updates.name, phone: updates.phone, skill_level: updates.skill_level, nickname: updates.nickname })
     const { password_hash, ...safe } = user
     res.json(safe)
   } catch (err) {

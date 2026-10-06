@@ -4,6 +4,7 @@ import { Bell, Calendar, ChevronRight, LogOut, Menu, Moon, Palette, Shield, Sun,
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { api } from '../lib/api'
+import { displayName } from '../lib/user'
 import {
   enablePushNotifications,
   disablePushNotifications,
@@ -262,10 +263,10 @@ export default function Navbar() {
               <div className="flex items-center gap-3 bg-surface pl-3 pr-2 py-1.5 rounded-full border border-theme">
                 <Link to="/profile" className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-xs border border-brand-text/40">
-                    {user.name.charAt(0)}
+                    {displayName(user).charAt(0)}
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-theme leading-tight">{user.name}</span>
+                    <span className="text-xs font-bold text-theme leading-tight">{displayName(user)}</span>
                     <span className="text-[10px] text-brand-text font-medium flex items-center gap-1">
                       {(user.role === 'superadmin' || user.role === 'admin' || user.role === 'coach') && (
                         <Shield className="w-3 h-3" />
@@ -377,7 +378,7 @@ export default function Navbar() {
             {user ? (
               <div className="p-4 rounded-xl bg-surface border border-theme flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-theme">{user.name}</p>
+                  <p className="text-sm font-bold text-theme">{displayName(user)}</p>
                   <p className="text-xs text-brand-text flex items-center gap-1">
                     {(user.role === 'superadmin' || user.role === 'admin' || user.role === 'coach') && (
                       <Shield className="w-3 h-3" />

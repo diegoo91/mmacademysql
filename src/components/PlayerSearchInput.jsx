@@ -129,7 +129,8 @@ export default function PlayerSearchInput({ value, onChange, onPlayerSelect, pla
               onClick={() => selectName(s.full_name, s)}
               className={`w-full text-left px-3 py-2 text-xs ${i === activeIdx ? 'bg-brand/10 text-brand-text' : 'text-theme hover:bg-slate-100 dark:hover:bg-slate-800'}`}
             >
-              {s.full_name}
+              {s.nickname || s.full_name}
+              {s.nickname && <span className="ml-1.5 text-[10px] text-muted">{s.full_name}</span>}
             </button>
           ))}
           {showAddNew && (

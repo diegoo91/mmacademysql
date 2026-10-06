@@ -152,8 +152,9 @@ export const api = {
   upload: (path, formData) => request('POST', path, formData),
 }
 
-export async function login(email, password) {
-  const data = await request('POST', '/auth/login', { email, password }, { noRefresh: true })
+// identifier: email address OR mobile number (server detects which)
+export async function login(identifier, password) {
+  const data = await request('POST', '/auth/login', { email: identifier, password }, { noRefresh: true })
   setToken(data.accessToken)
   setRefreshToken(data.refreshToken)
   return data.user

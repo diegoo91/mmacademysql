@@ -1,10 +1,18 @@
 import { Router } from 'express'
+import { isPhoneIdentifier, phoneKey } from './validation.js'
 
 const MAX_FAILURES = 5
 const LOCKOUT_MS = 15 * 60 * 1000 // 15 minutes
 
 // Map of key → { count, lockoutUntil }
 const attempts = new Map()
+
+// Canonical lockout key: phones collapse to their digit key so formatting
+// variants ("010...", "+20 10...") share one failure counter.
+function lockKey(identifier) {
+  const id = (identifier || '').trim().toLowerCase()
+  return isPhoneIdentifier(id) ? phoneKey(id) : id
+}
 
 function cleanup() {
   const now = Date.now()
@@ -16,9 +24,9 @@ function cleanup() {
 setInterval(cleanup, 5 * 60 * 1000).unref?.()
 
 export function checkLoginLockout(req, res, next) {
-  const email = (req.body?.email || '').toLowerCase()
+  const identifier = req.body?.email || req.body?.phone || req.body?.identifier || ''
   const ip = req.ip || req.connection?.remoteAddress || 'unknown'
-  const key = `login:${email}:${ip}`
+  const key = `login:${lockKey(identifier)}:${ip}`
   const record = attempts.get(key)
 
   if (record?.lockoutUntil && record.lockoutUntil > Date.now()) {
@@ -28,8 +36,8 @@ export function checkLoginLockout(req, res, next) {
   next()
 }
 
-export function recordLoginFailure(email, ip) {
-  const key = `login:${(email || '').toLowerCase()}:${ip || 'unknown'}`
+export function recordLoginFailure(identifier, ip) {
+  const key = `login:${lockKey(identifier)}:${ip || 'unknown'}`
   const record = attempts.get(key) || { count: 0, lockoutUntil: null }
 
   // If lockout expired, reset
@@ -46,7 +54,7 @@ export function recordLoginFailure(email, ip) {
   attempts.set(key, record)
 }
 
-export function clearLoginAttempts(email, ip) {
-  const key = `login:${(email || '').toLowerCase()}:${ip || 'unknown'}`
+export function clearLoginAttempts(identifier, ip) {
+  const key = `login:${lockKey(identifier)}:${ip || 'unknown'}`
   attempts.delete(key)
 }

@@ -343,7 +343,7 @@ export default function AdminTournament() {
     try {
       const res = await api.get('/users')
       const arr = Array.isArray(res) ? res : (res.users || res.players || [])
-      setUsersById(new Map(arr.map((u) => [u.id, u.name || u.full_name])))
+      setUsersById(new Map(arr.map((u) => [u.id, u.nickname || u.name || u.full_name])))
     } catch { /* players list optional — names fall back to ids */ }
   }, [])
 

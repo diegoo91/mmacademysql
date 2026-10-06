@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowRight,
+  AtSign,
   Calendar,
   CheckCircle2,
   Eye,
@@ -27,6 +28,7 @@ export default function SignUp() {
 
   const [formData, setFormData] = useState({
     fullName: '',
+    nickname: '',
     email: '',
     phone: '',
     dob: '',
@@ -52,6 +54,9 @@ export default function SignUp() {
   const validate = () => {
     const next = {}
     if (!formData.fullName.trim()) next.fullName = 'Full name is required'
+    if (formData.nickname.trim() && formData.nickname.trim().length < 3) next.nickname = 'Nickname must be at least 3 characters'
+    else if (formData.nickname.trim().length > 30) next.nickname = 'Nickname must be at most 30 characters'
+    else if (formData.nickname.trim() && !/^[A-Za-z0-9][A-Za-z0-9 _.-]*$/.test(formData.nickname.trim())) next.nickname = 'Only letters, numbers, spaces and . _ - allowed'
     if (!formData.email.trim()) next.email = 'Email address is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) next.email = 'Please enter a valid email address'
     if (!formData.phone.trim()) next.phone = 'Phone number is required'
@@ -74,6 +79,7 @@ export default function SignUp() {
     try {
       await signup({
         name: formData.fullName,
+        nickname: formData.nickname.trim() || undefined,
         email: formData.email,
         phone: formData.phone,
         dob: formData.dob,
@@ -113,6 +119,12 @@ export default function SignUp() {
               <span className="text-muted">Account Email:</span>
               <span className="text-theme font-semibold">{formData.email}</span>
             </div>
+            {formData.nickname.trim() && (
+              <div className="flex justify-between">
+                <span className="text-muted">Nickname:</span>
+                <span className="text-brand-text font-semibold">{formData.nickname.trim()}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted">Selected Skill Level:</span>
               <span className="text-brand-text font-semibold">{formData.skillLevel}</span>
@@ -184,6 +196,19 @@ export default function SignUp() {
                 </div>
                 {errors.email && (
                   <p className="text-rose-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /><span>{errors.email}</span></p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="signup-nickname" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-2">
+                  Nickname <span className="text-muted font-normal normal-case">(optional)</span>
+                </label>
+                <div className="relative">
+                  <AtSign className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+                  <input id="signup-nickname" type="text" name="nickname" value={formData.nickname} onChange={handleChange} placeholder="e.g. AhmedS" maxLength={30} className={inputClass(errors.nickname)} />
+                </div>
+                {errors.nickname && (
+                  <p className="text-rose-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /><span>{errors.nickname}</span></p>
                 )}
               </div>
             </div>

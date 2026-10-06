@@ -4,6 +4,7 @@ import { Camera, Clock, Download, Mail, Phone, Shield, ArrowRightLeft, Calendar,
 import { api, fileUrl } from '../lib/api'
 import { canonTime, formatSlotTime } from '../lib/time'
 import { useAuth } from '../context/AuthContext'
+import { displayName } from '../lib/user'
 import { useFeedback } from '../context/FeedbackContext'
 import { useEscapeKey } from '../lib/hooks'
 import DeclineChoiceModal from '../components/DeclineChoiceModal'
@@ -50,7 +51,7 @@ export default function Profile() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ name: '', phone: '', skill_level: '' })
+  const [form, setForm] = useState({ name: '', nickname: '', phone: '', skill_level: '' })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [showResultModal, setShowResultModal] = useState(false)
@@ -93,7 +94,7 @@ export default function Profile() {
 
   useEffect(() => {
     if (!user) { navigate('/login'); return }
-    setForm({ name: user.name || '', phone: user.phone || '', skill_level: user.skill_level || 'Intermediate' })
+    setForm({ name: user.name || '', nickname: user.nickname || '', phone: user.phone || '', skill_level: user.skill_level || 'Intermediate' })
     api.get('/bookings')
       .then(data => setBookings(data.bookings || []))
       .catch(() => {})
@@ -183,7 +184,12 @@ export default function Profile() {
     setMsg('')
     try {
       const updated = await api.put('/auth/profile', form)
-      setUser(updated)
+      setUser(prev => ({ ...(prev || {}), ...updated }))
+      // refetch so computed balance/cycle fields (not returned by PUT) survive
+      try {
+        const me = await api.get('/auth/me')
+        if (me?.user) setUser(prev => ({ ...(prev || {}), ...me.user }))
+      } catch { /* keep merged user */ }
       setEditing(false)
       setMsg('Profile updated!')
     } catch (err) {
@@ -293,7 +299,10 @@ export default function Profile() {
             </div>
 
             <div className="flex-1 text-center sm:text-left">
-              <h1 className="font-heading text-2xl font-black text-theme">{user.name}</h1>
+              <h1 className="font-heading text-2xl font-black text-theme">{displayName(user)}</h1>
+              {user.nickname && user.name && (
+                <p className="text-xs text-muted mt-0.5">{user.name}</p>
+              )}
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mt-2 text-sm text-muted">
                 <span className="flex items-center gap-1"><Mail className="w-4 h-4 text-brand-text" />{user.email}</span>
                 {user.phone && <span className="flex items-center gap-1"><Phone className="w-4 h-4 text-brand-text" />{user.phone}</span>}
@@ -317,6 +326,10 @@ export default function Profile() {
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Name</label>
                 <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Nickname <span className="text-muted font-normal normal-case">(optional, unique)</span></label>
+                <input type="text" value={form.nickname} onChange={e => setForm({ ...form, nickname: e.target.value })} maxLength={30} placeholder="Shown instead of your name" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Phone</label>

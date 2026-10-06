@@ -29,8 +29,9 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('auth:logout', handleLogout)
   }, [])
 
-  const login = useCallback(async (email, password) => {
-    const u = await api.login(email, password)
+  // identifier: email address OR mobile number
+  const login = useCallback(async (identifier, password) => {
+    const u = await api.login(identifier, password)
     setUser(u)
     setIsLoginModalOpen(false)
     return u

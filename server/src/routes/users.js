@@ -6,7 +6,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requireRole, requirePermission, getUserPermissions } from '../middleware/rbac.js'
 import { ALL_MODULES } from '../utils/modules.js'
-import { validateLength, LIMITS } from '../middleware/validation.js'
+import { validateLength, validateNickname, normalizePhone, phoneKey, LIMITS } from '../middleware/validation.js'
 import { auditCreate, auditUpdate, auditDelete, auditRoleChange, auditBalanceChange } from '../middleware/audit.js'
 import { updateUserBalance, ensureCycleFresh, effectivePrivate, effectiveGroupBalance, monthlyDisplay } from '../utils/balance.js'
 import { computePlayerSessions } from '../utils/sessionPaid.js'
@@ -22,6 +22,7 @@ router.get('/public/coaches', async (req, res) => {
       .map(u => ({
         id: u.id,
         name: u.name || '',
+        nickname: u.nickname || '',
         skill_level: u.skill_level || '',
         notes: u.notes || '',
         avatar: u.avatar || null,
@@ -117,6 +118,7 @@ router.get('/', requirePermission('players'), async (req, res) => {
       const q = search.toLowerCase()
       users = users.filter(u =>
         (u.name || '').toLowerCase().includes(q) ||
+        (u.nickname || '').toLowerCase().includes(q) ||
         (u.email || '').toLowerCase().includes(q) ||
         (u.phone && u.phone.includes(q)) ||
         (u.member_code && u.member_code.includes(q))
@@ -260,24 +262,33 @@ router.get('/:id/report', async (req, res) => {
 
 router.post('/', requirePermission('users'), async (req, res) => {
   try {
-    const { name, full_name, email, phone, role, password, dob, skill_level, notes, position } = req.body
+    const { name, full_name, email, phone, role, password, dob, skill_level, notes, position, nickname } = req.body
     const displayName = (full_name || name || '').trim()
     const effectiveRole = role || 'player'
     if (!displayName || !email) return res.status(400).json({ error: 'Name and email are required' })
     if (effectiveRole !== 'player' && !password) return res.status(400).json({ error: 'Password is required for non-player users' })
     if (effectiveRole !== 'player' && req.user.role !== 'superadmin') return res.status(403).json({ error: 'Only superadmin can create non-player users' })
-    const err = validateLength('name', displayName, LIMITS.name) || validateLength('email', email, LIMITS.email) || validateLength('phone', phone, LIMITS.phone)
+    const err = validateLength('name', displayName, LIMITS.name) || validateLength('email', email, LIMITS.email) || validateLength('phone', phone, LIMITS.phone) || validateNickname(nickname)
     if (err) return res.status(400).json({ error: err })
     const roleNames = (await db.findAll('roles')).map(r => r.name)
     if (!roleNames.includes(effectiveRole)) return res.status(400).json({ error: 'Invalid role' })
     if (await db.find('users', u => u.email === email)) return res.status(409).json({ error: 'Email already exists' })
     const nameConflict = await db.find('users', u => u.name && u.name.toLowerCase() === displayName.toLowerCase())
     if (nameConflict) return res.status(409).json({ error: `User "${displayName}" already exists (different email: ${nameConflict.email})` })
+    const cleanNickname = typeof nickname === 'string' && nickname.trim() ? nickname.trim() : null
+    if (cleanNickname && await db.find('users', u => u.nickname && u.nickname.toLowerCase() === cleanNickname.toLowerCase())) {
+      return res.status(409).json({ error: 'Nickname already exists' })
+    }
+    const normPhone = normalizePhone(phone)
+    if (normPhone) {
+      const phoneOwner = await db.find('users', u => u.phone && phoneKey(u.phone) === phoneKey(normPhone))
+      if (phoneOwner) return res.status(409).json({ error: 'A user with this mobile number already exists' })
+    }
     const validSkills = ['Beginner', 'Intermediate', 'Advanced']
     if (skill_level && !validSkills.includes(skill_level)) return res.status(400).json({ error: 'Invalid skill level' })
     const hash = password ? await bcrypt.hash(password, 12) : null
     const user = await db.insert('users', {
-      name: displayName, email, phone: phone || '', role: effectiveRole,
+      name: displayName, nickname: cleanNickname, email, phone: normPhone, role: effectiveRole,
       password_hash: hash, member_since: new Date().getFullYear().toString(),
       force_password_change: password ? 0 : 1,
       skill_level: skill_level || 'Intermediate', dob: dob || '', position: position || '',
@@ -285,7 +296,7 @@ router.post('/', requirePermission('users'), async (req, res) => {
       is_claimed: !!password, member_code: await nextMemberCode(),
     })
     const { password_hash, ...safe } = user
-    await auditCreate(req, 'user', user.id, { name: displayName, email, role: user.role })
+    await auditCreate(req, 'user', user.id, { name: displayName, nickname: cleanNickname, email, role: user.role })
     res.status(201).json({ ...safe, full_name: safe.name })
   } catch (err) {
     console.error('Create user error:', err)
@@ -298,15 +309,31 @@ router.put('/:id', requirePermission('users'), async (req, res) => {
     const id = parseInt(req.params.id)
     const user = await db.get('users', id)
     if (!user) return res.status(404).json({ error: 'User not found' })
-    const { name, full_name, email, phone, role, skill_level, notes, dob, position, permissions } = req.body
+    const { name, full_name, email, phone, role, skill_level, notes, dob, position, permissions, nickname } = req.body
     const roleNames = (await db.findAll('roles')).map(r => r.name)
     if (role && !roleNames.includes(role)) return res.status(400).json({ error: 'Invalid role' })
     const resolvedName = full_name || name
-    const err = validateLength('name', resolvedName, LIMITS.name) || validateLength('notes', notes, LIMITS.notes)
+    const err = validateLength('name', resolvedName, LIMITS.name) || validateLength('notes', notes, LIMITS.notes) || validateNickname(nickname)
     if (err) return res.status(400).json({ error: err })
     if (email && email !== user.email) {
       const existing = await db.find('users', u => u.email === email)
       if (existing) return res.status(409).json({ error: 'Email already exists' })
+    }
+    let normPhone = user.phone
+    if (phone !== undefined) {
+      normPhone = normalizePhone(phone)
+      if (normPhone) {
+        const phoneOwner = await db.find('users', u => u.id !== id && u.phone && phoneKey(u.phone) === phoneKey(normPhone))
+        if (phoneOwner) return res.status(409).json({ error: 'A user with this mobile number already exists' })
+      }
+    }
+    let cleanNickname = user.nickname || null
+    if (nickname !== undefined) {
+      cleanNickname = typeof nickname === 'string' && nickname.trim() ? nickname.trim() : null
+      if (cleanNickname) {
+        const taken = await db.find('users', u => u.id !== id && u.nickname && u.nickname.toLowerCase() === cleanNickname.toLowerCase())
+        if (taken) return res.status(409).json({ error: 'Nickname already exists' })
+      }
     }
     if (role && role !== user.role && user.id === req.user.id) return res.status(400).json({ error: 'Cannot change your own role' })
     if (role === 'superadmin' && req.user.role !== 'superadmin') {
@@ -326,7 +353,8 @@ router.put('/:id', requirePermission('users'), async (req, res) => {
     const updates = {
       name: resolvedName || user.name,
       email: email || user.email,
-      phone: phone ?? user.phone,
+      phone: normPhone,
+      nickname: cleanNickname,
       role: role || user.role,
       skill_level: skill_level || user.skill_level,
       notes: notes ?? user.notes,

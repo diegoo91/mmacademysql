@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Eye, EyeOff, Lock, Mail, X } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Lock, Mail, Smartphone, X } from 'lucide-react'
 import { useAuth, adminLandingPath } from '../context/AuthContext'
 import { useEscapeKey } from '../lib/hooks'
 import Logo from './Logo'
@@ -8,7 +8,7 @@ import Logo from './Logo'
 export default function LoginModal() {
   const { isLoginModalOpen, closeLoginModal, login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -18,16 +18,18 @@ export default function LoginModal() {
 
   if (!isLoginModalOpen) return null
 
+  const isPhone = /^[+\d][\d\s.()\-]{7,}$/.test(identifier.trim()) && !identifier.includes('@')
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (!email.trim() || !password.trim()) {
-      setError('Please fill in both email and password.')
+    if (!identifier.trim() || !password.trim()) {
+      setError('Please fill in both your email/mobile number and password.')
       return
     }
     setLoading(true)
     try {
-      const u = await login(email, password)
+      const u = await login(identifier.trim(), password)
       closeLoginModal()
       navigate(adminLandingPath(u))
     } catch (err) {
@@ -38,7 +40,7 @@ export default function LoginModal() {
   }
 
   const handleDemoLogin = async () => {
-    setEmail('player@mmpadel.com')
+    setIdentifier('player@mmpadel.com')
     setPassword('padel2026')
     setLoading(true)
     setError('')
@@ -81,18 +83,23 @@ export default function LoginModal() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="modal-email" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">
-              Email Address
+            <label htmlFor="modal-identifier" className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">
+              Email or Mobile Number
             </label>
             <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+              {isPhone ? (
+                <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+              ) : (
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+              )}
               <input
-                id="modal-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface/90 border border-theme text-theme text-muted focus:outline-none focus:border-brand-text focus:ring-1 focus:ring-brand-text text-sm transition-all"
+                id="modal-identifier"
+                type="text"
+                autoComplete="username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="name@example.com or 01000000000"
+                className="w-full pl-11 pr-4 py-3 rounded-xl bg-surface/90 border border-theme text-muted focus:outline-none focus:border-brand-text focus:ring-1 focus:ring-brand-text text-sm transition-all"
               />
             </div>
           </div>

@@ -90,7 +90,7 @@ app.use('/uploads', express.static(join(__dirname, '..', 'data', 'uploads')))
 
 // Per-endpoint rate limits
 const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false })
-const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => `${(req.body?.email || '').toLowerCase()}:${req.ip || req.connection?.remoteAddress || 'unknown'}`, message: { error: 'Too many attempts, try again in 1 minute' } })
+const authLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => `${(req.body?.email || req.body?.phone || req.body?.identifier || '').toLowerCase()}:${req.ip || req.connection?.remoteAddress || 'unknown'}`, message: { error: 'Too many attempts, try again in 1 minute' } })
 const refreshLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false })
 const actionLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' } })
 
@@ -284,6 +284,29 @@ try {
   }
 } catch (err) {
   console.log('Migration check for cash ledger columns skipped:', err.message)
+}
+
+// Migration: users.nickname + phone login support (idempotent)
+// nickname: optional display alias, unique among non-null values (case-insensitive)
+// phone: normalized (digits + optional leading +) and indexed for login lookup
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    if (!(await knex.schema.hasColumn('users', 'nickname'))) {
+      await knex.raw('ALTER TABLE users ADD COLUMN nickname VARCHAR(30)')
+      console.log('Migration: added users.nickname')
+    }
+    // empty strings → NULL so the unique index never collides on blanks
+    await knex.raw("UPDATE users SET nickname = NULLIF(TRIM(nickname), '') WHERE nickname IS NOT NULL")
+    await knex.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_users_nickname
+        ON users (LOWER(nickname)) WHERE nickname IS NOT NULL`)
+    await knex.raw('CREATE INDEX IF NOT EXISTS ix_users_phone ON users (phone) WHERE phone IS NOT NULL')
+    console.log('Migration: nickname/phone login columns ensured')
+  }
+} catch (err) {
+  console.log('Migration check for users.nickname skipped:', err.message)
 }
 
 // Ensure roles table exists and has the 4 system roles (safe idempotent migration)

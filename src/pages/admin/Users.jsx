@@ -45,7 +45,7 @@ export function ConvertModal({ user, onClose, onDone }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="modal-title-0">
       <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 id="modal-title-0" className="text-xl font-bold text-theme">Convert Balances — {user.name}</h3>
+          <h3 id="modal-title-0" className="text-xl font-bold text-theme">Convert Balances — {user.nickname || user.name}</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-theme hover:bg-surface rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         {error && <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{error}</div>}
@@ -109,6 +109,7 @@ export function UserModal({ user, onClose, onSave }) {
   const [roles, setRoles] = useState([])
   const [form, setForm] = useState({
     name: user?.name || user?.full_name || '',
+    nickname: user?.nickname || '',
     email: user?.email || '',
     phone: user?.phone || '',
     role: user?.role || 'player',
@@ -134,7 +135,7 @@ export function UserModal({ user, onClose, onSave }) {
     setError('')
     try {
       if (user) {
-        const updates = { name: form.name, email: form.email, phone: form.phone, role: form.role, permissions: form.permissions }
+        const updates = { name: form.name, nickname: form.nickname, email: form.email, phone: form.phone, role: form.role, permissions: form.permissions }
         if (user.role === 'player' || form.role === 'player') {
           // Balances never go through general edit — profile Balance Control only
           updates.skill_level = form.skill_level
@@ -205,6 +206,10 @@ export function UserModal({ user, onClose, onSave }) {
                 ))}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-theme uppercase tracking-wider mb-1.5">Nickname <span className="text-muted font-normal normal-case">(optional, unique — shown instead of name)</span></label>
+            <input type="text" value={form.nickname} onChange={e => setForm({ ...form, nickname: e.target.value })} maxLength={30} placeholder="e.g. AhmedS" className="w-full px-4 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm focus:outline-none focus:border-brand-text" />
           </div>
           {(form.role === 'admin' || form.role === 'coach') && (
             <div>
@@ -315,7 +320,7 @@ export function HistoryModal({ user, onClose }) {
           <div className="flex items-center gap-3">
             <Logo className="w-10 h-10 rounded-full" />
             <div>
-              <h3 id="modal-title-2" className="text-lg font-bold text-theme">{user.name} — Session Report</h3>
+              <h3 id="modal-title-2" className="text-lg font-bold text-theme">{user.nickname || user.name} — Session Report</h3>
               <p className="text-xs text-muted">
                 {sessions.length} session{sessions.length !== 1 ? 's' : ''}
                 {report && report.amount_owed > 0 && <span className="ml-2 text-amber-400 font-bold">EGP {report.amount_owed.toLocaleString()} owed</span>}
@@ -425,7 +430,7 @@ export function TransferModal({ player, onClose, allPlayers }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="modal-title-4">
       <div className="w-full max-w-md glass-panel rounded-2xl border border-theme shadow-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 id="modal-title-4" className="text-lg font-bold text-theme">Transfer Sessions — {player.name || player.full_name}</h3>
+          <h3 id="modal-title-4" className="text-lg font-bold text-theme">Transfer Sessions — {player.nickname || player.name || player.full_name}</h3>
           <button onClick={onClose} className="p-2 text-muted hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -433,7 +438,7 @@ export function TransferModal({ player, onClose, allPlayers }) {
             <label className="text-xs font-bold text-muted uppercase">Transfer To</label>
             <select value={toPlayer} onChange={e => setToPlayer(e.target.value)} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm">
               <option value="">Select player...</option>
-              {others.map(p => <option key={p.id} value={p.id}>{p.name || p.full_name}</option>)}
+              {others.map(p => <option key={p.id} value={p.id}>{p.nickname || p.name || p.full_name}</option>)}
             </select>
           </div>
           <div>
@@ -634,7 +639,7 @@ export default function Users() {
     if (skillFilter && u.skill_level !== skillFilter) return false
     if (!search) return true
     const q = search.toLowerCase()
-    return (u.name || '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.phone && u.phone.includes(q)) || (u.member_code && u.member_code.includes(q))
+    return (u.name || '').toLowerCase().includes(q) || (u.nickname || '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.phone && u.phone.includes(q)) || (u.member_code && u.member_code.includes(q))
   })
 
   useEffect(() => { setPage(1) }, [search, roleFilter, skillFilter])
@@ -744,7 +749,8 @@ export default function Users() {
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-brand/20 text-brand-text flex items-center justify-center font-bold text-xs">{u.name?.charAt(0)}</div>
                         <div>
-                          <span className="font-semibold text-theme">{u.name}</span>
+                          <span className="font-semibold text-theme">{u.nickname || u.name}</span>
+                          {u.nickname && <div className="text-[10px] text-muted">{u.name}</div>}
                           {u.position && <span className="ml-2 text-[10px] text-muted">({u.position})</span>}
                         </div>
                       </div>
