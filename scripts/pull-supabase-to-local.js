@@ -58,7 +58,7 @@ const dstCfg = process.env.LOCAL_PGURL
       password: process.env.LOCAL_PG_PASSWORD || 'root',
     }
 
-// Parents first so FKs stay satisfied on load (same order as push script).
+// Parent-first hint used as a tie-breaker; actual order comes from FK graph.
 const LOAD_ORDER = [
   'users', 'roles', 'import_batches', 'results', 'bookings', 'slots',
   'comments', 'notifications', 'conversion_requests', 'expenses',
@@ -68,6 +68,59 @@ const LOAD_ORDER = [
 ]
 const PK = { users: 'user_id', app_sessions: 'session_id' }
 const pkOf = (t) => PK[t] || 'id'
+
+// child -> parents, read from the source's FK constraints.
+async function fkEdges(client) {
+  const { rows } = await client.query(
+    `SELECT tc.table_name AS child, ccu.table_name AS parent
+       FROM information_schema.table_constraints tc
+       JOIN information_schema.constraint_column_usage ccu
+         ON ccu.constraint_name = tc.constraint_name
+        AND ccu.constraint_schema = tc.table_schema
+      WHERE tc.table_schema='public' AND tc.constraint_type='FOREIGN KEY'
+        AND tc.table_name <> ccu.table_name`
+  )
+  const edges = new Map()
+  for (const r of rows) {
+    if (!edges.has(r.child)) edges.set(r.child, new Set())
+    edges.get(r.child).add(r.parent)
+  }
+  return edges
+}
+
+// Kahn topological sort, parents before children. Unknown/self references and
+// cycles are ignored; LOAD_ORDER breaks ties so repeated runs stay stable.
+function topoSort(tables, edges) {
+  const known = new Set(tables)
+  const rank = new Map(LOAD_ORDER.map((t, i) => [t, i]))
+  const pending = new Map()
+  const out = []
+  const done = new Set()
+
+  for (const t of tables) {
+    const parents = [...(edges.get(t) || [])].filter((p) => known.has(p) && p !== t)
+    if (!parents.length) { out.push(t); done.add(t) }
+    else pending.set(t, parents)
+  }
+  const rankOf = (t) => (rank.has(t) ? rank.get(t) : LOAD_ORDER.length + tables.indexOf(t))
+
+  while (pending.size) {
+    const ready = [...pending.entries()]
+      .filter(([, ps]) => ps.every((p) => done.has(p)))
+      .map(([t]) => t)
+      .sort((a, b) => rankOf(a) - rankOf(b))
+    if (!ready.length) {
+      const stuck = [...pending.keys()].sort((a, b) => rankOf(a) - rankOf(b))
+      console.log(`  WARNING: FK cycle, loading anyway: ${stuck.join(', ')}`)
+      ready.push(...stuck)
+      pending.clear()
+      for (const t of ready) { out.push(t); done.add(t) }
+      break
+    }
+    for (const t of ready) { pending.delete(t); out.push(t); done.add(t) }
+  }
+  return out
+}
 
 // Split SQL on ';' but ignore semicolons inside dollar-quoted function bodies,
 // line/block comments and string literals (same as push script).
@@ -204,10 +257,13 @@ async function main() {
   const srcTables = await tableList(src)
   const dstTables = await tableList(dst)
 
-  const tables = [
-    ...LOAD_ORDER.filter((t) => srcTables.includes(t)),
-    ...srcTables.filter((t) => !LOAD_ORDER.includes(t)),
-  ]
+  const tables = topoSort(
+    [
+      ...LOAD_ORDER.filter((t) => srcTables.includes(t)),
+      ...srcTables.filter((t) => !LOAD_ORDER.includes(t)),
+    ],
+    await fkEdges(src)
+  )
 
   console.log(`Source : Supabase ${srcMasked.replace(/^postgresql:\/\//, '')}`)
   console.log(`Dest   : ${dstCfg.connectionString ? dstCfg.connectionString.replace(/:\/\/([^:/@]+):([^@]+)@/, '://$1:***@') : `${dstCfg.host}:${dstCfg.port}/${dstCfg.database}`}`)
