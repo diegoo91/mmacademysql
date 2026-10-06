@@ -150,6 +150,7 @@ export default function ScheduleManager() {
   const [createPlayerError, setCreatePlayerError] = useState('')
   const [balanceWarning, setBalanceWarning] = useState(null)
   const [pendingOverride, setPendingOverride] = useState(null)
+  const [addSubmitting, setAddSubmitting] = useState(false)
   const [dayActionLoading, setDayActionLoading] = useState(null)
   const [coaches, setCoaches] = useState([])
   const [courtDefaults, setCourtDefaults] = useState([])
@@ -324,10 +325,15 @@ export default function ScheduleManager() {
     }
     return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([start, list]) => {
       const rangeRaw = list.find(s => String(s.time).includes('-'))
-      const c1 = list.find(s => s.court === 1)
-      const c2 = list.find(s => s.court === 2)
-      const c3 = list.find(s => s.court === 3)
-      return { time: start, label: formatSlotTime(rangeRaw ? rangeRaw.time : start), slot1: c1 || null, slot2: c2 || null, slot3: c3 || null }
+      const courtSlots = n => list.filter(s => s.court === n)
+      const c1 = courtSlots(1)
+      const c2 = courtSlots(2)
+      const c3 = courtSlots(3)
+      return {
+        time: start, label: formatSlotTime(rangeRaw ? rangeRaw.time : start),
+        slot1: c1[0] || null, slot2: c2[0] || null, slot3: c3[0] || null,
+        dup1: c1.length, dup2: c2.length, dup3: c3.length,
+      }
     })
   }, [date, slotsByDate])
 
@@ -398,6 +404,7 @@ export default function ScheduleManager() {
   }
 
   const handleAddSlot = async () => {
+    if (addSubmitting) return
     // Check all selected players' balances
     if (!isSuperAdmin) {
       const blockedPlayers = []
@@ -411,6 +418,7 @@ export default function ScheduleManager() {
         return
       }
     }
+    setAddSubmitting(true)
     try {
       const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
       const payload = { ...addForm, player_text: joinedNames }
@@ -445,11 +453,14 @@ export default function ScheduleManager() {
       } else {
         toast.error(msg || 'Failed to add slot')
       }
+    } finally {
+      setAddSubmitting(false)
     }
   }
 
   const handleCoachForce = async () => {
-    if (!coachWarning) return
+    if (!coachWarning || addSubmitting) return
+    setAddSubmitting(true)
     try {
       await api.post('/slots', { ...coachWarning.payload, force: true })
       setCoachWarning(null)
@@ -462,6 +473,8 @@ export default function ScheduleManager() {
     } catch (err) {
       setCoachWarning(null)
       toast.error(err.message || 'Failed to add slot')
+    } finally {
+      setAddSubmitting(false)
     }
   }
 
@@ -475,8 +488,9 @@ export default function ScheduleManager() {
   }
 
   const handleOverrideConfirm = async (mode) => {
-    if (!pendingOverride) return
+    if (!pendingOverride || addSubmitting) return
     const payload = { ...pendingOverride.payload, balanceOverride: mode }
+    setAddSubmitting(true)
     try {
       await api.post('/slots', payload)
       setPendingOverride(null)
@@ -487,6 +501,8 @@ export default function ScheduleManager() {
       fetchSlots()
     } catch (err) {
       toast.error(err.message || 'Failed to add slot')
+    } finally {
+      setAddSubmitting(false)
     }
   }
 
@@ -725,8 +741,12 @@ export default function ScheduleManager() {
                            {[row.slot1, row.slot2, row.slot3].map((slot, i) => {
                             const statusColor = STATUS_COLORS[slot?.status] || STATUS_COLORS.available
                             const coachIssue = slot ? coachIssues.get(slot.id) : null
+                            const dupCount = [row.dup1, row.dup2, row.dup3][i]
                             return (
-                            <div key={i} title={coachIssue || undefined} className={`px-4 py-3 border-l border-slate-200/60 dark:border-slate-800/60 text-xs font-bold text-center flex items-center justify-center gap-2 ${statusColor} ${coachIssue ? 'ring-2 ring-inset ring-rose-500/70' : ''}`}>
+                            <div key={i} title={coachIssue || (dupCount > 1 ? `${dupCount} sessions share this cell (duplicate rows)` : undefined)} className={`relative px-4 py-3 border-l border-slate-200/60 dark:border-slate-800/60 text-xs font-bold text-center flex items-center justify-center gap-2 ${statusColor} ${coachIssue ? 'ring-2 ring-inset ring-rose-500/70' : ''}`}>
+                              {dupCount > 1 && (
+                                <span className="absolute top-0.5 right-1 text-[9px] font-black px-1 rounded bg-rose-500 text-white shadow" title={`${dupCount} sessions in this cell`}>{dupCount}&times;</span>
+                              )}
                               {slot ? (
                                 <>
                                   <div className="flex flex-col items-center gap-0.5 min-w-0">
@@ -781,9 +801,14 @@ export default function ScheduleManager() {
                       </div>
                        {weekDates.map(d => {
                         const daySlots = slotsByDate.get(d) || []
-                        const s1 = daySlots.find(x => canonTime(x.time) === time && x.court === 1)
-                        const s2 = daySlots.find(x => canonTime(x.time) === time && x.court === 2)
-                        const s3 = daySlots.find(x => canonTime(x.time) === time && x.court === 3)
+                        const courtMatches = c => daySlots.filter(x => canonTime(x.time) === time && x.court === c)
+                        const g1 = courtMatches(1)
+                        const g2 = courtMatches(2)
+                        const g3 = courtMatches(3)
+                        const s1 = g1[0] || null
+                        const s2 = g2[0] || null
+                        const s3 = g3[0] || null
+                        const dupMax = Math.max(g1.length, g2.length, g3.length)
                         const empty = !s1 && !s2 && !s3
                         const hasSlots = s1 || s2 || s3
                         const statuses = [s1?.status, s2?.status, s3?.status].filter(Boolean)
@@ -813,6 +838,9 @@ export default function ScheduleManager() {
                                   const coachNames = [s1?.coach_name, s2?.coach_name, s3?.coach_name].filter(Boolean)
                                   return coachNames.length > 0 ? <span className="block text-[9px] text-amber-400 mt-0.5">{coachNames.join(', ')}</span> : null
                                 })()}
+                                {dupMax > 1 && (
+                                  <span className="block text-[9px] font-black text-rose-400 mt-0.5" title="Duplicate sessions share this cell">{dupMax}&times; DUPLICATE</span>
+                                )}
                               </>
                             )}
                           </div>
@@ -1050,7 +1078,7 @@ export default function ScheduleManager() {
             </div>
             <div className="flex gap-3 mt-4">
               <button onClick={() => setAddSlot(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={handleAddSlot} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Add</button>
+              <button onClick={handleAddSlot} disabled={addSubmitting} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">{addSubmitting ? 'Adding…' : 'Add'}</button>
             </div>
           </div>
         </div>
@@ -1107,8 +1135,8 @@ export default function ScheduleManager() {
             </p>
             <div className="flex gap-2">
               <button onClick={() => setPendingOverride(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={() => handleOverrideConfirm('free')} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm">Add Free</button>
-              <button onClick={() => handleOverrideConfirm('deduct')} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm">Deduct Anyway</button>
+              <button onClick={() => handleOverrideConfirm('free')} disabled={addSubmitting} className="flex-1 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm disabled:opacity-50">Add Free</button>
+              <button onClick={() => handleOverrideConfirm('deduct')} disabled={addSubmitting} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm disabled:opacity-50">Deduct Anyway</button>
             </div>
           </div>
         </div>
@@ -1125,7 +1153,7 @@ export default function ScheduleManager() {
             <p className="text-[11px] text-muted mb-4">Assign this slot to the coach anyway?</p>
             <div className="flex gap-2">
               <button onClick={() => setCoachWarning(null)} className="flex-1 py-2.5 rounded-xl bg-surface border border-theme text-theme text-sm font-semibold">Cancel</button>
-              <button onClick={handleCoachForce} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm">Assign Anyway</button>
+              <button onClick={handleCoachForce} disabled={addSubmitting} className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-sm disabled:opacity-50">Assign Anyway</button>
             </div>
           </div>
         </div>

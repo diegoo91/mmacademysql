@@ -21,6 +21,16 @@ function isSlotDateFutureOrToday(dateStr) {
   return dateStr >= getCairoToday()
 }
 
+// Unique-index uq_slots_date_time_court fired between the db.find pre-check and
+// insert (concurrent double-submit). PG 23505 / MySQL 1062.
+function isDuplicateCellErr(err) {
+  const code = String(err?.code || '')
+  const msg = String(err?.message || '')
+  return code === '23505' || code === 'ER_DUP_ENTRY' ||
+    msg.includes('uq_slots_date_time_court') ||
+    msg.includes('duplicate key value violates unique constraint')
+}
+
 // Validate player count vs session_type
 function validatePlayerCount(names, sessionType) {
   if (sessionType === 'private' && names.length > 1) {
@@ -405,6 +415,7 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
 
     res.json(updated)
   } catch (err) {
+    if (isDuplicateCellErr(err)) return res.status(409).json({ error: 'Slot already exists at this date/time/court' })
     console.error('Update slot error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -514,6 +525,7 @@ router.post('/', authenticate, requirePermission('schedule'), async (req, res) =
     await auditCreate(req, 'slot', slot.id, { date, time, court, player_text, session_type: slotSessionType, status: STATUS.AVAILABLE })
     res.status(201).json(slot)
   } catch (err) {
+    if (isDuplicateCellErr(err)) return res.status(409).json({ error: 'Slot already exists' })
     console.error('Create slot error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }

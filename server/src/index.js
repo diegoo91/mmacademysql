@@ -196,6 +196,29 @@ try {
   console.log('Migration check for slots.time skipped:', err.message)
 }
 
+// Migration: unique slot cell (date/time/court) — closes the create/edit race
+// where concurrent POSTs both passed the db.find pre-check and double-inserted
+// (and double-deducted balances). Schedule Manager also groups by this cell, so
+// one row per cell is the assumed invariant.
+try {
+  if (db.backend === 'pg') {
+    const { getKnex } = await import('./sql.js')
+    const knex = getKnex()
+    const idx = await knex.raw("SELECT indexname FROM pg_indexes WHERE tablename = 'slots' AND indexname = 'uq_slots_date_time_court'")
+    if (!idx.rows?.length) {
+      const dupes = await knex.raw('SELECT date, time, court, COUNT(*) AS n FROM slots GROUP BY date, time, court HAVING COUNT(*) > 1')
+      if (dupes.rows?.length) {
+        console.log('Migration: uq_slots_date_time_court skipped — duplicate cells exist:', JSON.stringify(dupes.rows))
+      } else {
+        await knex.raw('CREATE UNIQUE INDEX uq_slots_date_time_court ON slots(date, time, court)')
+        console.log('Migration: created unique index uq_slots_date_time_court')
+      }
+    }
+  }
+} catch (err) {
+  console.log('Migration check for uq_slots_date_time_court skipped:', err.message)
+}
+
 // Migration: drop balance CHECK constraints — app allows negative balances
 // (admin "Deduct Anyway" / deductBalanceAllowNegative). >=0 checks caused 500s.
 try {
