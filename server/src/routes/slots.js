@@ -7,6 +7,7 @@ import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 import { hasEnoughBalance, deductBalance, deductBalanceAllowNegative, reverseBalance, effectivePrivate, effectiveGroupBalance } from '../utils/balance.js'
 import { notifyUser as deliverNotification } from '../utils/notify.js'
 import { checkCoachSlot } from '../utils/coachAvailability.js'
+import { validatePlayerCount } from '../utils/sessionType.js'
 
 const router = Router()
 
@@ -29,20 +30,6 @@ function isDuplicateCellErr(err) {
   return code === '23505' || code === 'ER_DUP_ENTRY' ||
     msg.includes('uq_slots_date_time_court') ||
     msg.includes('duplicate key value violates unique constraint')
-}
-
-// Validate player count vs session_type
-function validatePlayerCount(names, sessionType) {
-  if (sessionType === 'private' && names.length > 1) {
-    return 'Private session can only have 1 player'
-  }
-  if (sessionType === 'group' && (names.length < 2 || names.length > 4)) {
-    return 'Group session must have 2-4 players'
-  }
-  if (names.length > 4) {
-    return 'Maximum 4 players per slot'
-  }
-  return null
 }
 
 // Resolve all player names in a /-separated string against users table
@@ -133,7 +120,7 @@ router.get('/', optionalAuth, async (req, res) => {
     // Enrich slots with coach name
     const coaches = await db.findAll('users', u => u.role === 'coach')
     const coachMap = new Map(coaches.map(c => [c.id, c.name]))
-    const enriched = all.map(s => ({ ...s, session_type: s.session_type || 'private', coach_name: s.coach_id ? coachMap.get(s.coach_id) || null : null }))
+    const enriched = all.map(s => ({ ...s, session_type: s.session_type || null, coach_name: s.coach_id ? coachMap.get(s.coach_id) || null : null }))
 
     res.json(enriched)
   } catch (err) {
@@ -269,6 +256,9 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
     const { player_text, date, time, court, session_type, status, balanceOverride, coach_id, user_id: bodyUserId } = req.body
     const err = validateLength('Player', player_text, LIMITS.playerText)
     if (err) return res.status(400).json({ error: err })
+    if (session_type !== undefined && session_type !== null && session_type !== '' && !['private', 'group'].includes(session_type)) {
+      return res.status(400).json({ error: 'session_type must be private or group' })
+    }
     const newDate = date || slot.date
     const newTime = time || slot.time
     const newCourt = court || slot.court
@@ -289,7 +279,7 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
     const updates = {
       player_text: player_text ?? slot.player_text,
       date: newDate, time: newTime, court: newCourt,
-      session_type: session_type !== undefined ? session_type : slot.session_type,
+      session_type: session_type !== undefined ? (session_type || null) : slot.session_type,
       coach_id: coach_id !== undefined ? coach_id : slot.coach_id,
       status: status || slot.status,
     }
@@ -312,8 +302,11 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
         updates.user_id = null
         updates.balance_status = null
       } else if (!slot.player_text?.trim() && player_text?.trim()) {
-        // Admin assigning players to an empty slot
-        const stype = session_type || slot.session_type || 'private'
+        // Admin assigning players to an empty slot — type must be explicit
+        const stype = session_type || slot.session_type
+        if (!['private', 'group'].includes(stype)) {
+          return res.status(400).json({ error: 'session_type (private|group) is required for occupied slots' })
+        }
         const resolved = await resolveAllPlayers(player_text)
 
         if (resolved.unknown.length > 0) {
@@ -400,12 +393,23 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
     }
 
     // Auto-resolve user_id for private slots that have player_text but no user_id
-    const slotType = (updates.session_type || slot.session_type) || 'private'
+    const slotType = updates.session_type || slot.session_type
     const slotText = updates.player_text || slot.player_text
     if (slotType === 'private' && slotText?.trim() && !updates.user_id && !slot.user_id) {
       const first = slotText.split(/\s*\/\s*/)[0].trim()
       const u = await db.find('users', x => x.role === 'player' && x.name && x.name.toLowerCase() === first.toLowerCase())
       if (u) updates.user_id = u.id
+    }
+
+    // Occupied slots must carry an explicit, valid type (any update path:
+    // edit, swap, reassign). Count must match the type too.
+    if (updates.player_text?.trim()) {
+      if (!['private', 'group'].includes(updates.session_type)) {
+        return res.status(400).json({ error: 'session_type (private|group) is required for occupied slots' })
+      }
+      const guardNames = updates.player_text.split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+      const guardCountErr = validatePlayerCount(guardNames, updates.session_type)
+      if (guardCountErr) return res.status(400).json({ error: guardCountErr })
     }
 
     const updated = await db.update('slots', id, updates)
@@ -441,7 +445,13 @@ router.post('/', authenticate, requirePermission('schedule'), async (req, res) =
     }
 
     const hasPlayer = player_text?.trim()
-    const slotSessionType = session_type || 'private'
+    if (session_type !== undefined && session_type !== null && session_type !== '' && !['private', 'group'].includes(session_type)) {
+      return res.status(400).json({ error: 'session_type must be private or group' })
+    }
+    const slotSessionType = hasPlayer ? (session_type || null) : null
+    if (hasPlayer && !slotSessionType) {
+      return res.status(400).json({ error: 'session_type (private|group) is required for occupied slots' })
+    }
 
     if (hasPlayer) {
       const resolved = await resolveAllPlayers(player_text)
@@ -591,6 +601,9 @@ router.put('/:id/toggle-type', authenticate, requirePermission('schedule'), asyn
     const slot = await db.get('slots', parseInt(req.params.id))
     if (!slot) return res.status(404).json({ error: 'Slot not found' })
     if (!slot.player_text || !slot.player_text.trim()) return res.status(400).json({ error: 'Empty slot has no type' })
+    if (!['private', 'group'].includes(slot.session_type)) {
+      return res.status(400).json({ error: 'Slot has no session type to toggle — edit it and set private or group first' })
+    }
 
     const newType = slot.session_type === 'private' ? 'group' : 'private'
 

@@ -11,6 +11,7 @@ import { authenticate } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate } from '../middleware/audit.js'
 import { deductBalance, creditBalance } from '../utils/balance.js'
+import { validatePlayerCount, isValidType } from '../utils/sessionType.js'
 
 // Cairo timezone helpers
 function getCairoToday() {
@@ -199,7 +200,7 @@ const TEMPLATES = {
     sheetName: 'Schedule',
     fields: ['date', 'time', 'court', 'player', 'session_type'],
     headers: ['Date', 'Time (e.g., 15:00-16:00)', 'Court (1-3)', 'Player Full Name', 'Session Type'],
-    required: ['date', 'time', 'court', 'player'],
+    required: ['date', 'time', 'court', 'player', 'session_type'],
     validationRules: {
       time: { type: 'list', values: SCHEDULE_TIMES },
       court: { type: 'list', values: ['1', '2', '3'] },
@@ -220,18 +221,31 @@ const TEMPLATES = {
         const user = await db.find('users', u => u.role === 'player' && u.name && u.name.toLowerCase() === name.toLowerCase())
         if (!user) errors.push('player must be a registered player')
       }
-      if (row.session_type && !['private', 'group'].includes(row.session_type)) errors.push('session_type must be private or group')
+      if (!row.session_type?.trim()) errors.push('session_type is required')
+      else if (!['private', 'group'].includes(row.session_type.trim().toLowerCase())) errors.push('session_type must be private or group')
       return errors
     },
     async commit(rows) {
       const today = getCairoToday()
       let count = 0
+      const errors = []
       for (const r of rows) {
         const date = r.date.trim()
         const time = r.time.trim()
         const court = parseInt(r.court)
         const newName = (r.player || '').trim()
-        const sessionType = r.session_type || 'private'
+        const rawType = (r.session_type || '').trim().toLowerCase()
+        const explicitType = isValidType(rawType) ? rawType : null
+        const rowLabel = `${date} ${time} Court ${court}`
+        if (rawType && !explicitType) {
+          errors.push(`${rowLabel}: session_type must be private or group`)
+          continue
+        }
+        if (newName && !explicitType) {
+          errors.push(`${rowLabel}: session_type (private|group) is required for occupied slots`)
+          continue
+        }
+        const sessionType = explicitType
         const matches = await db.findAll('slots', s => s.date === date && s.time === time && s.court === court)
 
         if (matches.length > 0) {
@@ -242,9 +256,18 @@ const TEMPLATES = {
             }
           }
           if (newName) allNames.add(newName)
-          const mergedNames = [...allNames].join(' / ')
+          const mergedList = [...allNames]
+          const mergedNames = mergedList.join(' / ')
+          const finalType = sessionType || (isValidType(matches[0].session_type) ? matches[0].session_type : null)
+          const mergeErr = mergedList.length > 0
+            ? (finalType ? validatePlayerCount(mergedList, finalType) : 'session_type (private|group) is required')
+            : null
+          if (mergeErr) {
+            errors.push(`${rowLabel}: ${mergeErr}`)
+            continue
+          }
 
-          const updates = { player_text: mergedNames, session_type: r.session_type || matches[0].session_type || 'group' }
+          const updates = { player_text: mergedNames, session_type: finalType }
           if (!matches[0].status) updates.status = STATUS.SCHEDULE_APPROVED
           if (!matches[0].user_id && newName) {
             const { matched } = await resolveScheduleNames(newName)
@@ -272,7 +295,7 @@ const TEMPLATES = {
             for (const m of matched) {
               await notifyUser(m.user.id, 'schedule_approved', 'Awaiting Your Confirmation',
                 `A ${sessionType} session on ${date} at ${time} (Court ${court}) has been assigned to you. Please confirm your attendance.`,
-                '/profile')
+                '/schedule')
             }
           } else if (matched.length > 0) {
             let allOk = true
@@ -285,7 +308,7 @@ const TEMPLATES = {
         }
         count++
       }
-      return count
+      return { count, errors }
     },
   },
   payments: {

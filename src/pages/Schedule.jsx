@@ -386,9 +386,9 @@ export default function Schedule() {
                                 isMine ? 'bg-brand/15 text-brand-text' : 'bg-brand/5 text-brand-text'
                               }`}>
                                 {player || 'Available'}{isMine ? ' ★' : ''}
-                                {player && (
-                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${(slotObj?.session_type || 'private') === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
-                                    {(slotObj?.session_type || 'private') === 'group' ? 'GRP' : 'PVT'}
+                                {player && slotObj?.session_type && (
+                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${slotObj.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
+                                    {slotObj.session_type === 'group' ? 'GRP' : 'PVT'}
                                   </span>
                                 )}
                                 {player && slotObj?.coach_name && (

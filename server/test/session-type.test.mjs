@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { countPlayerNames, resolveSessionType, classifySlotRepair, sessionTypeLabel } from '../src/utils/sessionType.js'
+import { countPlayerNames, resolveSessionType, classifySlotRepair, sessionTypeLabel, validatePlayerCount } from '../src/utils/sessionType.js'
 
 const slot = (over = {}) => ({ player_text: '', session_type: null, booking_id: null, ...over })
 const booking = (type) => (type ? { session_type: type } : null)
@@ -93,4 +93,21 @@ test('repair: already-correct rows are ok (idempotent)', () => {
   assert.equal(classifySlotRepair({ slot: slot({ player_text: 'Ahmed', session_type: 'private' }) }).action, 'ok')
   assert.equal(classifySlotRepair({ slot: slot({ player_text: 'A / B', session_type: 'group' }) }).action, 'ok')
   assert.equal(classifySlotRepair({ slot: slot({ player_text: 'Ahmed', session_type: 'private' }), booking: booking('private') }).action, 'ok')
+})
+
+test('validatePlayerCount: private allows 1, rejects 2+', () => {
+  assert.equal(validatePlayerCount(['Ahmed'], 'private'), null)
+  assert.equal(validatePlayerCount([], 'private'), null)
+  assert.match(validatePlayerCount(['Ahmed', 'Sara'], 'private'), /only have 1 player/)
+})
+
+test('validatePlayerCount: group requires 2-4', () => {
+  assert.equal(validatePlayerCount(['A', 'B'], 'group'), null)
+  assert.equal(validatePlayerCount(['A', 'B', 'C', 'D'], 'group'), null)
+  assert.match(validatePlayerCount(['A'], 'group'), /2-4 players/)
+  assert.match(validatePlayerCount(['A', 'B', 'C', 'D', 'E'], 'group'), /2-4 players/)
+})
+
+test('validatePlayerCount: hard cap of 4 names', () => {
+  assert.match(validatePlayerCount(['A', 'B', 'C', 'D', 'E'], null), /Maximum 4/)
 })

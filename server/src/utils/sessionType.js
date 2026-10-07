@@ -46,6 +46,20 @@ export function sessionTypeLabel(t) {
   return 'Session'
 }
 
+/** Validate player count vs session_type. Returns an error message or null. */
+export function validatePlayerCount(names, sessionType) {
+  if (sessionType === 'private' && names.length > 1) {
+    return 'Private session can only have 1 player'
+  }
+  if (sessionType === 'group' && (names.length < 2 || names.length > 4)) {
+    return 'Group session must have 2-4 players'
+  }
+  if (names.length > 4) {
+    return 'Maximum 4 players per slot'
+  }
+  return null
+}
+
 /**
  * Repair decision for one slot.
  * @returns {{action:'ok'|'skip'|'fix'|'exception', reason:string, next?:'private'|'group', tier?:string}}

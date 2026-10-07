@@ -6,6 +6,7 @@ import { requirePermission } from '../middleware/rbac.js'
 import { auditCreate, auditUpdate, auditDelete, auditBalanceChange } from '../middleware/audit.js'
 import { hasEnoughBalance, reverseBalance, effectiveGroup } from '../utils/balance.js'
 import { notifyUser } from '../utils/notify.js'
+import { isValidType, resolveSessionType, validatePlayerCount } from '../utils/sessionType.js'
 
 const router = Router()
 router.use(authenticate)
@@ -84,6 +85,7 @@ router.get('/balance-check', async (req, res) => {
   try {
     const { sessionType, count } = req.query
     if (!sessionType || !count) return res.status(400).json({ error: 'sessionType and count required' })
+    if (!isValidType(sessionType)) return res.status(400).json({ error: 'sessionType must be private or group' })
     const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
     const n = parseInt(count) || 0
@@ -102,6 +104,7 @@ router.post('/from-balance', async (req, res) => {
     if (!sessionType || !sessions || !Array.isArray(sessions) || sessions.length === 0) {
       return res.status(400).json({ error: 'Missing booking data' })
     }
+    if (!isValidType(sessionType)) return res.status(400).json({ error: 'sessionType must be private or group' })
 
     const user = await db.get('users', req.user.id)
     if (!user) return res.status(404).json({ error: 'User not found' })
@@ -156,6 +159,7 @@ router.post('/guest', requirePermission('bookings'), async (req, res) => {
     if (!guest_name || !sessionType || !sessions || !Array.isArray(sessions) || sessions.length === 0) {
       return res.status(400).json({ error: 'guest_name, sessionType, and sessions[] are required' })
     }
+    if (!isValidType(sessionType)) return res.status(400).json({ error: 'sessionType must be private or group' })
 
     let ref = genRef()
     while (await db.find('bookings', b => b.ref === ref)) ref = genRef()
@@ -194,6 +198,7 @@ router.post('/', async (req, res) => {
   try {
     const { sessionType, mode, sessions, totalPrice, method, partner } = req.body
     if (!sessionType || !sessions || !totalPrice) return res.status(400).json({ error: 'Missing booking data' })
+    if (!isValidType(sessionType)) return res.status(400).json({ error: 'sessionType must be private or group' })
 
     let ref = genRef()
     while (await db.find('bookings', b => b.ref === ref)) ref = genRef()
@@ -287,6 +292,9 @@ router.put('/:id/sessions', requirePermission('bookings'), async (req, res) => {
 
     const { sessions, sessionType, total } = req.body
     if (!sessions || !Array.isArray(sessions)) return res.status(400).json({ error: 'Invalid sessions data' })
+    if (sessionType !== undefined && sessionType !== null && !isValidType(sessionType)) {
+      return res.status(400).json({ error: 'sessionType must be private or group' })
+    }
 
     const updates = {}
     updates.sessions_json = JSON.stringify(sessions)
@@ -298,6 +306,21 @@ router.put('/:id/sessions', requirePermission('bookings'), async (req, res) => {
       const oldSet = new Set(oldSessions.map(s => `${s.date}|${s.time}|${s.court}`))
       const newSet = new Set(sessions.map(s => `${s.date}|${s.time}|${s.court}`))
 
+      const playerName = booking.player_name || 'Player'
+      const plan = []
+      for (const s of sessions) {
+        const existing = await db.find('slots', x => x.date === s.date && x.time === s.time && x.court === parseInt(s.court))
+        const keepText = existing?.player_text?.trim() ? existing.player_text : playerName
+        const keepUserId = existing && existing.user_id != null ? existing.user_id : booking.user_id
+        const finalType = resolveSessionType({ session_type: sessionType, player_text: keepText }, booking)
+        const names = keepText.split(/\s*\/\s*/).map(n => n.trim()).filter(Boolean)
+        const countErr = validatePlayerCount(names, finalType)
+        if (countErr) {
+          return res.status(400).json({ error: `${s.date} ${s.time} Court ${s.court}: ${countErr}` })
+        }
+        plan.push({ s, keepText, keepUserId, finalType })
+      }
+
       for (const key of oldSet) {
         if (!newSet.has(key)) {
           const [date, time, court] = key.split('|')
@@ -306,14 +329,10 @@ router.put('/:id/sessions', requirePermission('bookings'), async (req, res) => {
         }
       }
 
-      const playerName = booking.player_name || 'Player'
-      for (const s of sessions) {
-        const existing = await db.find('slots', x => x.date === s.date && x.time === s.time && x.court === parseInt(s.court))
-        const keepText = existing?.player_text?.trim() ? existing.player_text : playerName
-        const keepUserId = existing && existing.user_id != null ? existing.user_id : booking.user_id
+      for (const { s, keepText, keepUserId, finalType } of plan) {
         await db.upsert('slots',
           ['date', 'time', 'court'],
-          { date: s.date, time: s.time, court: s.court, player_text: keepText, booking_id: booking.id, user_id: keepUserId, session_type: sessionType || booking.session_type || null, status: STATUS.PLAYER_CONFIRMED }
+          { date: s.date, time: s.time, court: s.court, player_text: keepText, booking_id: booking.id, user_id: keepUserId, session_type: finalType, status: STATUS.PLAYER_CONFIRMED }
         )
       }
     }

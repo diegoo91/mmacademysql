@@ -418,10 +418,14 @@ export default function ScheduleManager() {
         return
       }
     }
+    const joined = addPlayers.filter(n => n.trim()).join(' / ')
+    if (joined && !addForm.session_type) {
+      toast.error('Select a session type (Private or Group) before assigning players')
+      return
+    }
     setAddSubmitting(true)
     try {
-      const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
-      const payload = { ...addForm, player_text: joinedNames }
+      const payload = { ...addForm, player_text: joined }
       await api.post('/slots', payload)
       setAddSlot(null)
       setAddForm({ date: '', time: '15:00', court: 1, player_text: '', session_type: null, coach_id: null })
@@ -438,7 +442,7 @@ export default function ScheduleManager() {
       const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
       if (isBalanceConflict && !msg.includes('Slot already exists')) {
         const joinedNames = addPlayers.filter(n => n.trim()).join(' / ')
-        const stype = addForm.session_type || 'private'
+        const stype = addForm.session_type
         // Find which players are insufficient
         const insufficient = []
         for (const sp of selectedPlayers) {
@@ -751,9 +755,11 @@ export default function ScheduleManager() {
                                 <>
                                   <div className="flex flex-col items-center gap-0.5 min-w-0">
                                     <span className="truncate">{slot.player_text}</span>
-                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${(slot.session_type || 'private') === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
-                                      {(slot.session_type || 'private') === 'group' ? 'GRP' : 'PVT'}
-                                    </span>
+                                    {slot.session_type && (
+                                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${slot.session_type === 'group' ? 'bg-purple-400/20 text-purple-400' : 'bg-blue-400/20 text-blue-400'}`}>
+                                        {slot.session_type === 'group' ? 'GRP' : 'PVT'}
+                                      </span>
+                                    )}
                                     {slot.coach_name && (
                                       <span className="text-[8px] font-bold text-amber-400">{slot.coach_name}</span>
                                     )}
@@ -829,8 +835,10 @@ export default function ScheduleManager() {
                               <>
                                 <span className="block">{[s1 && `C1: ${s1.player_text}`, s2 && `C2: ${s2.player_text}`, s3 && `C3: ${s3.player_text}`].filter(Boolean).join(' / ')}</span>
                                 {(() => {
-                                  const types = [s1, s2, s3].map(s => s?.session_type || 'private')
-                                  const uniqueTypes = [...new Set(types)]
+                                  const occ = [s1, s2, s3].filter(Boolean)
+                                  const typed = occ.filter(s => s.session_type)
+                                  if (!occ.length || typed.length !== occ.length) return null
+                                  const uniqueTypes = [...new Set(typed.map(s => s.session_type))]
                                   const typeLabel = uniqueTypes.length === 1 ? (uniqueTypes[0] === 'group' ? 'GRP' : 'PVT') : uniqueTypes.map(t => t === 'group' ? 'GRP' : 'PVT').join('+')
                                   return <span className="block text-[9px] font-bold mt-0.5">{typeLabel}</span>
                                 })()}
@@ -1183,9 +1191,13 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults, availab
   }, [onClose, pendingOverride, coachWarning])
 
   const handleSave = async (balanceOverride) => {
+    const joinedNames = players.filter(n => n.trim()).join(' / ')
+    if (joinedNames && !form.session_type) {
+      toast.error('Select a session type (Private or Group) before saving')
+      return
+    }
     setLoading(true)
     try {
-      const joinedNames = players.filter(n => n.trim()).join(' / ')
       const payload = { ...form, player_text: joinedNames }
       if (balanceOverride) payload.balanceOverride = balanceOverride
       await api.put(`/slots/${slot.id}`, payload)
@@ -1197,7 +1209,7 @@ function EditSlotModal({ slot, onClose, onSaved, coaches, courtDefaults, availab
       } else {
         const isBalanceConflict = err.code === 'INSUFFICIENT_BALANCE' || msg.includes('INSUFFICIENT_BALANCE') || msg.includes('409')
         if (isBalanceConflict && !msg.includes('Slot already exists')) {
-          const stype = form.session_type || 'private'
+          const stype = form.session_type
           setPendingOverride({
             player: players.filter(n => n.trim()).join(', '),
             sessionType: stype,

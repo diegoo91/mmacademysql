@@ -904,7 +904,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           {scheduleApproved.map(slot => (
             <div key={slot.id} className="p-4 rounded-2xl bg-purple-400/5 border border-purple-400/20">
               <p className="text-sm font-bold text-theme mb-1 capitalize">
-                {slot.session_type || 'Private'} Session
+                {slot.session_type ? `${slot.session_type} Session` : 'Session'}
               </p>
               <p className="text-xs text-muted mb-3">
                 {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court}
@@ -933,7 +933,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-blue-400 uppercase">Payment Approved — Awaiting Schedule Approval ({paymentApproved.length})</p>
           {paymentApproved.map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-blue-400/5 border border-blue-400/20 text-xs text-muted">
-              {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Private'}
+              {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Session'}
             </div>
           ))}
         </div>
@@ -944,7 +944,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-amber-400 uppercase">Payment Pending Review ({paymentPending.length})</p>
           {paymentPending.map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-amber-400/5 border border-amber-400/20 text-xs text-muted">
-              {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Private'}
+              {slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Session'}
             </div>
           ))}
         </div>
@@ -955,7 +955,7 @@ function MySlotsPanel({ slots, loading, onConfirm, onDecline }) {
           <p className="text-xs font-bold text-emerald-400 uppercase">Confirmed Sessions ({playerConfirmed.length})</p>
           {playerConfirmed.sort((a, b) => b.date.localeCompare(a.date)).map(slot => (
             <div key={slot.id} className="p-3 rounded-xl bg-emerald-400/5 border border-emerald-400/20 text-xs text-muted flex justify-between items-center">
-              <span>{slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Private'}</span>
+              <span>{slot.date} at {formatSlotTime(slot.time)} — Court {slot.court} — {slot.session_type || 'Session'}</span>
               <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             </div>
           ))}
