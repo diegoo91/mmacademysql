@@ -308,9 +308,12 @@ router.put('/:id/sessions', requirePermission('bookings'), async (req, res) => {
 
       const playerName = booking.player_name || 'Player'
       for (const s of sessions) {
+        const existing = await db.find('slots', x => x.date === s.date && x.time === s.time && x.court === parseInt(s.court))
+        const keepText = existing?.player_text?.trim() ? existing.player_text : playerName
+        const keepUserId = existing && existing.user_id != null ? existing.user_id : booking.user_id
         await db.upsert('slots',
           ['date', 'time', 'court'],
-          { date: s.date, time: s.time, court: s.court, player_text: playerName, booking_id: booking.id, user_id: booking.user_id, session_type: sessionType || booking.session_type, status: STATUS.PLAYER_CONFIRMED }
+          { date: s.date, time: s.time, court: s.court, player_text: keepText, booking_id: booking.id, user_id: keepUserId, session_type: sessionType || booking.session_type || null, status: STATUS.PLAYER_CONFIRMED }
         )
       }
     }

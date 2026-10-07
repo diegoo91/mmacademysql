@@ -392,6 +392,10 @@ router.put('/:id', authenticate, requirePermission('schedule'), async (req, res)
               '/profile')
           }
         }
+      } else if (player_text !== slot.player_text && bodyUserId === undefined) {
+        const first = player_text.split(/\s*\/\s*/)[0].trim()
+        const u = await db.find('users', x => x.role === 'player' && x.name && x.name.toLowerCase() === first.toLowerCase())
+        updates.user_id = u ? u.id : null
       }
     }
 

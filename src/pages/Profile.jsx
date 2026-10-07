@@ -83,7 +83,8 @@ export default function Profile() {
         const name = (user.name || '').toLowerCase()
         const mine = (Array.isArray(data) ? data : []).filter(s => {
           const matchesUser = s.user_id === user.id
-          const matchesName = name && s.player_text && s.player_text.split(/\s*\/\s*/)[0].trim().toLowerCase() === name
+          const names = (s.player_text || '').split(/[/+]/).map(n => n.trim().toLowerCase()).filter(Boolean)
+          const matchesName = name && names.includes(name)
           return matchesUser || matchesName
         })
         setMySlots(mine)
