@@ -248,7 +248,7 @@ router.get('/:id/report', async (req, res) => {
     const cashBalance = Number(player.cash_balance) || 0
     const cashOwed = cashBalance < 0 ? -cashBalance : 0
     res.json({
-      player: { id: player.id, name: player.name, email: player.email, phone: player.phone },
+      player: { id: player.id, name: player.name, email: player.email, phone: player.phone, member_code: player.member_code || '', role: player.role },
       sessions,
       // total owed: unpaid-session package price + cash shortfall
       amount_owed: amountOwed + cashOwed,

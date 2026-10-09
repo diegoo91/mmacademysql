@@ -17,10 +17,28 @@ export const PRICING = {
   },
 }
 
-export function calculatePrice(type, sessionCount) {
-  const tier = PRICING[type]
+// Staff exception — coaches and Magdy (member_code 007) pay a FLAT per-session
+// rate, no packages. Mirrors server utils/pricing.js (STAFF_PRICING).
+export const STAFF_PRICING = { private: 600, group: 300 }
+
+/** A user on the staff rate: role coach, or member_code 007 (Magdy). */
+export function isStaffRateUser(user) {
+  if (!user) return false
+  if (user.role === 'coach') return true
+  return String(user.member_code ?? '').trim() === '007'
+}
+
+function tierFor(type, staff = false) {
+  if (staff) return STAFF_PRICING[type] ? { 1: STAFF_PRICING[type] } : null
+  return PRICING[type]
+}
+
+/** opts.staff → flat rate × count (no packages). */
+export function calculatePrice(type, sessionCount, opts = {}) {
+  const tier = tierFor(type, opts.staff)
   if (!tier) return 0
-  if (tier[sessionCount] !== undefined) return tier[sessionCount]
+  const sessionCountNorm = Math.max(0, Math.floor(Number(sessionCount) || 0))
+  if (tier[sessionCountNorm] !== undefined) return tier[sessionCountNorm]
 
   // For counts not covered by a tier, use a greedy approach with the largest bundles first.
   const tiers = Object.keys(tier)
@@ -28,7 +46,7 @@ export function calculatePrice(type, sessionCount) {
     .filter(k => !isNaN(k) && k !== 1)
     .sort((a, b) => b - a)
 
-  let remaining = sessionCount
+  let remaining = sessionCountNorm
   let total = 0
 
   for (const t of tiers) {
@@ -42,12 +60,12 @@ export function calculatePrice(type, sessionCount) {
   return total
 }
 
-export function perSessionRate(type, sessionCount) {
-  const tier = PRICING[type]
+export function perSessionRate(type, sessionCount, opts = {}) {
+  const tier = tierFor(type, opts.staff)
   if (tier && tier[sessionCount] !== undefined) {
     return tier[sessionCount] / sessionCount
   }
   // For greedy calculation, compute average rate
-  if (tier) return calculatePrice(type, sessionCount) / sessionCount
+  if (tier) return calculatePrice(type, sessionCount, opts) / sessionCount
   return 0
 }

@@ -105,20 +105,58 @@ export function roundUpPrivateTier(pEquiv) {
 
 /**
  * @param {Array<{session_type?: string, paid?: boolean}>} sessions report sessions
+ * @param {{staff?: boolean}} opts staff → flat 600/300 rate, no packages
  * @returns {{
  *   unpaidPrivate:number, unpaidGroup:number, pEquiv:number,
  *   nearest:number, nearestPrice:number,
  *   roundUp:number|null, roundUpPrice:number, roundUpSurplus:number,
  *   clearAll:{private,group,price,label,credit,creditSessions}|null,
- *   hasUnpaid:boolean
+ *   hasUnpaid:boolean, staff:boolean
  * }}
  */
-export function packageAdvice(sessions = []) {
+export function packageAdvice(sessions = [], { staff = false } = {}) {
   const unpaid = sessions.filter(s => !s.paid)
   const unpaidPrivate = unpaid.filter(s => s.session_type !== 'group').length
   const unpaidGroup = unpaid.filter(s => s.session_type === 'group').length
   const pEquiv = unpaidPrivate + unpaidGroup / 2
   const hasUnpaid = unpaidPrivate + unpaidGroup > 0
+
+  // Staff rate (coaches / member_code 007): flat 600 private / 300 group, no
+  // packages — the clear-all IS the exact debt, so no tier advice applies.
+  if (staff) {
+    const price = calculatePrice('private', unpaidPrivate, { staff: true }) + calculatePrice('group', unpaidGroup, { staff: true })
+    const clearAll = hasUnpaid
+      ? {
+          private: unpaidPrivate,
+          group: unpaidGroup,
+          price,
+          label: [unpaidPrivate ? `${unpaidPrivate}P` : null, unpaidGroup ? `${unpaidGroup}G` : null].filter(Boolean).join('+'),
+        }
+      : null
+    if (clearAll) {
+      clearAll.credit = fifoCredit(clearAll.private, clearAll.group, unpaid)
+      clearAll.creditSessions = clearAll.credit.private + clearAll.credit.group
+    }
+    return {
+      unpaidPrivate,
+      unpaidGroup,
+      pEquiv,
+      staff: true,
+      nearest: unpaidPrivate + unpaidGroup,
+      nearestPrice: price,
+      roundUp: null,
+      roundUpPrice: price,
+      roundUpSurplus: 0,
+      packsNeeded: 0,
+      remainderEquiv: 0,
+      secondStep: null,
+      secondStepPrice: 0,
+      hasUnpaid,
+      unpaidValue: price,
+      clearAll,
+    }
+  }
+
   const nearest = nearestPrivateTier(pEquiv)
   const nearestPrice = PRICING.private[nearest]
   const roundUp = roundUpPrivateTier(pEquiv)
@@ -143,6 +181,7 @@ export function packageAdvice(sessions = []) {
     unpaidPrivate,
     unpaidGroup,
     pEquiv,
+    staff: false,
     nearest,
     nearestPrice,
     roundUp,

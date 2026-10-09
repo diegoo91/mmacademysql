@@ -4,6 +4,7 @@ import { ArrowRightLeft, CheckCircle2, Download, FileUp, Lock, Plus, Search, Shi
 import { api, downloadFile } from '../../lib/api'
 import { formatSlotTime, formatDateMed } from '../../lib/time'
 import { packageAdvice } from '../../lib/packageAdvice'
+import { isStaffRateUser } from '../../data/pricingData'
 import { useAuth } from '../../context/AuthContext'
 import { useFeedback } from '../../context/FeedbackContext'
 import { useEscapeKey } from '../../lib/hooks'
@@ -304,7 +305,7 @@ export function HistoryModal({ user, onClose }) {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [user.id])
 
-  const advice = packageAdvice(report?.sessions || sessions || [])
+  const advice = packageAdvice(report?.sessions || sessions || [], { staff: isStaffRateUser(user) })
 
   const handleDownloadPDF = async () => {
     if (!report) return

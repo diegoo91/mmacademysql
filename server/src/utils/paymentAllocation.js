@@ -1,5 +1,5 @@
 import { computePlayerSessions } from './sessionPaid.js'
-import { sessionsForAmount, packagePrice, nearestPackPool } from './pricing.js'
+import { sessionsForAmount, packagePrice, nearestPackPool, isStaffRateUser } from './pricing.js'
 import { simulateFifo } from './convertBalance.js'
 
 /**
@@ -54,6 +54,7 @@ export async function computePaymentAllocation(player, {
     private_sessions,
     group_sessions,
     cashBalance: Number(player.cash_balance) || 0,
+    staff: isStaffRateUser(player),
   })
 }
 
@@ -61,6 +62,8 @@ export async function computePaymentAllocation(player, {
  * Pure allocation core — same math, no database. `sessions` is the player's
  * session list NEWEST-FIRST exactly as computePlayerSessions returns it
  * (paid flags from the paid-FIFO already applied).
+ * `staff` → flat 600/300 rates (coaches / member_code 007): no packages, so
+ * the Best-Package Rule degenerates to the exact value-max mix.
  */
 export function allocateFromSessions(sessions, {
   amountOwed = 0,
@@ -68,6 +71,7 @@ export function allocateFromSessions(sessions, {
   cashBalance = 0,
   private_sessions = undefined,
   group_sessions = undefined,
+  staff = false,
 } = {}) {
   const paidAmount = Math.max(0, parseFloat(amount) || 0)
   const cashBefore = Number(cashBalance) || 0
@@ -84,15 +88,16 @@ export function allocateFromSessions(sessions, {
   const unpaidGroup = sessions.filter(s => !s.paid && s.session_type === 'group').length
 
   // 1) the amount buys the pool (admin-entered counts win if given):
+  //    staff → exact value-max at flat rates (no packs exist);
   //    ≤ 2 sessions → exact value-max mix (singles allowed);
   //    else → nearest single-tier pack (Best-Package Rule).
-  const valueMax = sessionsForAmount(netForPack)
-  const derived = valueMax.private + valueMax.group <= 2
+  const valueMax = sessionsForAmount(netForPack, { staff })
+  const derived = staff || valueMax.private + valueMax.group <= 2
     ? valueMax
     : nearestPackPool(netForPack, amountOwed)
   const totalPrivate = explicitCounts ? explicitP : derived.private
   const totalGroup = explicitCounts ? explicitG : derived.group
-  const poolValue = packagePrice(totalPrivate, totalGroup)
+  const poolValue = packagePrice(totalPrivate, totalGroup, { staff })
 
   // 2) conversion-aware split: FIFO over the unpaid slots (sessions list is
   //    newest-first — filter keeps that order, reverse restores chronological)
@@ -120,7 +125,7 @@ export function allocateFromSessions(sessions, {
     unpaid_before: { private: unpaidPrivate, group: unpaidGroup },
     covered_private: coverPrivate,
     covered_group: coverGroup,
-    covered_value: packagePrice(coverPrivate, coverGroup),
+    covered_value: packagePrice(coverPrivate, coverGroup, { staff }),
     credit_private: creditPrivate,
     credit_group: creditGroup,
     private_sessions: totalPrivate,
@@ -132,7 +137,7 @@ export function allocateFromSessions(sessions, {
     remaining_unpaid: {
       private: walk.uncovered.private,
       group: walk.uncovered.group,
-      amount: packagePrice(walk.uncovered.private, walk.uncovered.group),
+      amount: packagePrice(walk.uncovered.private, walk.uncovered.group, { staff }),
     },
     warning,
   }

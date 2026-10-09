@@ -1,5 +1,5 @@
 import db from '../db.js'
-import { packagePrice } from './pricing.js'
+import { packagePrice, isStaffRateUser } from './pricing.js'
 import { simulateFifo } from './convertBalance.js'
 
 /**
@@ -67,7 +67,8 @@ export async function computePlayerSessions(player, { excludePaymentId = null } 
   const unpaidPrivate = sessions.filter(s => !s.paid && s.session_type !== 'group').length
   const unpaidGroup = sessions.filter(s => !s.paid && s.session_type === 'group').length
   // Package priced: 16 private = 14,000 + 3 group = 1,500 → 15,500 (not 17,500).
-  const amountOwed = packagePrice(unpaidPrivate, unpaidGroup)
+  // Staff (coaches / member_code 007) owe the flat rate instead.
+  const amountOwed = packagePrice(unpaidPrivate, unpaidGroup, { staff: isStaffRateUser(player) })
 
   return { sessions, amountOwed, unpaidPrivate, unpaidGroup }
 }

@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import { calculatePrice, PRICING } from '../data/pricingData.js'
+import { calculatePrice, PRICING, isStaffRateUser } from '../data/pricingData.js'
 import { CONTACT, ACADEMY_NAME, TAGLINE } from '../data/siteConfig.js'
 import { formatSlotTime } from './time.js'
 import { packageAdvice } from './packageAdvice.js'
@@ -150,10 +150,10 @@ function summaryCard(doc, y, advice, totalSessions, totalOwed, cashOwed = 0) {
     doc.setFontSize(7)
     doc.setTextColor(...C.muted)
     const bits = []
-    if (advice.unpaidPrivate) bits.push(`${plural(advice.unpaidPrivate, 'private session')} — ${egp(calculatePrice('private', advice.unpaidPrivate))}`)
-    if (advice.unpaidGroup) bits.push(`${plural(advice.unpaidGroup, 'group session')} — ${egp(calculatePrice('group', advice.unpaidGroup))}`)
+    if (advice.unpaidPrivate) bits.push(`${plural(advice.unpaidPrivate, 'private session')} — ${egp(calculatePrice('private', advice.unpaidPrivate, { staff: advice.staff }))}`)
+    if (advice.unpaidGroup) bits.push(`${plural(advice.unpaidGroup, 'group session')} — ${egp(calculatePrice('group', advice.unpaidGroup, { staff: advice.staff }))}`)
     if (cashOwed > 0) bits.push(`${egp(cashOwed)} package shortfall — due next month`)
-    if (!cashOwed) bits.push('1 hour each, per player, package price')
+    if (!cashOwed) bits.push(advice.staff ? '1 hour each, per player, staff rate' : '1 hour each, per player, package price')
     doc.text(bits.join(' · '), M + 7, y + 23)
   }
   return y + h + 3
@@ -186,12 +186,15 @@ function nextStepBox(doc, y, advice, amountOwed) {
   doc.setTextColor(...C.white)
   doc.text('RECOMMENDED \u2014 BEST NEXT STEP', M + 5, y + 5.3)
 
-  // The exact pack the allocator would sell for this debt (cash_gap = 0)
-  const packName = clear.group === 0
-    ? `${clear.private}-Session Private Package`
-    : clear.private === 0
-      ? `${clear.group}-Session Group Package`
-      : `${clear.private} Private + ${clear.group} Group Package`
+  // The exact pack the allocator would sell for this debt (cash_gap = 0);
+  // staff rate → exact flat-rate sessions instead of a package
+  const packName = advice.staff
+    ? [clear.private ? `${clear.private} Private` : null, clear.group ? `${clear.group} Group` : null].filter(Boolean).join(' + ') + ' — Staff Rate'
+    : clear.group === 0
+      ? `${clear.private}-Session Private Package`
+      : clear.private === 0
+        ? `${clear.group}-Session Group Package`
+        : `${clear.private} Private + ${clear.group} Group Package`
 
   doc.setFontSize(14)
   doc.setTextColor(...C.ink)
@@ -334,7 +337,7 @@ export function generateReceiptPDF(reportData) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const generated = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-  const advice = packageAdvice(sessions)
+  const advice = packageAdvice(sessions, { staff: isStaffRateUser(player) })
   // amount_owed arrives as the TOTAL owed (sessions + cash shortfall)
   const totalOwed = Number(amount_owed) || 0
   const cashOwed = Number(cash_owed) || 0

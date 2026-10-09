@@ -4,7 +4,7 @@ import db from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/rbac.js'
 import { computeUnpaidPlayers } from '../utils/sessionPaid.js'
-import { packagePrice } from '../utils/pricing.js'
+import { packagePrice, isStaffRateUser } from '../utils/pricing.js'
 import { buildPeriodSplit } from '../utils/periodSplit.js'
 import { auditCreate, auditUpdate, auditDelete } from '../middleware/audit.js'
 
@@ -254,7 +254,8 @@ router.get('/period-statement', requirePermission('dashboard'), async (req, res)
       if (!win.length) continue
       const wp = win.filter(s => s.session_type !== 'group').length
       const wg = win.filter(s => s.session_type === 'group').length
-      const value = packagePrice(wp, wg)
+      const reportUser = await db.get('users', p.id)
+      const value = packagePrice(wp, wg, { staff: isStaffRateUser(reportUser) })
       unpaidPlayers.push({ id: p.id, name: p.name, private: wp, group: wg, value })
       unpaidPriv += wp
       unpaidGrp += wg

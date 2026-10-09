@@ -15,7 +15,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { CONTACT } from '../data/siteConfig'
-import { perSessionRate } from '../data/pricingData'
+import { perSessionRate, isStaffRateUser } from '../data/pricingData'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -273,7 +273,7 @@ export default function Payment() {
                         <div className="flex justify-between items-center text-muted pt-1 border-t border-theme">
                           <span>Rate (per player · 1 hour)</span>
                           <span className="font-semibold text-theme">
-                            {sessionCount} × {perSessionRate(sessionType, sessionCount).toLocaleString('en-US')} EGP
+                            {sessionCount} × {perSessionRate(sessionType, sessionCount, { staff: isStaffRateUser(user) }).toLocaleString('en-US')} EGP
                           </span>
                         </div>
                         <ul className="space-y-1.5 pt-2 border-t border-theme max-h-56 overflow-y-auto pr-1">

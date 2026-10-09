@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 
 import {
   PRICING,
+  STAFF_PRICING,
   calculatePrice,
   packagePrice,
   bestCoverage,
@@ -24,6 +25,7 @@ import {
 } from '../src/utils/pricing.js'
 import {
   PRICING as FRONT_PRICING,
+  STAFF_PRICING as FRONT_STAFF_PRICING,
   calculatePrice as frontPrice,
 } from '../../src/data/pricingData.js'
 
@@ -310,6 +312,80 @@ describe('pricing parity — server vs frontend (src/data/pricingData.js)', () =
           packagePrice(p, g),
           frontPrice('private', p) + frontPrice('group', g),
           `packagePrice(${p}, ${g})`,
+        )
+      }
+    }
+  })
+})
+
+describe('staff rate — flat 600/300 (coaches / member_code 007)', () => {
+  it('isStaffRateUser detects coaches and Magdy only', async () => {
+    const { isStaffRateUser } = await import('../src/utils/pricing.js')
+    assert.equal(isStaffRateUser({ role: 'coach' }), true)
+    assert.equal(isStaffRateUser({ role: 'coach', member_code: '042' }), true)
+    assert.equal(isStaffRateUser({ role: 'player', member_code: '007' }), true)
+    assert.equal(isStaffRateUser({ role: 'player', member_code: '007 ' }), true)
+    assert.equal(isStaffRateUser({ role: 'admin', member_code: '007' }), true)
+    assert.equal(isStaffRateUser({ role: 'player', member_code: '008' }), false)
+    assert.equal(isStaffRateUser({ role: 'player', member_code: '07' }), false)
+    assert.equal(isStaffRateUser({ role: 'player' }), false)
+    assert.equal(isStaffRateUser({ role: 'admin' }), false)
+    assert.equal(isStaffRateUser(null), false)
+    assert.equal(isStaffRateUser(undefined), false)
+  })
+
+  it('flat prices for every count — no packages, no bulk discount', () => {
+    for (let n = 0; n <= 20; n++) {
+      assert.equal(calculatePrice('private', n, { staff: true }), 600 * n, `private x${n}`)
+      assert.equal(calculatePrice('group', n, { staff: true }), 300 * n, `group x${n}`)
+    }
+    assert.equal(calculatePrice('private', 4, { staff: true }), 2400) // normal tier would be 3,600
+    assert.equal(calculatePrice('group', 8, { staff: true }), 2400)   // normal tier would be 3,500
+    assert.equal(packagePrice(3, 2, { staff: true }), 3 * 600 + 2 * 300)
+    assert.equal(packagePrice(0, 0, { staff: true }), 0)
+    assert.equal(calculatePrice('vip', 3, { staff: true }), 0)
+  })
+
+  it('amount → session mix at flat rates', () => {
+    assert.deepEqual(sessionsForAmount(600, { staff: true }), { private: 1, group: 0, value: 600 })
+    assert.deepEqual(sessionsForAmount(300, { staff: true }), { private: 0, group: 1, value: 300 })
+    assert.deepEqual(sessionsForAmount(1000, { staff: true }), { private: 1, group: 1, value: 900 })
+    assert.deepEqual(sessionsForAmount(1500, { staff: true }), { private: 2, group: 1, value: 1500 })
+    assert.deepEqual(sessionsForAmount(1800, { staff: true }), { private: 3, group: 0, value: 1800 })
+    assert.deepEqual(sessionsForAmount(400, { staff: true }), { private: 0, group: 1, value: 300 })
+    assert.deepEqual(sessionsForAmount(0, { staff: true }), { private: 0, group: 0, value: 0 })
+  })
+
+  it('bestCoverage caps at unpaid counts at flat rates', () => {
+    assert.deepEqual(bestCoverage(1500, 9, 9, { staff: true }), { private: 2, group: 1, value: 1500 })
+    assert.deepEqual(bestCoverage(999999, 5, 2, { staff: true }), { private: 5, group: 2, value: 5 * 600 + 2 * 300 })
+    assert.deepEqual(bestCoverage(400, 9, 0, { staff: true }), { private: 0, group: 0, value: 0 })
+  })
+
+  it('nearestPackPool degenerates to value-max (no packs for staff)', () => {
+    assert.deepEqual(nearestPackPool(1800, 0, { staff: true }), { private: 3, group: 0, value: 1800 })
+    assert.deepEqual(nearestPackPool(3000, 3000, { staff: true }), { private: 5, group: 0, value: 3000 })
+  })
+
+  it('non-staff path is untouched', () => {
+    assert.equal(calculatePrice('private', 4), 3600)
+    assert.equal(packagePrice(16, 3), 15500)
+    assert.deepEqual(sessionsForAmount(14000), { private: 16, group: 0, value: 14000 })
+  })
+})
+
+describe('staff rate parity — server vs frontend (src/data/pricingData.js)', () => {
+  it('STAFF_PRICING tables are identical', () => {
+    assert.deepEqual(STAFF_PRICING, FRONT_STAFF_PRICING)
+  })
+
+  it('staff calculatePrice agrees for every count 0..64', () => {
+    for (const type of ['private', 'group']) {
+      for (let n = 0; n <= 64; n++) {
+        assert.equal(
+          calculatePrice(type, n, { staff: true }),
+          frontPrice(type, n, { staff: true }),
+          `staff ${type} ${n}: server ${calculatePrice(type, n, { staff: true })} vs frontend ${frontPrice(type, n, { staff: true })}`,
         )
       }
     }

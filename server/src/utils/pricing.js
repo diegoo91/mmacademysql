@@ -15,9 +15,28 @@ export const PRICING = {
   group: { 1: 500, 4: 1800, 8: 3500, 16: 7000 },
 }
 
-/** Greedy bundles (largest first), singles at the per-session rate. */
-export function calculatePrice(type, sessionCount) {
-  const tier = PRICING[type]
+// Staff exception (locked spec): coaches and Magdy (member_code 007) pay a
+// FLAT per-session rate — no packages, no tiers. Applies to every money
+// computation (amount owed, payment allocation, reports) for those users.
+export const STAFF_PRICING = { private: 600, group: 300 }
+
+/** A user on the staff rate: role coach, or Magdy's member_code 007. */
+export function isStaffRateUser(user) {
+  if (!user) return false
+  if (user.role === 'coach') return true
+  return String(user.member_code ?? '').trim() === '007'
+}
+
+/** Effective tier table for a user: flat singles for staff, packages otherwise. */
+function tierFor(type, staff = false) {
+  if (staff) return STAFF_PRICING[type] ? { 1: STAFF_PRICING[type] } : null
+  return PRICING[type]
+}
+
+/** Greedy bundles (largest first), singles at the per-session rate.
+ *  opts.staff → flat rate × count (no packages). */
+export function calculatePrice(type, sessionCount, opts = {}) {
+  const tier = tierFor(type, opts.staff)
   const n = Math.max(0, Math.floor(Number(sessionCount) || 0))
   if (!tier) return 0
   if (tier[n] !== undefined) return tier[n]
@@ -40,14 +59,14 @@ export function calculatePrice(type, sessionCount) {
 }
 
 /** Package price of a (private, group) pair — what the player owes/should pay. */
-export function packagePrice(privateCount = 0, groupCount = 0) {
-  return calculatePrice('private', privateCount) + calculatePrice('group', groupCount)
+export function packagePrice(privateCount = 0, groupCount = 0, opts = {}) {
+  return calculatePrice('private', privateCount, opts) + calculatePrice('group', groupCount, opts)
 }
 
 // Precomputed price tables so coverage search is a cheap array lookup.
-function priceTable(type, max) {
+function priceTable(type, max, staff = false) {
   const table = new Array(max + 1)
-  for (let i = 0; i <= max; i++) table[i] = calculatePrice(type, i)
+  for (let i = 0; i <= max; i++) table[i] = calculatePrice(type, i, { staff })
   return table
 }
 
@@ -62,7 +81,7 @@ function priceTable(type, max) {
  * so 8 sessions are covered and 1 stays unpaid.
  * Examples (16 unpaid private + 3 unpaid group, amount 15,500) → (16, 3).
  */
-export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0) {
+export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0, opts = {}) {
   const cap = Math.max(0, Math.floor(Number(amount) || 0))
   const maxP = Math.max(0, Math.floor(Number(maxPrivate) || 0))
   const maxG = Math.max(0, Math.floor(Number(maxGroup) || 0))
@@ -70,8 +89,8 @@ export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0) {
     return { private: 0, group: 0, value: 0 }
   }
 
-  const pTable = priceTable('private', maxP)
-  const gTable = priceTable('group', maxG)
+  const pTable = priceTable('private', maxP, opts.staff)
+  const gTable = priceTable('group', maxG, opts.staff)
 
   let best = { private: 0, group: 0, value: -1 }
   for (let p = 0; p <= maxP; p++) {
@@ -99,8 +118,9 @@ export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0) {
  * ever costs less than one, which is false with bulk discounts and made the
  * 16-pack / 18-private answers unreachable (14,000 → 11P+9G instead of 16P).
  */
-function cheapestRate(type) {
-  const tier = PRICING[type]
+function cheapestRate(type, staff = false) {
+  const tier = tierFor(type, staff)
+  if (!tier) return 1
   let best = Infinity
   for (const [k, v] of Object.entries(tier)) {
     const n = Number(k)
@@ -114,12 +134,12 @@ function cheapestRate(type) {
  * (capped at what the cheapest per-session rate could ever buy, so bulk
  * packages are reachable: 14,000 → 16P, 16,000 → 18P).
  */
-export function sessionsForAmount(amount) {
+export function sessionsForAmount(amount, opts = {}) {
   const cap = Math.max(0, Math.floor(Number(amount) || 0))
   if (cap <= 0) return { private: 0, group: 0, value: 0 }
-  const maxP = Math.ceil(cap / cheapestRate('private')) + 1
-  const maxG = Math.ceil(cap / cheapestRate('group')) + 1
-  return bestCoverage(cap, maxP, maxG)
+  const maxP = Math.ceil(cap / cheapestRate('private', opts.staff)) + 1
+  const maxG = Math.ceil(cap / cheapestRate('group', opts.staff)) + 1
+  return bestCoverage(cap, maxP, maxG, opts)
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +169,9 @@ export const PACK_PRIVATE_TIERS = [0, 4, 8, 12, 16]
 export const PACK_GROUP_TIERS = [0, 4, 8, 16]
 export const PACK_UPWARD_TOLERANCE = 0.15
 
-export function nearestPackPool(amount, debt = 0) {
+export function nearestPackPool(amount, debt = 0, opts = {}) {
+  // Staff has no packages — the pool is the exact flat-rate value-max mix.
+  if (opts.staff) return sessionsForAmount(amount, opts)
   const a = Math.max(0, Number(amount) || 0)
   const d = Math.max(0, Number(debt) || 0)
   if (a <= 0) return { private: 0, group: 0, value: 0 }

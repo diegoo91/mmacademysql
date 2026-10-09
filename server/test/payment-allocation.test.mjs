@@ -211,3 +211,41 @@ test('simulateFifo: covered/uncovered counters, paid_via flags, external-paid by
   assert.deepEqual(ext.remaining, { private: 0, group: 0 })
   assert.deepEqual(ext.covered, { private: 0, group: 0 })
 })
+
+test('S1 staff rate: flat 600/300 — 3,000 pays exactly 5 private, no cash gap', () => {
+  const unpaid = newestFirst(chrono(Array(5).fill('private')))
+  const a = allocateFromSessions(unpaid, { amount: 3000, amountOwed: packagePrice(5, 0, { staff: true }), staff: true })
+  assert.equal(a.derived, true)
+  assert.equal(a.private_sessions, 5)
+  assert.equal(a.pool_value, 3000)
+  assert.equal(a.covered_private, 5)
+  assert.equal(a.credit_private, 0)
+  assert.equal(a.cash_gap, 0)
+  assert.deepEqual(a.remaining_unpaid, { private: 0, group: 0, amount: 0 })
+  assert.equal(a.warning, null)
+})
+
+test('S2 staff rate: 1,000 buys the value-max mix (1P+1G = 900), 100 prepaid, 2P stay unpaid', () => {
+  const unpaid = newestFirst(chrono(Array(3).fill('private')))
+  const a = allocateFromSessions(unpaid, { amount: 1000, amountOwed: packagePrice(3, 0, { staff: true }), staff: true })
+  assert.equal(a.pool_value, 900)
+  assert.equal(a.cash_gap, 100, '100 left as prepaid cash')
+  assert.equal(a.covered_private, 1)
+  assert.equal(a.credit_group, 1, 'the group the mix bought stays as credit')
+  assert.deepEqual(a.remaining_unpaid, { private: 2, group: 0, amount: 1200 })
+})
+
+test('S3 staff rate: explicit 4G counts price at 300 each (1,200), not the 1,800 pack', () => {
+  const unpaid = newestFirst(chrono(Array(4).fill('group')))
+  const a = allocateFromSessions(unpaid, {
+    amount: 1200, amountOwed: packagePrice(0, 4, { staff: true }),
+    private_sessions: 0, group_sessions: 4, staff: true,
+  })
+  assert.equal(a.pool_value, 1200)
+  assert.equal(a.cash_gap, 0)
+  assert.equal(a.covered_group, 4)
+  assert.equal(a.credit_group, 0)
+  // entered counts win; the admin is told the amount alone would derive 2P
+  assert.ok(a.warning)
+  assert.match(a.warning, /Entered 0P \/ 4G/)
+})

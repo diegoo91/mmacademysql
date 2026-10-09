@@ -16,7 +16,7 @@ import {
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { COURTS } from '../data/siteConfig'
-import { PRICING, calculatePrice, perSessionRate } from '../data/pricingData'
+import { PRICING, calculatePrice, perSessionRate, isStaffRateUser } from '../data/pricingData'
 import { canonTime, formatSlotTime } from '../lib/time'
 import PlayerSearchInput from '../components/PlayerSearchInput'
 
@@ -146,7 +146,8 @@ export default function Book() {
 
   const activeSessions = mode === 'day' ? daySessions : weekSessions
   const sessionCount = activeSessions.length
-  const totalPrice = calculatePrice(sessionType, sessionCount)
+  const staffRate = isStaffRateUser(user)
+  const totalPrice = calculatePrice(sessionType, sessionCount, { staff: staffRate })
   const canContinue = sessionType && sessionCount > 0
 
   useEffect(() => {
@@ -434,7 +435,7 @@ export default function Book() {
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between py-1"><span className="text-muted">Category:</span><span className="text-theme font-bold">{PRICING[sessionType].name}</span></div>
                     <div className="flex justify-between py-1"><span className="text-muted">Sessions:</span><span className="text-brand-text font-bold">{sessionCount}</span></div>
-                    <div className="flex justify-between py-1"><span className="text-muted">Rate / session:</span><span className="text-theme font-semibold">{perSessionRate(sessionType, sessionCount).toLocaleString()} EGP</span></div>
+                    <div className="flex justify-between py-1"><span className="text-muted">Rate / session:</span><span className="text-theme font-semibold">{perSessionRate(sessionType, sessionCount, { staff: staffRate }).toLocaleString()} EGP</span></div>
                   </div>
 
                   <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">

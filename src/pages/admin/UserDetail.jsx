@@ -5,6 +5,7 @@ import { api } from '../../lib/api'
 import { giftUnpaidSessions, confirmGift } from '../../lib/gift'
 import { formatSlotTime, formatDateMed } from '../../lib/time'
 import { packageAdvice } from '../../lib/packageAdvice'
+import { isStaffRateUser } from '../../data/pricingData'
 import { useAuth } from '../../context/AuthContext'
 import { useFeedback } from '../../context/FeedbackContext'
 import { useEscapeKey } from '../../lib/hooks'
@@ -353,7 +354,7 @@ export default function UserDetail() {
   const unpaidSessions = (report?.sessions || []).filter(s => !s.paid)
   const unpaidPrivate = unpaidSessions.filter(s => s.session_type !== 'group').length
   const unpaidGroup = unpaidSessions.filter(s => s.session_type === 'group').length
-  const advice = packageAdvice(report?.sessions || [])
+  const advice = packageAdvice(report?.sessions || [], { staff: isStaffRateUser(user) })
 
   const handleGiftUnpaid = async () => {
     if (gifting) return
