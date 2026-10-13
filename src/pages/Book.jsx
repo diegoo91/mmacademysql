@@ -19,6 +19,7 @@ import { COURTS } from '../data/siteConfig'
 import { PRICING, calculatePrice, perSessionRate, isStaffRateUser } from '../data/pricingData'
 import { canonTime, formatSlotTime } from '../lib/time'
 import PlayerSearchInput from '../components/PlayerSearchInput'
+import PricingCard from '../components/PricingCard'
 
 const ALL_TIMES = ['14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00']
 const COURT_LIST = Array.from({ length: COURTS }, (_, i) => i + 1)
@@ -201,7 +202,7 @@ export default function Book() {
               <button onClick={() => setShowFlyerModal(false)} className="px-3 py-1 rounded-full bg-surface hover:bg-slate-300 dark:hover:bg-slate-700 text-xs font-bold text-theme">Close ✕</button>
             </div>
             <div className="overflow-auto p-2 flex justify-center">
-              <img src={`${import.meta.env.BASE_URL}images/pricing.jpg`} alt="MM Padel Academy Official Pricing" className="rounded-2xl max-h-[75vh] object-contain shadow-2xl" />
+              <PricingCard className="max-w-lg" />
             </div>
           </div>
         </div>

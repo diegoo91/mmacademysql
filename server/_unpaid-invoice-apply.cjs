@@ -35,7 +35,7 @@ function parseEnv(file) {
 // Exact copy of src/data/pricingData.js PRICING + calculatePrice (greedy)
 const PRICING = {
   private: { 1: 1000, 4: 3600, 8: 7000, 12: 10800, 16: 14000 },
-  group: { 1: 500, 4: 1800, 8: 3500, 16: 7000 },
+  group: { 1: 500, 4: 1800, 8: 3500, 12: 5250, 16: 7000 },
 }
 function calculatePrice(type, sessionCount) {
   const tier = PRICING[type]

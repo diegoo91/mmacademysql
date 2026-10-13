@@ -22,7 +22,7 @@ export const PRIVATE_TIERS = [1, 4, 8, 12, 16]
 // nearestPackPool + paymentAllocation) so the advice says "pay EGP X and
 // every unpaid session is covered", where X resolves to an EXACT pool on the
 // server (cash_gap = 0):
-//   * tier packs: p ∈ {0,4,8,12,16}, g ∈ {0,4,8,16} — peel (16,16) = 21,000
+//   * tier packs: p ∈ {0,4,8,12,16}, g ∈ {0,4,8,12,16} — peel (16,16) = 21,000
 //     packs above the catalog, same as server pickFor,
 //   * the allocator's ≤2-session singles exemption: 1G=500, 1P=1000,
 //     1P+1G=1500, 2P=2000 (exact value-max mixes),
@@ -31,7 +31,7 @@ export const PRIVATE_TIERS = [1, 4, 8, 12, 16]
 //   * smallest price wins, tie → more private.
 // ---------------------------------------------------------------------------
 const TIER_PRIVATE = [0, 4, 8, 12, 16]
-const TIER_GROUP = [0, 4, 8, 16]
+const TIER_GROUP = [0, 4, 8, 12, 16]
 const MAX_PACK_VALUE = PRICING.private[16] + PRICING.group[16] // (16,16) = 21,000
 const SINGLES_MIXES = [
   { private: 0, group: 1, price: PRICING.group[1] },

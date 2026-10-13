@@ -24,6 +24,7 @@ import { useFeedback } from '../context/FeedbackContext'
 import { useEscapeKey } from '../lib/hooks'
 import { COURTS } from '../data/siteConfig'
 import DeclineChoiceModal from '../components/DeclineChoiceModal'
+import PricingCard from '../components/PricingCard'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -249,7 +250,7 @@ export default function Schedule() {
               <button onClick={() => setShowFlyerModal(false)} className="px-3 py-1 rounded-full bg-surface hover:bg-slate-300 dark:hover:bg-slate-700 text-xs font-bold text-theme">Close ✕</button>
             </div>
             <div className="overflow-auto p-2 flex justify-center">
-              <img src={`${import.meta.env.BASE_URL}images/pricing.jpg`} alt="MM Padel Academy Official Pricing" className="rounded-2xl max-h-[75vh] object-contain shadow-2xl" />
+              <PricingCard className="max-w-lg" />
             </div>
           </div>
         </div>

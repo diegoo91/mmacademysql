@@ -12,7 +12,7 @@
 
 export const PRICING = {
   private: { 1: 1000, 4: 3600, 8: 7000, 12: 10800, 16: 14000 },
-  group: { 1: 500, 4: 1800, 8: 3500, 16: 7000 },
+  group: { 1: 500, 4: 1800, 8: 3500, 12: 5250, 16: 7000 },
 }
 
 // Staff exception (locked spec): coaches and Magdy (member_code 007) pay a
@@ -147,7 +147,7 @@ export function sessionsForAmount(amount, opts = {}) {
 //
 // A payment over 2 sessions is mapped to the NEAREST single-tier pack —
 // never single-session rates:
-//   * pack = (p, g) with p ∈ {0,4,8,12,16}, g ∈ {0,4,8,16} (each component a
+//   * pack = (p, g) with p ∈ {0,4,8,12,16}, g ∈ {0,4,8,12,16} (each component a
 //     named package tier, mixed pairs allowed — Farida's 16P+8G = 17,500),
 //   * the pack is nearest to the CASH; upward packs may exceed it by at most
 //     15% (the "don't cost them a lot" cap),
@@ -166,7 +166,7 @@ export function sessionsForAmount(amount, opts = {}) {
 // exact value-max mix (singles allowed) — the exemption for small payments.
 // ---------------------------------------------------------------------------
 export const PACK_PRIVATE_TIERS = [0, 4, 8, 12, 16]
-export const PACK_GROUP_TIERS = [0, 4, 8, 16]
+export const PACK_GROUP_TIERS = [0, 4, 8, 12, 16]
 export const PACK_UPWARD_TOLERANCE = 0.15
 
 export function nearestPackPool(amount, debt = 0, opts = {}) {

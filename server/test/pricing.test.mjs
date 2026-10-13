@@ -42,6 +42,7 @@ describe('calculatePrice — tier values', () => {
     assert.equal(calculatePrice('group', 1), 500)
     assert.equal(calculatePrice('group', 4), 1800)
     assert.equal(calculatePrice('group', 8), 3500)
+    assert.equal(calculatePrice('group', 12), 5250)
     assert.equal(calculatePrice('group', 16), 7000)
   })
 
@@ -68,6 +69,7 @@ describe('calculatePrice — greedy splits', () => {
   it('group splits (singles at 500)', () => {
     assert.equal(calculatePrice('group', 3), 3 * 500)
     assert.equal(calculatePrice('group', 9), 3500 + 500) // 8 + 1
+    assert.equal(calculatePrice('group', 13), 5250 + 500) // 12 + 1
     assert.equal(calculatePrice('group', 20), 7000 + 1800) // 16 + 4
     assert.equal(calculatePrice('group', 24), 7000 + 3500) // 16 + 8
   })
@@ -228,7 +230,7 @@ describe('nearestPackPool — Best-Package Rule', () => {
     // 1,500 shortfall — "pay for the nearest package, owe the rest"
     assert.deepEqual(nearestPackPool(16000, 17500), { private: 16, group: 8, value: 17500 })
     assert.deepEqual(nearestPackPool(7000), { private: 8, group: 0, value: 7000 })
-    assert.deepEqual(nearestPackPool(5000), { private: 4, group: 4, value: 5400 })
+    assert.deepEqual(nearestPackPool(5000), { private: 0, group: 12, value: 5250 })
     assert.deepEqual(nearestPackPool(2500), { private: 0, group: 4, value: 1800 })
     assert.deepEqual(nearestPackPool(3500), { private: 0, group: 8, value: 3500 })
     assert.deepEqual(nearestPackPool(3600), { private: 4, group: 0, value: 3600 })
@@ -239,8 +241,8 @@ describe('nearestPackPool — Best-Package Rule', () => {
   it('15% upward cap: packs too far above the cash are rejected', () => {
     // 3,000: the (4,0)=3,600 pack is +20% → rejected → best in-budget (0,4)
     assert.deepEqual(nearestPackPool(3000), { private: 0, group: 4, value: 1800 })
-    // 5,000: (4,4)=5,400 is +8% → allowed (the approved table row)
-    assert.deepEqual(nearestPackPool(5000), { private: 4, group: 4, value: 5400 })
+    // 5,000: (0,12)=5,250 is +5% → allowed and nearest (the approved table row)
+    assert.deepEqual(nearestPackPool(5000), { private: 0, group: 12, value: 5250 })
     // 2,500: (4,0)=3,600 is +44% → rejected → round-down (0,4), +700 prepaid
     const p2500 = nearestPackPool(2500)
     assert.deepEqual(p2500, { private: 0, group: 4, value: 1800 })
@@ -248,9 +250,10 @@ describe('nearestPackPool — Best-Package Rule', () => {
   })
 
   it('debt pulls the target up only within the cap', () => {
-    // partial 15,000 against a 17,500 debt: (16,8)=17,500 exceeds the cap
-    // (2,500 > 2,250) → best in-budget pack (16,4)=15,800
-    assert.deepEqual(nearestPackPool(15000, 17500), { private: 16, group: 4, value: 15800 })
+    // partial 15,000 against a 17,500 debt: base nearest is (12,8)=14,300;
+    // debt pull toward 17,500 still caps the pack at 15,000×1.15 = 17,250, so
+    // (16,8)=17,500 is rejected → best in-budget pack (12,12)=16,050
+    assert.deepEqual(nearestPackPool(15000, 17500), { private: 12, group: 12, value: 16050 })
     // full cash with debt: exact debt pack, shortfall −1,500
     const farida = nearestPackPool(16000, 17500)
     assert.equal(16000 - farida.value, -1500)
@@ -265,8 +268,8 @@ describe('nearestPackPool — Best-Package Rule', () => {
   it('peels (16,16) packs above the catalog', () => {
     // 50,000: 2 × (16,16)=42,000 peeled, remainder 8,000 → (8,4)=8,800 (+10%)
     assert.deepEqual(nearestPackPool(50000), { private: 40, group: 36, value: 50800 })
-    // 100,000: 4 × 21,000 peeled, remainder 16,000 → (16,4)=15,800
-    assert.deepEqual(nearestPackPool(100000), { private: 80, group: 68, value: 99800 })
+    // 100,000: 4 × 21,000 peeled, remainder 16,000 → (12,12)=16,050 (+0.3%)
+    assert.deepEqual(nearestPackPool(100000), { private: 76, group: 76, value: 100050 })
   })
 
   it('never selects single-session tiers (multiples of 4 only)', () => {

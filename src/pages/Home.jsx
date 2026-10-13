@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight,
   Calendar,
   ChevronDown,
   ChevronLeft,
@@ -36,6 +35,7 @@ import { PRICING } from '../data/pricingData'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import Reveal from '../components/Reveal'
+import PricingCard from '../components/PricingCard'
 
 const statIcons = [Trophy, Users, HeartHandshake, Medal]
 
@@ -87,7 +87,7 @@ const HOME_TOPICS = [
   { id: 'contact', label: 'Contact' },
 ]
 
-function PricingTierCard({ type, badge, badgeClass, delay, featured }) {
+function PricingTierCard({ type, badge, badgeClass, delay }) {
   const tier = PRICING[type]
   const counts = Object.keys(tier)
     .filter((k) => k !== 'name')
@@ -98,17 +98,11 @@ function PricingTierCard({ type, badge, badgeClass, delay, featured }) {
   return (
     <Reveal
       delay={delay}
-      className={`p-5 rounded-2xl bg-surface border space-y-3 transition-shadow ${
-        featured ? 'border-gold/60 ring-2 ring-gold/45 shadow-lg shadow-gold/10' : 'border-theme'
-      }`}
+      className="p-5 rounded-2xl bg-surface border border-theme space-y-3"
     >
       <div className="flex justify-between items-center border-b border-theme pb-2">
         <h4 className="font-heading font-extrabold text-theme text-base">{tier.name}</h4>
-        {featured ? (
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-950 bg-gold px-2 py-0.5 rounded">Best Value</span>
-        ) : (
-          <span className={badgeClass}>{badge}</span>
-        )}
+        <span className={badgeClass}>{badge}</span>
       </div>
       <ul className="space-y-2 text-xs">
         {counts.map((count) => {
@@ -252,11 +246,6 @@ export default function Home() {
   }, [lightIdx])
 
   const mapsUrl = CONTACT.mapsUrl
-  const bestRateOfType = (type) => {
-    const t = PRICING[type]
-    return Math.min(...Object.keys(t).filter((k) => k !== 'name').map(Number).map((c) => t[c] / c))
-  }
-  const featuredType = bestRateOfType('private') <= bestRateOfType('group') ? 'private' : 'group'
 
   return (
     <div className="min-h-screen bg-theme text-theme overflow-hidden">
@@ -316,14 +305,6 @@ export default function Home() {
               <Calendar className="w-5 h-5 stroke-[2.5]" />
               <span>Book a session</span>
             </Link>
-
-            <a
-              href="#pricing"
-              className="w-full sm:w-auto px-9 py-4 rounded-full border border-white/40 bg-white/5 backdrop-blur-sm text-white/90 font-extrabold text-base transition-all flex items-center justify-center gap-3 hover:bg-white/15 hover:border-white/70 hover:text-white"
-            >
-              <span>See pricing</span>
-              <ArrowRight className="w-5 h-5" />
-            </a>
           </div>
 
           <div className="pt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -411,18 +392,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             <Reveal className="lg:col-span-5 relative flex justify-center">
-              <div className="relative rounded-3xl overflow-hidden border-2 border-brand-text/50 shadow-2xl max-w-sm group tilt-hover">
-                <img
-                  src={`${import.meta.env.BASE_URL}images/pricing.jpg`}
-                  alt="Official MM Padel Academy Pricing Flyer"
-                  className="w-full h-auto object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                  <span className="text-xs font-bold text-brand-text bg-slate-950/90 px-3 py-1.5 rounded-full border border-brand-text/40">
-                    Official Package Rates
-                  </span>
-                </div>
-              </div>
+              <PricingCard className="max-w-sm" stack />
             </Reveal>
 
             <div className="lg:col-span-7 space-y-6">
@@ -451,14 +421,12 @@ export default function Home() {
                 <PricingTierCard
                   type="private"
                   delay={80}
-                  featured={featuredType === 'private'}
                   badge="1-on-1"
                   badgeClass="text-[10px] font-bold px-2 py-0.5 rounded bg-brand/20 text-brand-text"
                 />
                 <PricingTierCard
                   type="group"
                   delay={180}
-                  featured={featuredType === 'group'}
                   badge="Group"
                   badgeClass="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-600 dark:text-purple-300"
                 />
