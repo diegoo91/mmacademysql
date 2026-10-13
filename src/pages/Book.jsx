@@ -38,7 +38,7 @@ const tierTag = (type) => {
 
 const SESSION_TYPES = [
   { value: 'private', label: 'Private Coaching', sub: '1-on-1 Personalised Coaching', tag: tierTag('private') },
-  { value: 'group', label: 'Group (2 Persons)', sub: '2-Person Group Session', tag: tierTag('group') },
+  { value: 'group', label: 'Group (Up to 4 Players)', sub: 'Group Session · Up to 4 Players', tag: tierTag('group') },
 ]
 
 const DAY_OPTIONS = [
@@ -267,7 +267,7 @@ export default function Book() {
               {sessionType === 'group' && (
                 <div className="pt-2 space-y-1.5">
                   <label className="block text-xs font-semibold text-theme uppercase tracking-wider">
-                    Partner name <span className="text-muted normal-case font-medium">(2-person group)</span>
+                    Partner name <span className="text-muted normal-case font-medium">(group session)</span>
                   </label>
                   {user ? (
                     <PlayerSearchInput

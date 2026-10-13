@@ -5,7 +5,7 @@
  *
  * For each player: owedP/owedG = per-type deficit (used − paid) after cross-type
  * coverage (1P = 2G), priced via PRICING.calculatePrice (greedy bundles) —
- * GUARD: Farida must compute exactly 14000 + 1500 = 15,500.
+ * GUARD: Farida must compute exactly 14200 + 1500 = 15,700.
  *
  * Per player with owed > 0:
  *   1. INSERT payments row: status='payment_approved', method='Cash',
@@ -34,7 +34,7 @@ function parseEnv(file) {
 
 // Exact copy of src/data/pricingData.js PRICING + calculatePrice (greedy)
 const PRICING = {
-  private: { 1: 1000, 4: 3600, 8: 7000, 12: 10800, 16: 14000 },
+  private: { 1: 1000, 4: 3600, 8: 7200, 10: 10800, 16: 14200 },
   group: { 1: 500, 4: 1800, 8: 3500, 12: 5250, 16: 7000 },
 }
 function calculatePrice(type, sessionCount) {
@@ -122,10 +122,10 @@ function expect(label, rowCount, want) {
     for (const p of plan) console.log(`| ${p.name} | ${p.id} | ${p.paidP}/${p.paidG} | ${p.usedP}/${p.usedG} | ${p.owedP}/${p.owedG} | ${p.amount.toLocaleString('en-US')} | ${p.slots.map(s => s.id).join(',') || '—'} |`)
 
     const farida = plan.find(p => p.id === 12)
-    if (!farida || farida.amount !== 15500 || farida.owedP !== 16 || farida.owedG !== 3) {
-      throw new Error(`GUARD FAILED: Farida expected owed 16P+3G = 15,500 — got ${farida ? `${farida.owedP}P/${farida.owedG}G = ${farida.amount}` : 'NOT IN PLAN'}`)
+    if (!farida || farida.amount !== 15700 || farida.owedP !== 16 || farida.owedG !== 3) {
+      throw new Error(`GUARD FAILED: Farida expected owed 16P+3G = 15,700 — got ${farida ? `${farida.owedP}P/${farida.owedG}G = ${farida.amount}` : 'NOT IN PLAN'}`)
     }
-    console.log('\n  GUARD OK: Farida = 16P + 3G = 14,000 + 1,500 = 15,500 ✓')
+    console.log('\n  GUARD OK: Farida = 16P + 3G = 14,200 + 1,500 = 15,700 ✓')
 
     const total = plan.reduce((s, p) => s + p.amount, 0)
     console.log(`  ${plan.length} invoices, total ${total.toLocaleString('en-US')} EGP`)

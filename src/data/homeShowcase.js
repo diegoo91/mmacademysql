@@ -1,7 +1,18 @@
 // Showcase content for the Home page (imagery + marketing copy).
-// Pricing truth lives in pricingData.js — the numbers below mirror it.
+// Pricing truth lives in pricingData.js — package strings below derive from it.
+
+import { PRICING } from './pricingData'
 
 const BASE = import.meta.env.BASE_URL
+
+// "1 Session (1,000 EGP) • 4 Sessions (3,600 EGP) • ..." from the live table.
+const packagesText = (type) =>
+  Object.keys(PRICING[type])
+    .filter((k) => k !== 'name')
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((c) => `${c} Session${c > 1 ? 's' : ''} (${PRICING[type][c].toLocaleString('en-US')} EGP)`)
+    .join(' • ')
 
 // Hero background video (Option 2 preview) — captured at the academy.
 export const HERO_VIDEO = `${BASE}videos/mm-padel-hero.mp4`
@@ -85,7 +96,7 @@ export const FAQS = [
   },
   {
     q: 'How much does a session cost?',
-    a: 'Private coaching starts at 1,000 EGP per player and group (2 persons) at 500 EGP per player, with multi-session package discounts.',
+    a: 'Private coaching starts at 1,000 EGP per player and group (up to 4 players) at 500 EGP per player, with multi-session package discounts.',
   },
   {
     q: 'How do I book a session?',
@@ -101,7 +112,7 @@ export const FAQS = [
   },
   {
     q: 'What is the difference between private and group coaching?',
-    a: 'Private sessions are focused 1-on-1 work; group sessions train two players together at a matched level for shared drills and match play.',
+    a: 'Private sessions are focused 1-on-1 work; group sessions train up to four players together at a matched level for shared drills and match play.',
   },
   {
     q: 'How do I track my remaining sessions?',
@@ -119,7 +130,7 @@ export const PROGRAMS = [
     image: `${import.meta.env.BASE_URL}images/court.png`,
     description:
       'Dedicated 1-on-1 coaching with personalised drills and technique work.',
-    packages: '1 Session (1,000 EGP) • 4 Sessions (3,600 EGP) • 8 Sessions (7,000 EGP) • 12 Sessions (10,800 EGP) • 16 Sessions (14,000 EGP)',
+    packages: packagesText('private'),
     features: [
       'Dedicated personal coach',
       'Technique, footwork & glass play',
@@ -129,15 +140,15 @@ export const PROGRAMS = [
   },
   {
     id: 'group',
-    title: 'Group (2 Persons)',
+    title: 'Group (Up to 4 Players)',
     priceText: '500 EGP / session',
     level: 'All Levels',
     duration: '1 Hour',
     image: `${import.meta.env.BASE_URL}images/clinic.png`,
-    description: 'High-energy 2-person group training matched by skill level.',
-    packages: '1 Session (500 EGP) • 4 Sessions (1,800 EGP) • 8 Sessions (3,500 EGP) • 16 Sessions (7,000 EGP)',
+    description: 'High-energy group training for up to 4 players, matched by skill level.',
+    packages: packagesText('group'),
     features: [
-      '2-person group sessions',
+      'Group sessions up to 4 players',
       'Match scenario drills',
       'Per player rate • 1 Hour duration',
       'Sun–Thu, 3:00 PM – 11:00 PM',

@@ -17,8 +17,8 @@ import { simulateFifo } from './convertBalance.js'
  *
  * Package-first (not "price the debt first") is deliberate: debt-first
  * fragmented bulk deals against fragments (7 private owed = 4-pack + 3 singles
- * = 6,600), shrinking an exact-7,000 package payment down to a 7-pool and
- * stranding 400 EGP with nowhere to go. Yasin Fathallah hit exactly this.
+ * = 6,600), shrinking an exact 7,200 package payment down to a 7-pool and
+ * stranding 600 EGP with nowhere to go. Yasin Fathallah hit exactly this.
  * The cost of package-first is that a small debt + big payment can credit
  * discount-priced sessions — accepted, documented in docs/task_complete.md.
  *

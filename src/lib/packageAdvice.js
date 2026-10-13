@@ -5,7 +5,7 @@ import { PRICING, calculatePrice } from '../data/pricingData.js'
  * player detail. Mirrors server/_recommend-unpaid.mjs:
  *
  *   p_equiv  = P + G/2          (settlement rule 1P = 2G)
- *   nearest  = argmin |p_equiv - t| over tiers [1,4,8,12,16], tie -> larger
+ *   nearest  = argmin |p_equiv - t| over tiers [1,4,8,10,16], tie -> larger
  *   clearAll = smallest tier pack that covers every unpaid session and pays
  *              at an EXACT pack price (receipt "clear everything" option;
  *              roundUp/secondStep below are legacy private-only fields kept
@@ -15,14 +15,14 @@ import { PRICING, calculatePrice } from '../data/pricingData.js'
  * only labels it (server remains source of truth for paid status).
  */
 
-export const PRIVATE_TIERS = [1, 4, 8, 12, 16]
+export const PRIVATE_TIERS = [1, 4, 8, 10, 16]
 
 // ---------------------------------------------------------------------------
 // Clear-all pack — mirrors the server's Best-Package Rule (pricing.js
 // nearestPackPool + paymentAllocation) so the advice says "pay EGP X and
 // every unpaid session is covered", where X resolves to an EXACT pool on the
 // server (cash_gap = 0):
-//   * tier packs: p ∈ {0,4,8,12,16}, g ∈ {0,4,8,12,16} — peel (16,16) = 21,000
+//   * tier packs: p ∈ {0,4,8,10,16}, g ∈ {0,4,8,12,16} — peel (16,16) = 21,200
 //     packs above the catalog, same as server pickFor,
 //   * the allocator's ≤2-session singles exemption: 1G=500, 1P=1000,
 //     1P+1G=1500, 2P=2000 (exact value-max mixes),
@@ -30,9 +30,9 @@ export const PRIVATE_TIERS = [1, 4, 8, 12, 16]
 //     conversion) must be ≥ debt units, so the FIFO walk clears every slot,
 //   * smallest price wins, tie → more private.
 // ---------------------------------------------------------------------------
-const TIER_PRIVATE = [0, 4, 8, 12, 16]
+const TIER_PRIVATE = [0, 4, 8, 10, 16]
 const TIER_GROUP = [0, 4, 8, 12, 16]
-const MAX_PACK_VALUE = PRICING.private[16] + PRICING.group[16] // (16,16) = 21,000
+const MAX_PACK_VALUE = PRICING.private[16] + PRICING.group[16] // (16,16) = 21,200
 const SINGLES_MIXES = [
   { private: 0, group: 1, price: PRICING.group[1] },
   { private: 1, group: 0, price: PRICING.private[1] },

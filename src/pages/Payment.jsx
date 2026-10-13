@@ -36,7 +36,7 @@ export default function Payment() {
   const [bookingReference, setBookingReference] = useState('')
   const [error, setError] = useState('')
 
-  const sessionLabel = sessionType === 'private' ? 'Private Coaching' : sessionType === 'group' ? 'Group (2 Persons)' : ''
+  const sessionLabel = sessionType === 'private' ? 'Private Coaching' : sessionType === 'group' ? 'Group (Up to 4 Players)' : ''
 
   const handleCopyLink = async () => {
     try { await navigator.clipboard.writeText(CONTACT.instapayUrl) } catch {}

@@ -34,17 +34,17 @@ const check = (label, actual, expected) => {
 const info = (label, value) => console.log(`INFO  ${label}: ${JSON.stringify(value)}`)
 
 console.log('--- 1) pure pricing + pack rule ---')
-check('calculatePrice private 9', calculatePrice('private', 9), 8000)
-check('calculatePrice private 16', calculatePrice('private', 16), 14000)
-check('packagePrice 16P + 3G', packagePrice(16, 3), 15500)
-check('bestCoverage 7000 vs 9 unpaid private', bestCoverage(7000, 9, 0), { private: 8, group: 0, value: 7000 })
-check('remaining after 7000 on 9P', packagePrice(9 - 8, 0), 1000)
-const faridaPack = nearestPackPool(16000, 17500)
-check('nearestPackPool 16,000 vs debt 17,500 → (16,8) 17,500', [faridaPack.private, faridaPack.group, faridaPack.value], [16, 8, 17500])
+check('calculatePrice private 9', calculatePrice('private', 9), 8200)
+check('calculatePrice private 16', calculatePrice('private', 16), 14200)
+check('packagePrice 16P + 3G', packagePrice(16, 3), 15700)
+check('bestCoverage 7200 vs 9 unpaid private', bestCoverage(7200, 9, 0), { private: 8, group: 0, value: 7200 })
+check('remaining after 7200 on 9P', packagePrice(9 - 8, 0), 1000)
+const faridaPack = nearestPackPool(15500, 17700)
+check('nearestPackPool 15,500 vs debt 17,700 → (16,8) 17,700', [faridaPack.private, faridaPack.group, faridaPack.value], [16, 8, 17700])
 const exactPack = nearestPackPool(7000, 7100)
-check('nearestPackPool exact 7,000 debt 7,100 → (8,0) 7,000', [exactPack.private, exactPack.group, exactPack.value], [8, 0, 7000])
+check('nearestPackPool exact 7,000 debt 7,100 → (0,16) 7,000', [exactPack.private, exactPack.group, exactPack.value], [0, 16, 7000])
 const dusty = nearestPackPool(5000, 0)
-check('nearestPackPool 5,000 (no debt) → (4,4) 5,400 round-up', [dusty.private, dusty.group, dusty.value], [4, 4, 5400])
+check('nearestPackPool 5,000 (no debt) → (0,12) 5,250', [dusty.private, dusty.group, dusty.value], [0, 12, 5250])
 
 console.log('\n--- 2) Farida unpaid report (adaptive) ---')
 const users = await db.findAll('users')
@@ -73,15 +73,15 @@ if (!farida) {
   check('nothing still unpaid', [full.remaining_unpaid.private, full.remaining_unpaid.group, full.remaining_unpaid.amount], [0, 0, 0])
   check('cash ledger consistent', ledgerOk(full, rep.amountOwed), true)
 
-  const partial = await computePaymentAllocation(farida, { amount: 7000 })
-  info('pay 7,000', partial)
+  const partial = await computePaymentAllocation(farida, { amount: 7200 })
+  info('pay 7,200', partial)
   if (rep.unpaidPrivate >= 8) {
     check('exact pack derives (8,0)', [partial.private_sessions, partial.group_sessions, partial.cash_gap], [8, 0, 0])
     check('covers 8 private', [partial.covered_private, partial.covered_group], [8, 0])
     check('row totals = covered + credit', [partial.private_sessions, partial.group_sessions],
       [partial.covered_private + partial.credit_private, partial.covered_group + partial.credit_group])
   }
-  check('cash ledger consistent', ledgerOk(partial, 7000), true)
+  check('cash ledger consistent', ledgerOk(partial, 7200), true)
 
   const over = await computePaymentAllocation(farida, { amount: 20000 })
   info('pay 20,000', over)
@@ -122,8 +122,8 @@ for (const p of unpaid) {
 check('no allocation violates its own rules', worst, null)
 
 // Nuance report: because owed is priced per COUNT of remaining sessions,
-// splitting a bundle can reprice (e.g. 16P = 14,000 but 15P = 13,800, so
-// covering 1P for 1,000 leaves 15,300 owed instead of 14,500). Quantify it.
+// splitting a bundle can reprice (e.g. 16P = 14,200 but a 15P remainder costs
+// 15,400, so a 16→15+1 split reprices the debt). Quantify it.
 // Baseline is the SESSION package price only (cash shortfall excluded).
 let gapCases = 0, maxGap = 0, gapExample = null
 for (const p of unpaid) {
