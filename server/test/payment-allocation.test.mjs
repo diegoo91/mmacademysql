@@ -53,17 +53,19 @@ test('F2 conversion: 4 group slots used from an 8P payment — 2P consumed, 6P r
   assert.deepEqual(settle.debt_after, { private: 0, group: 0 })
 })
 
-test('F3 money path unchanged: 9P unpaid, EGP 7,000 → the 16-group pack, covers 8P via conversion, 1P stays', () => {
-  // 7,000 is exactly the group 16-pack (the private 8-pack is now 7,200) —
-  // the pool converts: 2G per private slot, 8 of 9 private covered
+test('F3 money path unchanged: 9P unpaid, EGP 7,000 → the private 8-pack, covers 8P, 1P stays', () => {
+  // 7,000 derives the nearest pack (8,0)=7,200 (+200 within the 15% cap);
+  // the pool covers 8 of 9 private slots, the 9th stays unpaid
   const unpaid = newestFirst(chrono(Array(9).fill('private')))
   const a = allocateFromSessions(unpaid, { amount: 7000, amountOwed: packagePrice(9, 0) })
 
   assert.equal(a.derived, true)
-  assert.equal(a.private_sessions, 0)
-  assert.equal(a.group_sessions, 16)
+  assert.equal(a.private_sessions, 8)
+  assert.equal(a.group_sessions, 0)
+  assert.equal(a.pool_value, 7200)
   assert.equal(a.covered_private, 8)
   assert.equal(a.credit_private, 0)
+  assert.equal(a.cash_gap, -200, '7,200 pack for 7,000 paid → 200 shortfall')
   assert.deepEqual(a.remaining_unpaid, { private: 1, group: 0, amount: packagePrice(1, 0) })
   assert.equal(a.warning, null)
 })
@@ -117,38 +119,41 @@ test('F5 reversal is exact: delete of the F1 payment restores the pre-payment bu
   assert.equal(plan.newCycG, 0)
 })
 
-test('F6 package-first (Yasin PAY-0035 reported case): 7P+1G unpaid, EGP 7,000 → 16G pool, all settled, 1G credited', () => {
-  // chronological exactly like his slots: P(8/31), G(9/1... actually 9/2), then 6P
-  // 7,000 = the group 16-pack exactly (the private 8-pack is 7,200 now); the
-  // pool covers every slot via 1P=2G conversion, leaving 1G credit
+test('F6 package-first (Yasin PAY-0035 reported case): 7P+1G unpaid, EGP 7,000 → 8P pack, all settled, 1G credited', () => {
+  // chronological exactly like his slots: P(8/31), G(9/2), then 6P.
+  // 7,000 derives the private 8-pack (7,200, +200 shortfall); the pool
+  // covers every slot, leaving 1G credit
   const unpaid = newestFirst(chrono(['private', 'group', ...Array(6).fill('private')]))
   const a = allocateFromSessions(unpaid, { amount: 7000, amountOwed: packagePrice(7, 1) })
 
   assert.equal(a.derived, true)
-  assert.equal(a.private_sessions, 0)
-  assert.equal(a.group_sessions, 16, 'the group 16-pack is the exact 7,000 fit')
+  assert.equal(a.private_sessions, 8)
+  assert.equal(a.group_sessions, 0)
+  assert.equal(a.pool_value, 7200)
   assert.deepEqual([a.covered_private, a.covered_group], [7, 1], 'everything owed gets settled')
   assert.deepEqual([a.credit_private, a.credit_group], [0, 1], '1 group session left over')
   assert.deepEqual(a.remaining_unpaid, { private: 0, group: 0, amount: 0 })
   assert.equal(a.warning, null)
-  assert.equal(a.cash_gap, 0, 'exact pack → no cash gap')
+  assert.equal(a.cash_gap, -200, '7,200 pack for 7,000 paid → 200 shortfall')
 })
 
 // --- Best-Package Rule (locked spec) -------------------------------------
 
-test('F7 Best-Package Farida: 18P+3G unpaid (17,700), EGP 15,500 → 16P+8G pack, all settled, −2,200 shortfall', () => {
+test('F7 Best-Package Farida: 18P+3G unpaid (17,900), EGP 15,500 → 16P+4G pack, 18P settled, −700 shortfall', () => {
   const unpaid = newestFirst(chrono([...Array(18).fill('private'), ...Array(3).fill('group')]))
   const a = allocateFromSessions(unpaid, { amount: 15500, amountOwed: packagePrice(18, 3) })
 
   assert.equal(a.derived, true)
-  assert.equal(a.private_sessions, 16, 'debt pull → the 17,700 pack')
-  assert.equal(a.group_sessions, 8)
-  assert.equal(a.pool_value, 17700)
-  assert.deepEqual([a.covered_private, a.covered_group], [18, 3], 'all 21 slots settled')
-  assert.deepEqual([a.credit_private, a.credit_group], [0, 1], '16P+8G covers everything, 1G left')
-  assert.deepEqual(a.remaining_unpaid, { private: 0, group: 0, amount: 0 })
-  assert.equal(a.cash_gap, -2200, 'she paid 15,500 for a 17,700 pack → owes 2,200')
-  assert.equal(a.cash_balance_after, -2200)
+  assert.equal(a.private_sessions, 16, 'debt pull → the 16,200 pack')
+  assert.equal(a.group_sessions, 4)
+  assert.equal(a.pool_value, 16200)
+  // chrono walk: the 16P + converted 4G cover all 18 private slots first,
+  // the 3 group slots stay unpaid (worth 1,500)
+  assert.deepEqual([a.covered_private, a.covered_group], [18, 0])
+  assert.deepEqual([a.credit_private, a.credit_group], [0, 0])
+  assert.deepEqual(a.remaining_unpaid, { private: 0, group: 3, amount: packagePrice(0, 3) })
+  assert.equal(a.cash_gap, -700, 'she paid 15,500 for a 16,200 pack → owes 700')
+  assert.equal(a.cash_balance_after, -700)
 })
 
 test('F8 ≤2-session exemption: small payments keep exact singles', () => {
@@ -162,11 +167,12 @@ test('F8 ≤2-session exemption: small payments keep exact singles', () => {
 })
 
 test('F9 cash ledger: shortfall clears first, prepaid carries forward, zero payment spends nothing', () => {
-  // owes 1,500 cash, pays 5,000 → net 3,500 buys the (0,8) pack, cash lands on 0
+  // owes 1,500 cash, pays 5,000 → net 3,500 → the (4,0)=3,600 pack (+100
+  // within the 15% cap); 1,400 clears the shortfall, 100 remains owed
   const clear = allocateFromSessions([], { amount: 5000, amountOwed: 0, cashBalance: -1500 })
-  assert.deepEqual([clear.private_sessions, clear.group_sessions], [0, 8])
-  assert.equal(clear.cash_gap, 1500)
-  assert.equal(clear.cash_balance_after, 0)
+  assert.deepEqual([clear.private_sessions, clear.group_sessions], [4, 0])
+  assert.equal(clear.cash_gap, 1400)
+  assert.equal(clear.cash_balance_after, -100)
 
   // prepaid +700, pays 1,800 → pack (0,4)=1,800 within cash, prepaid still there
   const prepaid = allocateFromSessions([], { amount: 1800, amountOwed: 0, cashBalance: 700 })

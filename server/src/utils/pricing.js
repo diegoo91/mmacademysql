@@ -11,8 +11,8 @@
  */
 
 export const PRICING = {
-  private: { 1: 1000, 4: 3600, 8: 7200, 10: 10800, 16: 14200 },
-  group: { 1: 500, 4: 1800, 8: 3500, 12: 5250, 16: 7000 },
+  private: { 1: 1000, 4: 3600, 8: 7200, 12: 10800, 16: 14400 },
+  group: { 1: 500, 4: 1800, 8: 3600, 12: 5400, 16: 7200 },
 }
 
 // Staff exception (locked spec): coaches and Magdy (member_code 007) pay a
@@ -79,7 +79,7 @@ function priceTable(type, max, staff = false) {
  *
  * Examples (9 unpaid private, amount 7,200) → (8, 0): the 8-pack is 7,200,
  * so 8 sessions are covered and 1 stays unpaid.
- * Examples (16 unpaid private + 3 unpaid group, amount 15,200) → (16, 2).
+ * Examples (16 unpaid private + 3 unpaid group, amount 15,400) → (16, 2).
  */
 export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0, opts = {}) {
   const cap = Math.max(0, Math.floor(Number(amount) || 0))
@@ -92,9 +92,10 @@ export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0, opts = {}) {
   const pTable = priceTable('private', maxP, opts.staff)
   const gTable = priceTable('group', maxG, opts.staff)
 
-  // NOTE: greedy package prices are NOT monotonic in count (15P = 15,400 costs
-  // more than the 16-pack at 14,200), so neither loop may `break` early on a
-  // too-expensive row — every count must be considered.
+  // NOTE: greedy package prices are NOT guaranteed monotonic in count (an
+  // earlier list had 15P costing more than the 16-pack), so neither loop may
+  // `break` early on a too-expensive row — every count must be considered.
+  // The current tables happen to be monotonic; `continue` stays as a guard.
   let best = { private: 0, group: 0, value: -1 }
   for (let p = 0; p <= maxP; p++) {
     const pv = pTable[p]
@@ -116,10 +117,10 @@ export function bestCoverage(amount, maxPrivate = 0, maxGroup = 0, opts = {}) {
 }
 
 /**
- * Cheapest per-session rate in a tier table (e.g. private 16-pack = 887.5/session).
+ * Cheapest per-session rate in a tier table (e.g. private 16-pack = 900/session).
  * sessionsForAmount needs this — capping at the SINGLE rate assumes no session
  * ever costs less than one, which is false with bulk discounts and made the
- * 16-pack answers unreachable (14,200 → fragmented mix instead of 16P).
+ * 16-pack answers unreachable (14,400 → fragmented mix instead of 16P).
  */
 function cheapestRate(type, staff = false) {
   const tier = tierFor(type, staff)
@@ -135,7 +136,7 @@ function cheapestRate(type, staff = false) {
 /**
  * Free credit for money that buys NEW sessions — same search but unbounded
  * (capped at what the cheapest per-session rate could ever buy, so bulk
- * packages are reachable: 14,200 → 16P, 16,000 → 14P+3G).
+ * packages are reachable: 14,400 → 16P, 10,800 → 12P).
  */
 export function sessionsForAmount(amount, opts = {}) {
   const cap = Math.max(0, Math.floor(Number(amount) || 0))
@@ -150,25 +151,25 @@ export function sessionsForAmount(amount, opts = {}) {
 //
 // A payment over 2 sessions is mapped to the NEAREST single-tier pack —
 // never single-session rates:
-//   * pack = (p, g) with p ∈ {0,4,8,10,16}, g ∈ {0,4,8,12,16} (each component a
-//     named package tier, mixed pairs allowed — Farida's 16P+8G = 17,700),
+//   * pack = (p, g) with p ∈ {0,4,8,12,16}, g ∈ {0,4,8,12,16} (each component a
+//     named package tier, mixed pairs allowed — Farida's 16P+8G = 18,000),
 //   * the pack is nearest to the CASH; upward packs may exceed it by at most
 //     15% (the "don't cost them a lot" cap),
 //   * DEBT PULL: when the cash-nearest pack is dusty (not an exact fit) AND
 //     the session debt exceeds that pack, re-target to the debt — a player
-//     clearing debt buys the pack that covers it (Farida's 16,000 against a
-//     17,700 debt → the 17,700 pack, −1,700 owed). An exact cash pack is
-//     never overridden (7,000 → the 16-group pack stays, partial debt stays
+//     clearing debt buys the pack that covers it (Farida's 15,500 against a
+//     17,900 debt → pulled toward it within the 15% cap). An exact cash pack
+//     is never overridden (7,200 → the 8-pack stays, partial debt stays
 //     session debt),
 //   * ties → smaller pack (less owed), then more private,
-//   * values above the (16,16) = 21,200 catalog peel (16,16) packs first.
+//   * values above the (16,16) = 21,600 catalog peel (16,16) packs first.
 //
 // The difference cash − pack_value is the signed CASH GAP the caller records
 // on the ledger: negative = shortfall the player pays next month, positive =
 // prepaid cash carried forward. For pools ≤ 2 sessions the caller keeps the
 // exact value-max mix (singles allowed) — the exemption for small payments.
 // ---------------------------------------------------------------------------
-export const PACK_PRIVATE_TIERS = [0, 4, 8, 10, 16]
+export const PACK_PRIVATE_TIERS = [0, 4, 8, 12, 16]
 export const PACK_GROUP_TIERS = [0, 4, 8, 12, 16]
 export const PACK_UPWARD_TOLERANCE = 0.15
 
@@ -219,7 +220,7 @@ export function nearestPackPool(amount, debt = 0, opts = {}) {
   const base = pickFor(a)
   const baseDist = Math.abs(base.value - a)
   // Debt pull: only when the cash-nearest pack is dusty AND the debt exceeds
-  // it — an exact cash pack (7,000 → 16-group pack) is never overridden.
+  // it — an exact cash pack (7,200 → 8-pack) is never overridden.
   if (baseDist > 1e-6 && d > base.value + 1e-6) {
     const pulled = pickFor(Math.max(a, d))
     if (pulled.value >= base.value) return pulled

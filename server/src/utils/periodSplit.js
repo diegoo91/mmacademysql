@@ -11,7 +11,7 @@ import db from '../db.js'
  *     pre-period (arrears) / in-period / future-scheduled sessions and
  *     unclaimed credit (1P = 2G weight, so the parts sum to the amount),
  *   - packages sold: in-window payments whose (P, G) counts form a named
- *     tier pack (4/8/10/16 P, 4/8/12/16 G, mixed pairs like 16P+8G),
+ *     tier pack (4/8/12/16 P, 4/8/12/16 G, mixed pairs like 16P+8G),
  *   - private sessions without package: in-window private sessions that are
  *     paid but NOT covered by a named pack (singles, odd mixes, direct
  *     booking-flagged slots).
@@ -25,7 +25,7 @@ import db from '../db.js'
  */
 
 export const WEIGHT_PRIVATE = 2 // locked conversion 1P = 2G
-const PACK_PRIVATE_TIERS = [4, 8, 10, 16]
+const PACK_PRIVATE_TIERS = [4, 8, 12, 16]
 const PACK_GROUP_TIERS = [4, 8, 12, 16]
 
 /** Named-tier pack per the locked price list (mixed pairs allowed). */

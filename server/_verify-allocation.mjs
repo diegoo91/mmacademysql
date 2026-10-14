@@ -35,16 +35,16 @@ const info = (label, value) => console.log(`INFO  ${label}: ${JSON.stringify(val
 
 console.log('--- 1) pure pricing + pack rule ---')
 check('calculatePrice private 9', calculatePrice('private', 9), 8200)
-check('calculatePrice private 16', calculatePrice('private', 16), 14200)
-check('packagePrice 16P + 3G', packagePrice(16, 3), 15700)
+check('calculatePrice private 16', calculatePrice('private', 16), 14400)
+check('packagePrice 16P + 3G', packagePrice(16, 3), 15900)
 check('bestCoverage 7200 vs 9 unpaid private', bestCoverage(7200, 9, 0), { private: 8, group: 0, value: 7200 })
 check('remaining after 7200 on 9P', packagePrice(9 - 8, 0), 1000)
-const faridaPack = nearestPackPool(15500, 17700)
-check('nearestPackPool 15,500 vs debt 17,700 → (16,8) 17,700', [faridaPack.private, faridaPack.group, faridaPack.value], [16, 8, 17700])
+const faridaPack = nearestPackPool(15500, 17900)
+check('nearestPackPool 15,500 vs debt 17,900 → (16,4) 16,200', [faridaPack.private, faridaPack.group, faridaPack.value], [16, 4, 16200])
 const exactPack = nearestPackPool(7000, 7100)
-check('nearestPackPool exact 7,000 debt 7,100 → (0,16) 7,000', [exactPack.private, exactPack.group, exactPack.value], [0, 16, 7000])
+check('nearestPackPool 7,000 debt 7,100 → (8,0) 7,200 within cap', [exactPack.private, exactPack.group, exactPack.value], [8, 0, 7200])
 const dusty = nearestPackPool(5000, 0)
-check('nearestPackPool 5,000 (no debt) → (0,12) 5,250', [dusty.private, dusty.group, dusty.value], [0, 12, 5250])
+check('nearestPackPool 5,000 (no debt) → (4,4) 5,400', [dusty.private, dusty.group, dusty.value], [4, 4, 5400])
 
 console.log('\n--- 2) Farida unpaid report (adaptive) ---')
 const users = await db.findAll('users')
@@ -122,8 +122,8 @@ for (const p of unpaid) {
 check('no allocation violates its own rules', worst, null)
 
 // Nuance report: because owed is priced per COUNT of remaining sessions,
-// splitting a bundle can reprice (e.g. 16P = 14,200 but a 15P remainder costs
-// 15,400, so a 16→15+1 split reprices the debt). Quantify it.
+// splitting a bundle can reprice (e.g. 16P = 14,400 but 15P + 1P costs
+// 13,800 + 1,000 = 14,800, so a 16→15+1 split reprices the debt). Quantify it.
 // Baseline is the SESSION package price only (cash shortfall excluded).
 let gapCases = 0, maxGap = 0, gapExample = null
 for (const p of unpaid) {

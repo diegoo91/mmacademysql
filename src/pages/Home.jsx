@@ -94,6 +94,8 @@ function PricingTierCard({ type, badge, badgeClass, delay }) {
     .map(Number)
     .sort((a, b) => a - b)
   const bestRate = Math.min(...counts.map((c) => tier[c] / c))
+  // bulk rates are uniform across tiers — highlight only the largest count
+  const bestCount = Math.max(...counts.filter((c) => Math.abs(tier[c] / c - bestRate) < 0.01))
 
   return (
     <Reveal
@@ -106,8 +108,7 @@ function PricingTierCard({ type, badge, badgeClass, delay }) {
       </div>
       <ul className="space-y-2 text-xs">
         {counts.map((count) => {
-          const rate = tier[count] / count
-          const best = Math.abs(rate - bestRate) < 0.01
+          const best = count === bestCount
           return (
             <li
               key={count}
@@ -128,11 +129,6 @@ function PricingTierCard({ type, badge, badgeClass, delay }) {
                   <strong className={`block ${count === 1 ? 'text-theme' : 'text-brand-text font-extrabold'}`}>
                     {tier[count].toLocaleString()} EGP
                   </strong>
-                  {count > 1 && (
-                    <span className="block text-[10px] text-muted font-semibold">
-                      ≈ {Math.round(rate).toLocaleString('en-US')} EGP / session
-                    </span>
-                  )}
                 </span>
               </span>
             </li>

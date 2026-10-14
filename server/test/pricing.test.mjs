@@ -34,16 +34,16 @@ describe('calculatePrice — tier values', () => {
     assert.equal(calculatePrice('private', 1), 1000)
     assert.equal(calculatePrice('private', 4), 3600)
     assert.equal(calculatePrice('private', 8), 7200)
-    assert.equal(calculatePrice('private', 10), 10800)
-    assert.equal(calculatePrice('private', 16), 14200)
+    assert.equal(calculatePrice('private', 12), 10800)
+    assert.equal(calculatePrice('private', 16), 14400)
   })
 
   it('group tiers', () => {
     assert.equal(calculatePrice('group', 1), 500)
     assert.equal(calculatePrice('group', 4), 1800)
-    assert.equal(calculatePrice('group', 8), 3500)
-    assert.equal(calculatePrice('group', 12), 5250)
-    assert.equal(calculatePrice('group', 16), 7000)
+    assert.equal(calculatePrice('group', 8), 3600)
+    assert.equal(calculatePrice('group', 12), 5400)
+    assert.equal(calculatePrice('group', 16), 7200)
   })
 
   it('unknown type costs 0', () => {
@@ -61,27 +61,25 @@ describe('calculatePrice — greedy splits', () => {
   it('private splits (largest bundle first, singles at 1,000)', () => {
     assert.equal(calculatePrice('private', 5), 4600) // 4 + 1
     assert.equal(calculatePrice('private', 9), 8200) // 8 + 1
-    assert.equal(calculatePrice('private', 12), 12800) // 10 + 2 singles
-    assert.equal(calculatePrice('private', 15), 15400) // 10 + 4 + 1
-    assert.equal(calculatePrice('private', 17), 15200) // 16 + 1
-    assert.equal(calculatePrice('private', 20), 17800) // 16 + 4
+    assert.equal(calculatePrice('private', 10), 9200) // 8 + 2 singles
+    assert.equal(calculatePrice('private', 15), 13800) // 12 + 3 singles
+    assert.equal(calculatePrice('private', 17), 15400) // 16 + 1
+    assert.equal(calculatePrice('private', 20), 18000) // 16 + 4
   })
 
   it('group splits (singles at 500)', () => {
     assert.equal(calculatePrice('group', 3), 3 * 500)
-    assert.equal(calculatePrice('group', 9), 3500 + 500) // 8 + 1
-    assert.equal(calculatePrice('group', 13), 5250 + 500) // 12 + 1
-    assert.equal(calculatePrice('group', 20), 7000 + 1800) // 16 + 4
-    assert.equal(calculatePrice('group', 24), 7000 + 3500) // 16 + 8
+    assert.equal(calculatePrice('group', 9), 3600 + 500) // 8 + 1
+    assert.equal(calculatePrice('group', 13), 5400 + 500) // 12 + 1
+    assert.equal(calculatePrice('group', 20), 7200 + 1800) // 16 + 4
+    assert.equal(calculatePrice('group', 24), 7200 + 3600) // 16 + 8
   })
 
-  it('the regression cases: 9 private = 8,200 and 16P + 3G = 15,700', () => {
+  it('the regression cases: 9 private = 8,200 and 16P + 3G = 15,900', () => {
     assert.equal(calculatePrice('private', 9), 8200)
-    assert.equal(packagePrice(16, 3), 15700)
-    // 15P greedy = 10+4+1 = 15,400 (MORE than the 16-pack — prices are
-    // intentionally non-monotonic; bestCoverage must not assume otherwise)
-    assert.equal(packagePrice(15, 3), 16900) // Hassan: 15P + 3G
-    assert.equal(packagePrice(18, 0), 16200) // 16 + 2 singles
+    assert.equal(packagePrice(16, 3), 15900)
+    assert.equal(packagePrice(15, 3), 15300) // Hassan: 15P (12+3) + 3G
+    assert.equal(packagePrice(18, 0), 16400) // 16 + 2 singles
   })
 })
 
@@ -89,7 +87,7 @@ describe('packagePrice', () => {
   it('adds both types', () => {
     assert.equal(packagePrice(8, 4), 9000)
     assert.equal(packagePrice(1, 1), 1500)
-    assert.equal(packagePrice(16, 16), 21200)
+    assert.equal(packagePrice(16, 16), 21600)
   })
 })
 
@@ -102,7 +100,7 @@ describe('bestCoverage — fixed cases', () => {
   })
 
   it('paying the full owed covers everything, no credit', () => {
-    assert.deepEqual(bestCoverage(15700, 16, 3), { private: 16, group: 3, value: 15700 })
+    assert.deepEqual(bestCoverage(15900, 16, 3), { private: 16, group: 3, value: 15900 })
     // 9 unpaid private cost exactly 8,200 (8-pack + single) → all 9 covered
     assert.deepEqual(bestCoverage(8200, 9, 0), { private: 9, group: 0, value: 8200 })
   })
@@ -114,10 +112,7 @@ describe('bestCoverage — fixed cases', () => {
   })
 
   it('is capped by what is unpaid (overpay never over-covers)', () => {
-    // 15P+3G = 15,400+1,500 = 16,900 spends MORE than the 16P+3G pack
-    // (15,700) because greedy 15P is pricier than the 16-pack — still capped
-    // at the unpaid counts
-    assert.deepEqual(bestCoverage(999999, 16, 3), { private: 15, group: 3, value: 16900 })
+    assert.deepEqual(bestCoverage(999999, 16, 3), { private: 16, group: 3, value: 15900 })
     assert.deepEqual(bestCoverage(5000, 2, 0), { private: 2, group: 0, value: 2000 })
   })
 
@@ -131,7 +126,7 @@ describe('bestCoverage — fixed cases', () => {
   it('mixed bundle mix maximises spend without exceeding the amount', () => {
     // 1,500 = 1 private (1,000) + 1 group (500)
     assert.deepEqual(bestCoverage(1500, 9, 9), { private: 1, group: 1, value: 1500 })
-    // 3,600 → group 16-pack costs 7,000, too much: best is 4 private (3,600)
+    // 3,600 → group 16-pack costs 7,200, too much: best is 4 private (3,600)
     assert.deepEqual(bestCoverage(3600, 9, 9), { private: 4, group: 0, value: 3600 })
     // 8,500 → best under the cap is 7P+4G (6,600+1,800 = 8,400)
     assert.deepEqual(bestCoverage(8500, 20, 9), { private: 7, group: 4, value: 8400 })
@@ -139,7 +134,7 @@ describe('bestCoverage — fixed cases', () => {
 })
 
 describe('bestCoverage — brute-force cross-check', () => {
-  const amounts = [0, 500, 999, 1000, 1500, 1800, 3500, 3600, 7000, 7200, 7999, 8000, 10800, 14000, 14200, 15500, 15700, 15800]
+  const amounts = [0, 500, 999, 1000, 1500, 1800, 3500, 3600, 7000, 7200, 7999, 8000, 10800, 14000, 14400, 15500, 15900, 15999]
   const maxPrivates = [0, 1, 4, 9, 16]
   const maxGroups = [0, 3, 8]
 
@@ -183,8 +178,8 @@ describe('bestCoverage — brute-force cross-check', () => {
 
 describe('sessionsForAmount — leftover credit', () => {
   it('spends the leftover on the best session mix', () => {
-    // 7,000 = 3P+9G exactly (more-private tie vs the 16-group pack)
-    assert.deepEqual(sessionsForAmount(7000), { private: 3, group: 9, value: 7000 })
+    // 7,000 → 5P+5G = 6,900 (best fit; a 3P+9G mix would cost 7,100)
+    assert.deepEqual(sessionsForAmount(7000), { private: 5, group: 5, value: 6900 })
     assert.deepEqual(sessionsForAmount(1000), { private: 1, group: 0, value: 1000 })
     assert.deepEqual(sessionsForAmount(1500), { private: 1, group: 1, value: 1500 })
     assert.deepEqual(sessionsForAmount(400), { private: 0, group: 0, value: 0 })
@@ -197,9 +192,9 @@ describe('sessionsForAmount — leftover credit', () => {
   it('exact tier amounts buy the tier (bulk rates reachable)', () => {
     assert.deepEqual(sessionsForAmount(3600), { private: 4, group: 0, value: 3600 })
     assert.deepEqual(sessionsForAmount(7200), { private: 8, group: 0, value: 7200 })
-    assert.deepEqual(sessionsForAmount(10800), { private: 10, group: 0, value: 10800 })
-    assert.deepEqual(sessionsForAmount(14200), { private: 16, group: 0, value: 14200 })
-    assert.deepEqual(sessionsForAmount(16000), { private: 16, group: 4, value: 16000 })
+    assert.deepEqual(sessionsForAmount(10800), { private: 12, group: 0, value: 10800 })
+    assert.deepEqual(sessionsForAmount(14400), { private: 16, group: 0, value: 14400 })
+    assert.deepEqual(sessionsForAmount(16000), { private: 17, group: 1, value: 15900 })
   })
 
   it('equals exhaustive search for every amount tested (cap is always sufficient)', () => {
@@ -219,7 +214,7 @@ describe('sessionsForAmount — leftover credit', () => {
       }
       return best
     }
-    for (const amount of [500, 1000, 1500, 1800, 3500, 3600, 7000, 7200, 8000, 10800, 14000, 14200, 15500, 16000, 20000, 25000]) {
+    for (const amount of [500, 1000, 1500, 1800, 3500, 3600, 7000, 7200, 8000, 10800, 14000, 14400, 15500, 16000, 20000, 25000]) {
       const got = sessionsForAmount(amount)
       assert.deepEqual(got, brute(amount), `sessionsForAmount(${amount})`)
       assert.ok(got.value <= amount, `sessionsForAmount(${amount}) value ${got.value} > amount`)
@@ -227,7 +222,7 @@ describe('sessionsForAmount — leftover credit', () => {
   })
 
   it('never spends more than the amount', () => {
-    for (const amount of [1, 999, 1001, 3500, 6999, 13999, 14199, 25000]) {
+    for (const amount of [1, 999, 1001, 3500, 6999, 13999, 14399, 25000]) {
       const got = sessionsForAmount(amount)
       assert.ok(got.value <= amount, `sessionsForAmount(${amount}) value ${got.value} > amount`)
     }
@@ -236,24 +231,26 @@ describe('sessionsForAmount — leftover credit', () => {
 
 describe('nearestPackPool — Best-Package Rule', () => {
   it('approved pack table (cash vs debt)', () => {
-    // Farida: 15,500 against a 17,700 debt (16P+8G) → the 17,700 pack,
-    // 2,200 shortfall — "pay for the nearest package, owe the rest"
-    assert.deepEqual(nearestPackPool(15500, 17700), { private: 16, group: 8, value: 17700 })
-    assert.deepEqual(nearestPackPool(7000), { private: 0, group: 16, value: 7000 })
+    // Farida: 15,500 against an 17,900 debt → base pack (16,4)=16,200;
+    // 15% upward cap (15,500×1.15 = 17,825) rejects the 16P+8G pack (18,000)
+    const farida = nearestPackPool(15500, 17900)
+    assert.deepEqual(farida, { private: 16, group: 4, value: 16200 })
+    assert.equal(15500 - farida.value, -700)
+    assert.deepEqual(nearestPackPool(7000), { private: 8, group: 0, value: 7200 })
     assert.deepEqual(nearestPackPool(7200), { private: 8, group: 0, value: 7200 })
-    assert.deepEqual(nearestPackPool(5000), { private: 0, group: 12, value: 5250 })
+    assert.deepEqual(nearestPackPool(5000), { private: 4, group: 4, value: 5400 })
     assert.deepEqual(nearestPackPool(2500), { private: 0, group: 4, value: 1800 })
-    assert.deepEqual(nearestPackPool(3500), { private: 0, group: 8, value: 3500 })
+    assert.deepEqual(nearestPackPool(3500), { private: 4, group: 0, value: 3600 })
     assert.deepEqual(nearestPackPool(3600), { private: 4, group: 0, value: 3600 })
-    assert.deepEqual(nearestPackPool(10800), { private: 10, group: 0, value: 10800 })
-    assert.deepEqual(nearestPackPool(14200), { private: 16, group: 0, value: 14200 })
+    assert.deepEqual(nearestPackPool(10800), { private: 12, group: 0, value: 10800 })
+    assert.deepEqual(nearestPackPool(14400), { private: 16, group: 0, value: 14400 })
   })
 
   it('15% upward cap: packs too far above the cash are rejected', () => {
     // 3,000: the (4,0)=3,600 pack is +20% → rejected → best in-budget (0,4)
     assert.deepEqual(nearestPackPool(3000), { private: 0, group: 4, value: 1800 })
-    // 5,000: (0,12)=5,250 is +5% → allowed and nearest (the approved table row)
-    assert.deepEqual(nearestPackPool(5000), { private: 0, group: 12, value: 5250 })
+    // 5,000: (4,4)=5,400 is +8% → allowed and nearest
+    assert.deepEqual(nearestPackPool(5000), { private: 4, group: 4, value: 5400 })
     // 2,500: (4,0)=3,600 is +44% → rejected → round-down (0,4), +700 prepaid
     const p2500 = nearestPackPool(2500)
     assert.deepEqual(p2500, { private: 0, group: 4, value: 1800 })
@@ -261,15 +258,12 @@ describe('nearestPackPool — Best-Package Rule', () => {
   })
 
   it('debt pulls the target up only within the cap', () => {
-    // partial 15,000 against a 17,500 debt: base nearest is (10,8)=14,300;
-    // debt pull toward 17,500 still caps the pack at 15,000×1.15 = 17,250, so
-    // (16,8)=17,700 is rejected → best in-budget pack (10,12)=16,050
-    assert.deepEqual(nearestPackPool(15000, 17500), { private: 10, group: 12, value: 16050 })
-    // full cash with debt: exact debt pack, shortfall −2,200
-    const farida = nearestPackPool(15500, 17700)
-    assert.equal(15500 - farida.value, -2200)
-    // exact cash pack is never overridden: 16,000 = (16,4) exactly
-    assert.deepEqual(nearestPackPool(16000, 17700), { private: 16, group: 4, value: 16000 })
+    // partial 15,000 against a 17,500 debt: base nearest is (16,0)=14,400;
+    // debt pull toward 17,500 caps the pack at 15,000×1.15 = 17,250, so
+    // (16,8)=18,000 is rejected → best in-budget pack (16,4)=16,200
+    assert.deepEqual(nearestPackPool(15000, 17500), { private: 16, group: 4, value: 16200 })
+    // exact cash pack is never overridden: 14,400 = (16,0) exactly
+    assert.deepEqual(nearestPackPool(14400, 17900), { private: 16, group: 0, value: 14400 })
   })
 
   it('zero / negative inputs', () => {
@@ -279,20 +273,19 @@ describe('nearestPackPool — Best-Package Rule', () => {
   })
 
   it('peels (16,16) packs above the catalog', () => {
-    // 50,000: 2 × (16,16)=42,400 peeled, remainder 7,600 → (8,0)=7,200
-    assert.deepEqual(nearestPackPool(50000), { private: 40, group: 32, value: 49600 })
-    // 100,000: 4 × 21,200 = 84,800 peeled, remainder 15,200 → (16,4)=16,000
-    assert.deepEqual(nearestPackPool(100000), { private: 80, group: 68, value: 100800 })
+    // 50,000: 2 × (16,16)=43,200 peeled, remainder 6,800 → (8,0)=7,200 (+400)
+    assert.deepEqual(nearestPackPool(50000), { private: 40, group: 32, value: 50400 })
+    // 100,000: 4 × 21,600 = 86,400 peeled, remainder 13,600 → (16,0)=14,400
+    assert.deepEqual(nearestPackPool(100000), { private: 80, group: 64, value: 100800 })
   })
 
   it('never selects single-session tiers (named packs only)', () => {
-    // private packs are 16k + {0,4,8,10,16}; group packs are 16k + {0,4,8,12,16}
-    const PRIV_REMAINDERS = new Set([0, 4, 8, 10])
-    const GRP_REMAINDERS = new Set([0, 4, 8, 12])
+    // private and group packs are both 16k + {0,4,8,12}
+    const PACK_REMAINDERS = new Set([0, 4, 8, 12])
     for (const amount of [100, 1000, 2500, 3000, 3333, 4500, 5000, 7200, 10800, 15500, 16000, 50000]) {
       const r = nearestPackPool(amount)
-      assert.ok(PRIV_REMAINDERS.has(r.private % 16), `private ${r.private} for ${amount} not pack-pure`)
-      assert.ok(GRP_REMAINDERS.has(r.group % 16), `group ${r.group} for ${amount} not pack-pure`)
+      assert.ok(PACK_REMAINDERS.has(r.private % 16), `private ${r.private} for ${amount} not pack-pure`)
+      assert.ok(PACK_REMAINDERS.has(r.group % 16), `group ${r.group} for ${amount} not pack-pure`)
     }
   })
 })
@@ -359,7 +352,7 @@ describe('staff rate — flat 600/300 (coaches / member_code 007)', () => {
       assert.equal(calculatePrice('group', n, { staff: true }), 300 * n, `group x${n}`)
     }
     assert.equal(calculatePrice('private', 4, { staff: true }), 2400) // normal tier would be 3,600
-    assert.equal(calculatePrice('group', 8, { staff: true }), 2400)   // normal tier would be 3,500
+    assert.equal(calculatePrice('group', 8, { staff: true }), 2400)   // normal tier would be 3,600
     assert.equal(packagePrice(3, 2, { staff: true }), 3 * 600 + 2 * 300)
     assert.equal(packagePrice(0, 0, { staff: true }), 0)
     assert.equal(calculatePrice('vip', 3, { staff: true }), 0)
@@ -388,8 +381,8 @@ describe('staff rate — flat 600/300 (coaches / member_code 007)', () => {
 
   it('non-staff path is untouched', () => {
     assert.equal(calculatePrice('private', 4), 3600)
-    assert.equal(packagePrice(16, 3), 15700)
-    assert.deepEqual(sessionsForAmount(14200), { private: 16, group: 0, value: 14200 })
+    assert.equal(packagePrice(16, 3), 15900)
+    assert.deepEqual(sessionsForAmount(14400), { private: 16, group: 0, value: 14400 })
   })
 })
 
